@@ -1,0 +1,294 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../../models/heartbeat_image.dart';
+import '../../../theme/handwritten_fonts.dart';
+import '../../../theme/theme_palette.dart';
+
+/// La "vraie carte" d'un battement de cœur — photo en rotation automatique
+/// (toutes les 5 secondes, jamais vers une image pas encore chargée), voile
+/// dégradé, texte manuscrit superposé, petit cœur discret. Extraite de
+/// SlideDetailScreen pour être réutilisée telle quelle dans la modale de
+/// réponse (voir showHeartbeatReplyModal) — la même carte doit apparaître
+/// partout où un battement de cœur est affiché en grand, pas une variante
+/// simplifiée.
+class HeartbeatCard extends StatefulWidget {
+  final List<HeartbeatImage> images;
+  final String message;
+  final ThemePalette theme;
+
+  const HeartbeatCard({
+    super.key,
+    required this.images,
+    required this.message,
+    required this.theme,
+  });
+
+  @override
+  State<HeartbeatCard> createState() => _HeartbeatCardState();
+}
+
+class _HeartbeatCardState extends State<HeartbeatCard> {
+  // Un Set plutôt qu'une List<bool> parallèle, plus simple à tenir à jour vu
+  // que le chargement de chaque image se termine dans un ordre imprévisible.
+  final Set<String> _loadedImages = {};
+  int _imageIndex = 0;
+  Timer? _rotationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.images.isNotEmpty) {
+      // Après le premier frame : precacheImage a besoin d'un BuildContext
+      // déjà rattaché à l'arbre (Directionality, etc.), pas encore garanti
+      // pendant initState.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _precacheImages());
+      _rotationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _rotate());
+    }
+  }
+
+  @override
+  void dispose() {
+    _rotationTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Précharge chaque image en arrière-plan — la rotation (voir [_rotate])
+  /// ne bascule jamais vers une image pas encore prête, pour éviter un flash
+  /// de zone vide toutes les 5 secondes.
+  void _precacheImages() {
+    for (final image in widget.images) {
+      precacheImage(NetworkImage(image.url), context).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _loadedImages.add(image.url);
+          // L'image affichée au tout premier rendu (index 0) n'est pas
+          // forcément la plus rapide à charger — si une AUTRE vient de
+          // finir avant elle, autant montrer celle-là tout de suite plutôt
+          // que de laisser tourner le loader sans raison. Ne concerne que
+          // le tout premier affichage : une fois qu'une image est prête,
+          // ce chemin ne se redéclenche plus (voir la condition ci-dessous).
+          if (!_loadedImages.contains(widget.images[_imageIndex].url)) {
+            final readyIndex = widget.images.indexWhere((img) => _loadedImages.contains(img.url));
+            if (readyIndex != -1) _imageIndex = readyIndex;
+          }
+        });
+      }).catchError((_) {
+        // Image cassée/indisponible : reste simplement exclue de la
+        // rotation, jamais affichée telle quelle.
+      });
+    }
+  }
+
+  /// Avance vers l'image suivante dans l'ordre SI elle est déjà chargée ;
+  /// sinon bascule vers n'importe quelle autre image déjà prête plutôt que
+  /// de rester bloquée sur l'ordre strict ; si aucune autre n'est encore
+  /// chargée, l'image actuelle reste affichée telle quelle.
+  void _rotate() {
+    final images = widget.images;
+    if (images.length < 2 || !mounted) return;
+
+    final next = (_imageIndex + 1) % images.length;
+    if (_loadedImages.contains(images[next].url)) {
+      setState(() => _imageIndex = next);
+      return;
+    }
+
+    for (var offset = 1; offset < images.length; offset++) {
+      final candidate = (next + offset) % images.length;
+      if (candidate == _imageIndex) continue;
+      if (_loadedImages.contains(images[candidate].url)) {
+        setState(() => _imageIndex = candidate);
+        return;
+      }
+    }
+    // Aucune image chargée à part (au mieux) celle déjà affichée : on
+    // patiente, rien à changer ce tour-ci.
+  }
+
+  /// Remplace le dernier espace par une espace insécable — sans ça, un
+  /// emoji final (ex. "Tu me manques 💕") pouvait passer seul à la ligne
+  /// suivante et se retrouver centré tout seul, visuellement décentré par
+  /// rapport au mot qui le précède.
+  String _glueTrailingEmoji(String text) {
+    final lastSpace = text.lastIndexOf(' ');
+    if (lastSpace == -1) return text;
+    return '${text.substring(0, lastSpace)} ${text.substring(lastSpace + 1)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final images = widget.images;
+
+    if (images.isEmpty) {
+      // Pas d'image (message personnalisé, ou catalogue sans photo) :
+      // `theme.surface` est déjà choisi par chaque thème pour rester
+      // lisible avec `textOnBackground`, contrairement à un blanc fixe qui
+      // casserait les thèmes sombres.
+      return Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.primary.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 16, offset: const Offset(0, 6)),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
+              child: Center(
+                child: Text(
+                  widget.message,
+                  textAlign: TextAlign.center,
+                  style: handwrittenFont('dancing_script', color: theme.textOnBackground, fontSize: 30),
+                ),
+              ),
+            ),
+            // Repère discret "ceci est un battement de cœur", en toutes
+            // lettres — même repère que la variante avec photo plus bas.
+            Positioned(
+              top: 10,
+              right: 14,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.favorite_rounded, size: 11, color: theme.primary.withValues(alpha: 0.45)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Battement de cœur',
+                    style: handwrittenFont(
+                      'caveat',
+                      color: theme.textOnBackgroundMuted.withValues(alpha: 0.75),
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // Fond neutre plutôt que transparent : pendant le fondu entre deux
+        // images (les deux sont semi-transparentes un court instant), sans
+        // lui la couleur derrière transperçait et donnait un effet "flash".
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: theme.primary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Le fondu masque le petit à-coup du changement d'image toutes
+          // les 5 secondes — sans lui, la bascule serait sèche.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            // Le Stack interne par défaut d'AnimatedSwitcher est en
+            // StackFit.loose : sans ce layoutBuilder, l'image se
+            // dimensionnait à sa taille naturelle au lieu de remplir le
+            // cadre, laissant voir le fond derrière sur les bords.
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              fit: StackFit.expand,
+              children: [
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            ),
+            child: Image.network(
+              images[_imageIndex].url,
+              key: ValueKey(images[_imageIndex].url),
+              fit: BoxFit.cover,
+              // Point focal réglé côté admin — garde la zone choisie
+              // visible après recadrage, au lieu du centre par défaut.
+              alignment: images[_imageIndex].alignment,
+              // Sans ça : la petite icône "image cassée" par défaut de
+              // Flutter (croix rouge) le temps du chargement — visible en
+              // réel dès qu'une image n'a pas encore fini de télécharger.
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return const Center(
+                  child: SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                  ),
+                );
+              },
+              // En cas d'échec réel (pas juste en cours de chargement) : le
+              // fond noir du Container suffit, pas besoin d'une icône
+              // d'erreur en plus qui attirerait l'œil sur une photo ratée.
+              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+            ),
+          ),
+          // Voile sombre en bas pour garder le message lisible quelle que
+          // soit la photo derrière.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.transparent, Colors.black54],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.45, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 26,
+            child: Text(
+              _glueTrailingEmoji(widget.message),
+              textAlign: TextAlign.center,
+              // Police manuscrite plutôt que l'italique "élégant" des
+              // poèmes — un battement de cœur se lit comme un mot glissé à
+              // la main sur la photo.
+              style: handwrittenFont('dancing_script', color: Colors.white, fontSize: 30).copyWith(
+                shadows: const [
+                  Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
+                ],
+              ),
+            ),
+          ),
+          // Même repère discret que la variante sans photo (icône + mot en
+          // manuscrit) — le voile sombre du haut est très léger (le
+          // dégradé ne démarre qu'à 45% de la hauteur), donc toujours
+          // lisible même sur une photo claire.
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.favorite_rounded, size: 12, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Battement de cœur',
+                    style: handwrittenFont('caveat', color: Colors.white, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

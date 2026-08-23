@@ -1,0 +1,449 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../../l10n/locale_scope.dart';
+import '../../../models/app_user.dart';
+import '../../../models/game.dart';
+import '../../../theme/theme_palette.dart';
+import '../../../theme/theme_scope.dart';
+import '../../../theme/themed_background.dart';
+import '../widgets/memory_game_match_scoreboard.dart';
+import 'memory_emoji_pool.dart';
+import 'memory_game_transport.dart';
+
+/// Plateau de "Jeu de Mémoire" — UNIQUE écran de jeu partagé par les 3
+/// modes (voir MemoryGameTransport) : ne connaît que l'état abstrait
+/// [MemoryGameBoardState], jamais les détails de synchronisation
+/// sous-jacents.
+///
+/// [playerNames]/[playerAvatars] sont indexés par les identifiants qui
+/// apparaissent dans `state.matched`/`state.currentTurnUserId` — de vrais
+/// identifiants utilisateur pour à distance/pass-and-play, ou les rôles
+/// internes 'host'/'guest' pour le présentiel connecté (voir
+/// memory_game_transport_nearby.dart).
+class MemoryGameBoardScreen extends StatefulWidget {
+  final Game game;
+  final AppUser user;
+  final MemoryGameTransport transport;
+  final Map<String, String> playerNames;
+  final Map<String, String?> playerAvatars;
+  // Non-null uniquement pour les modes qui savent relancer une partie
+  // identique (à distance/pass-and-play, voir startMemoryGameAndPush) —
+  // reçoit le contexte de CET écran (toujours valide au moment de l'appel,
+  // contrairement à celui de l'écran de difficulté d'origine qui a pu être
+  // retiré de la pile entre-temps). `null` masque le bouton "Rejouer".
+  final Future<void> Function(BuildContext context)? onRematch;
+
+  const MemoryGameBoardScreen({
+    super.key,
+    required this.game,
+    required this.user,
+    required this.transport,
+    required this.playerNames,
+    required this.playerAvatars,
+    this.onRematch,
+  });
+
+  @override
+  State<MemoryGameBoardScreen> createState() => _MemoryGameBoardScreenState();
+}
+
+class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
+  late StreamSubscription<MemoryGameBoardState> _subscription;
+  late MemoryGameBoardState _state;
+  List<int>? _displayMismatch;
+  Timer? _mismatchTimer;
+  Timer? _clockTimer;
+  bool _scoreboardShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = widget.transport.currentState;
+    _subscription = widget.transport.stateStream.listen(_onState);
+    // Rejoue juste le rendu du chrono chaque seconde — aucun appel réseau,
+    // même principe que TimelineScreen._tickTimer.
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _onState(MemoryGameBoardState state) {
+    if (!mounted) return;
+    setState(() {
+      _state = state;
+      if (state.mismatch != null) {
+        _displayMismatch = state.mismatch;
+        _mismatchTimer?.cancel();
+        _mismatchTimer = Timer(const Duration(milliseconds: 900), () {
+          if (mounted) setState(() => _displayMismatch = null);
+        });
+      }
+    });
+
+    if (state.finished && !_scoreboardShown) {
+      _scoreboardShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
+    }
+  }
+
+  Future<void> _showScoreboard() async {
+    if (!mounted) return;
+    final rematch = await showMemoryGameMatchScoreboard(
+      context,
+      state: _state,
+      playerNames: widget.playerNames,
+      playerAvatars: widget.playerAvatars,
+      allowRematch: widget.onRematch != null,
+    );
+    if (rematch == true && widget.onRematch != null && mounted) {
+      await widget.onRematch!(context);
+    }
+  }
+
+  Future<void> _onTapCard(int index) async {
+    if (_state.finished) return;
+    if (_state.matchedIndices.contains(index)) return;
+    if (_state.flipped.contains(index)) return;
+    if (_displayMismatch != null) return; // laisse le temps de voir la paire ratée
+    if (widget.transport.requiresTurnToFlip && !_state.isMyTurn) return;
+
+    await widget.transport.flip(index);
+  }
+
+  int _pairsFoundBy(String userId) => _state.matched.where((pair) => pair.userId == userId).length;
+
+  String _elapsed() {
+    final started = _state.startedAt;
+    if (started == null) return '0:00';
+    final seconds = DateTime.now().difference(started).inSeconds;
+    final minutes = seconds ~/ 60;
+    final rest = seconds % 60;
+    return '$minutes:${rest.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    _mismatchTimer?.cancel();
+    _clockTimer?.cancel();
+    widget.transport.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+    final board = _state.board;
+
+    if (board.isEmpty) {
+      // Invité en présentiel connecté, en attente du plateau envoyé par
+      // l'hôte (voir NearbyMemoryGameTransport.guest).
+      return Scaffold(
+        backgroundColor: theme.background,
+        body: ThemedBackground(
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: theme.primary),
+                  const SizedBox(height: 16),
+                  Text(
+                    LocaleScope.t(context, 'memory_board_waiting'),
+                    style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final difficulty = MemoryGameDifficulty.all.firstWhere((d) => d.cardCount == board.length);
+    final turnName = _state.currentTurnUserId != null ? widget.playerNames[_state.currentTurnUserId] : null;
+
+    return Scaffold(
+      backgroundColor: theme.background,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        systemOverlayStyle: theme.statusBarOverlayStyle,
+        foregroundColor: theme.textOnBackground,
+        title: Text(
+          widget.game.nameFor('fr'),
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flag_outlined),
+            tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text(LocaleScope.t(ctx, 'memory_board_abandon_title')),
+                  content: Text(LocaleScope.t(ctx, 'memory_board_abandon_content')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: Text(LocaleScope.t(ctx, 'memory_board_abandon_confirm'), style: const TextStyle(color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) await widget.transport.abandon();
+            },
+          ),
+        ],
+      ),
+      body: ThemedBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        widget.transport.requiresTurnToFlip
+                            ? (_state.isMyTurn
+                                ? LocaleScope.t(context, 'memory_board_your_turn')
+                                : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                    'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                  }))
+                            : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'}),
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                        const SizedBox(width: 4),
+                        Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
+                  children: [
+                    for (final userId in widget.playerNames.keys) ...[
+                      if (userId != widget.playerNames.keys.first) const SizedBox(width: 10),
+                      Expanded(
+                        child: _PlayerStatChip(
+                          theme: theme,
+                          name: widget.playerNames[userId] ?? '',
+                          avatar: widget.playerAvatars[userId],
+                          pairsFound: _pairsFoundBy(userId),
+                          moves: _state.movesByUser[userId] ?? 0,
+                          active: _state.currentTurnUserId == userId,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Ratio calculé pour que la grille remplisse
+                      // exactement l'espace disponible (ni débordement, ni
+                      // espace mort), quel que soit le palier de difficulté
+                      // (3×4 à 8×8) ou la taille d'écran — au lieu d'un
+                      // ratio fixe qui ne convenait qu'à une seule grille.
+                      const spacing = 8.0;
+                      final cardWidth = (constraints.maxWidth - (difficulty.columns - 1) * spacing) / difficulty.columns;
+                      final cardHeight = (constraints.maxHeight - (difficulty.rows - 1) * spacing) / difficulty.rows;
+                      final aspectRatio = (cardWidth / cardHeight).clamp(0.55, 1.3);
+
+                      return GridView.builder(
+                        // Le ratio ci-dessus fait déjà tenir la grille dans
+                        // l'espace disponible dans le cas normal — le
+                        // scroll reste actif uniquement comme filet de
+                        // sécurité si le clamp() a dû resserrer le ratio
+                        // (très petit écran + grille dense, ex. 8×8).
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: difficulty.columns,
+                          mainAxisSpacing: spacing,
+                          crossAxisSpacing: spacing,
+                          childAspectRatio: aspectRatio,
+                        ),
+                        itemCount: board.length,
+                        itemBuilder: (context, index) {
+                          final isMatched = _state.matchedIndices.contains(index);
+                          final isFlipped = _state.flipped.contains(index) || (_displayMismatch?.contains(index) ?? false);
+                          return _MemoryCardTile(
+                            emoji: board[index],
+                            faceUp: isMatched || isFlipped,
+                            dimmed: isMatched,
+                            onTap: () => _onTapCard(index),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Score + coups d'UN joueur, affichés en direct pendant la partie (voir
+/// demande utilisateur : le compteur de coups était partagé/global, il
+/// doit être séparé par joueur, comme le score) — [active] met en
+/// évidence le joueur dont c'est le tour.
+class _PlayerStatChip extends StatelessWidget {
+  final ThemePalette theme;
+  final String name;
+  final String? avatar;
+  final int pairsFound;
+  final int moves;
+  final bool active;
+
+  const _PlayerStatChip({
+    required this.theme,
+    required this.name,
+    required this.avatar,
+    required this.pairsFound,
+    required this.moves,
+    required this.active,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: active ? theme.primary.withValues(alpha: 0.12) : theme.surface.withValues(alpha: theme.isDark ? 0.5 : 0.75),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: active ? theme.primary.withValues(alpha: 0.5) : theme.primary.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 14,
+            backgroundColor: theme.primary.withValues(alpha: 0.16),
+            backgroundImage: (avatar != null && avatar!.isNotEmpty) ? NetworkImage(avatar!) : null,
+            child: (avatar == null || avatar!.isEmpty)
+                ? Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.primary, fontSize: 12),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(Icons.favorite_rounded, size: 12, color: theme.primary),
+                    const SizedBox(width: 3),
+                    Text('$pairsFound', style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted)),
+                    const SizedBox(width: 8),
+                    Icon(Icons.touch_app_outlined, size: 12, color: theme.textOnBackgroundMuted),
+                    const SizedBox(width: 3),
+                    Text('$moves', style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryCardTile extends StatelessWidget {
+  final String emoji;
+  final bool faceUp;
+  final bool dimmed;
+  final VoidCallback onTap;
+
+  const _MemoryCardTile({required this.emoji, required this.faceUp, required this.dimmed, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: faceUp ? 1 : 0),
+        duration: const Duration(milliseconds: 260),
+        builder: (context, t, child) {
+          final showFront = t > 0.5;
+          final angle = t * 3.14159265;
+          return Opacity(
+            opacity: dimmed ? 0.45 : 1,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()..setEntry(3, 2, 0.001)..rotateY(angle),
+              child: showFront
+                  ? Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()..rotateY(3.14159265),
+                      child: _CardFace(
+                        color: theme.surface,
+                        border: theme.primary.withValues(alpha: 0.4),
+                        child: Text(emoji, style: const TextStyle(fontSize: 26)),
+                      ),
+                    )
+                  : _CardFace(
+                      color: theme.primary.withValues(alpha: 0.85),
+                      border: Colors.transparent,
+                      child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
+                    ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CardFace extends StatelessWidget {
+  final Color color;
+  final Color border;
+  final Widget child;
+
+  const _CardFace({required this.color, required this.border, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Center(child: child),
+    );
+  }
+}

@@ -1,0 +1,688 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../core/realtime_client.dart';
+import '../../l10n/locale_scope.dart';
+import '../../models/app_user.dart';
+import '../../models/game.dart';
+import '../../models/game_box.dart';
+import '../../theme/theme_palette.dart';
+import '../../theme/theme_scope.dart';
+import '../../theme/themed_background.dart';
+import '../../widgets/empty_state.dart';
+import 'charades_categories_screen.dart';
+import 'emoji_story_history_screen.dart';
+import 'game_boxes_screen.dart';
+import 'game_service.dart';
+import 'game_session_screen.dart';
+import 'memory_game/memory_game_mode_screen.dart';
+import 'timed_challenge_session_screen.dart';
+import 'widgets/couple_stats_card.dart';
+import 'widgets/game_rules_dialog.dart';
+
+bool _isNetworkPath(String? path) =>
+    path != null && (path.startsWith('http://') || path.startsWith('https://'));
+
+/// Illustration choisie dans l'admin (hébergée sur le serveur) si elle
+/// existe, sinon repli sur l'icône affinée par mot-clé du nom du jeu.
+Widget _gameIcon(Game game, Color color) {
+  if (_isNetworkPath(game.iconPath)) {
+    // BoxFit.cover pour remplir toute la case (pas de bande de couleur
+    // teintée qui dépasse autour) — le parent doit rester clipBehavior:
+    // Clip.antiAlias pour respecter les coins arrondis.
+    return Image.network(
+      game.iconPath!,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (context, error, stackTrace) => Icon(_iconForGame(game), color: color),
+    );
+  }
+  return Center(child: Icon(_iconForGame(game), color: color));
+}
+
+/// Icône affinée par mot-clé du nom du jeu — repli tant qu'aucune
+/// illustration n'a été choisie dans l'admin (voir [_gameIcon]).
+IconData _iconForGame(Game game) {
+  // Comparé au nom français (clé d'identité stable), jamais à la langue
+  // courante — sans ça, le mapping mot-clé -> icône se casserait dès
+  // qu'on affiche l'app dans une autre langue que le français.
+  final n = game.nameFor('fr').toLowerCase();
+  // Contrôles les plus spécifiques d'abord — certains noms partagent un mot
+  // avec une catégorie plus générale ci-dessous (ex. "20 Vérités sur Nous"
+  // contient "vérité", "Le Sondage Surprise" contient "surprise").
+  if (n.contains('20 vérités') || n.contains('20 verites')) {
+    return Icons.trending_up_rounded;
+  }
+  if (n.contains('sondage')) return Icons.poll_rounded;
+  if (n.contains('silencieux')) return Icons.volume_off_rounded;
+  if (n.contains('portrait')) return Icons.face_rounded;
+  if (n.contains('story')) return Icons.camera_alt_rounded;
+  if (n.contains('ping-pong') || n.contains('souvenirs')) {
+    return Icons.compare_arrows_rounded;
+  }
+  if (n.contains('cuisine')) return Icons.restaurant_rounded;
+  if (n.contains('capsule')) return Icons.inventory_2_rounded;
+  if (n.contains('compliment')) return Icons.record_voice_over_rounded;
+  if (n.contains('question')) return Icons.quiz_rounded;
+  if (n.contains('vérité') ||
+      n.contains('verite') ||
+      n.contains('défi') ||
+      n.contains('defi')) {
+    return Icons.casino_rounded;
+  }
+  if (n.contains('émoji') || n.contains('emoji')) {
+    return Icons.emoji_emotions_rounded;
+  }
+  if (n.contains('charade')) return Icons.theater_comedy_rounded;
+  if (n.contains('connaît') || n.contains('connait')) {
+    return Icons.fact_check_rounded;
+  }
+  if (n.contains('surprise')) return Icons.celebration_rounded;
+  if (n.contains('mystère') || n.contains('mystere')) {
+    return Icons.auto_stories_rounded;
+  }
+  if (n.contains('chasse') || n.contains('trésor') || n.contains('tresor')) {
+    return Icons.explore_rounded;
+  }
+  return Icons.sports_esports_rounded;
+}
+
+class GamesMenuScreen extends StatefulWidget {
+  final AppUser user;
+
+  const GamesMenuScreen({super.key, required this.user});
+
+  @override
+  State<GamesMenuScreen> createState() => _GamesMenuScreenState();
+}
+
+class _GamesMenuScreenState extends State<GamesMenuScreen> {
+  late Future<List<Game>> _future;
+
+  static const _catalogChannel = 'games-catalog';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = GameService.instance.fetchGames();
+    // Canal PUBLIC (pas scopé à une Box, voir RealtimeClient.subscribePublic)
+    // : diffusé par l'admin à chaque modification du catalogue (voir
+    // GameCatalogUpdated côté backend) — permet à cet écran de se
+    // rafraîchir tout seul, même s'il reste ouvert en arrière-plan dans
+    // l'IndexedStack de MainTabScreen pendant la modification.
+    RealtimeClient.instance.subscribePublic(_catalogChannel, onEvent: _onRealtimeEvent);
+  }
+
+  @override
+  void dispose() {
+    RealtimeClient.instance.unsubscribePublic(_catalogChannel, onEvent: _onRealtimeEvent);
+    super.dispose();
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    if (event.event != 'GameCatalogUpdated') return;
+    _refresh();
+  }
+
+  // L'onglet Jeux reste en mémoire (IndexedStack de MainTabScreen) : sans
+  // ce rafraîchissement manuel, le catalogue ne serait plus jamais refetché
+  // après le premier chargement de la session.
+  Future<void> _refresh() async {
+    final future = GameService.instance.fetchGames();
+    if (mounted) setState(() { _future = future; });
+    await future;
+  }
+
+  /// "Devine mon émoji" n'a pas de boîtes (contenu libre, composé par le
+  /// couple) — écran dédié direct. Un jeu avec des boîtes (voir GameBox
+  /// côté backend) ouvre la liste de coffres thématiques ; sans ça, retombe
+  /// sur le gabarit à prompt unique.
+  Future<void> _playGame(Game game) async {
+    if (game.isEmojiStory) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => EmojiStoryHistoryScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isMemoryGame) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => MemoryGameModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    List<GameBox> boxes = const [];
+    Object? lastError;
+    // Un jeu à boîtes (voir Game.usesBoxes) ne doit JAMAIS retomber sur le
+    // gabarit générique GameSessionScreen à cause d'un simple raté réseau —
+    // deux tentatives avant d'abandonner et de le signaler clairement,
+    // plutôt que de rediriger silencieusement vers cet écran obsolète pour
+    // ces jeux (voir le SnackBar plus bas).
+    final attempts = game.usesBoxes ? 2 : 1;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        boxes = await GameService.instance.fetchBoxes(game.id);
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        debugPrint('GamesMenuScreen: fetchBoxes(${game.id}) a échoué (tentative $attempt/$attempts) ($e)');
+      }
+    }
+    if (!mounted) return;
+
+    if (lastError != null && boxes.isEmpty && game.usesBoxes) {
+      // N'ouvre plus JAMAIS le gabarit à prompt unique pour un jeu à
+      // boîtes — mieux vaut un message d'erreur explicite, qu'on peut
+      // corriger en réessayant, qu'un écran silencieusement faux.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(LocaleScope.of(context).t('games_menu_categories_load_error'))),
+      );
+      return;
+    }
+
+    // Les catégories de charades ne sont pas verrouillées/progressives
+    // (voir CharadesCategoriesScreen) — écran dédié plutôt que GameBoxesScreen.
+    if (game.isCharades && boxes.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => CharadesCategoriesScreen(game: game, boxes: boxes)),
+      );
+      return;
+    }
+
+    // Un seul pool de prompts admin, pas de choix de catégorie : ces
+    // gabarits n'ont besoin que d'un dé à relancer (prompt_reveal) ou d'un
+    // thème avant un chrono (timed_challenge/blind_poll).
+    final prompts = boxes.expand((b) => b.questions).toList();
+
+    if (game.isPromptReveal) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => GameSessionScreen(game: game, prompts: prompts)),
+      );
+      return;
+    }
+    if (game.isTimedChallenge) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => TimedChallengeSessionScreen(game: game, prompts: prompts)),
+      );
+      return;
+    }
+    if (boxes.isEmpty && game.usesBoxes) {
+      // Chargement réussi mais réellement aucune boîte configurée pour ce
+      // jeu — cas qui ne devrait jamais arriver en pratique pour un jeu
+      // usesBoxes (voir le seeder de contenu), donc traité comme une
+      // anomalie plutôt qu'un simple repli silencieux vers l'écran générique.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(LocaleScope.of(context).t('games_menu_no_categories'))),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => boxes.isNotEmpty
+            ? GameBoxesScreen(game: game, user: widget.user)
+            : GameSessionScreen(game: game),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+    final t = LocaleScope.of(context).t;
+
+    return Scaffold(
+      backgroundColor: theme.background,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        systemOverlayStyle: theme.statusBarOverlayStyle,
+        foregroundColor: theme.textOnBackground,
+        title: Text(
+          t('games_menu_title'),
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            color: theme.textOnBackground,
+          ),
+        ),
+      ),
+      body: ThemedBackground(
+        child: SafeArea(
+          child: RefreshIndicator(
+            color: theme.primary,
+            backgroundColor: theme.surface,
+            onRefresh: _refresh,
+            child: FutureBuilder<List<Game>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return ListView(
+                    children: [
+                      EmptyState(
+                        icon: Icons.wifi_off_rounded,
+                        message: t('games_menu_load_error'),
+                      ),
+                    ],
+                  );
+                }
+                final games = snapshot.data ?? [];
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                  children: [
+                    const CoupleStatsCard(),
+                    const SizedBox(height: 24),
+                    Text(
+                      t('games_menu_section_title'),
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: theme.textOnBackground,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t('games_menu_section_subtitle'),
+                      style: GoogleFonts.nunito(
+                        fontSize: 12,
+                        color: theme.textOnBackgroundMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (games.isEmpty)
+                      EmptyState(
+                        icon: Icons.sports_esports_rounded,
+                        message: t('games_menu_empty'),
+                      )
+                    else
+                      ...games.map(
+                        (game) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _GameFlipCard(
+                            game: game,
+                            theme: theme,
+                            onPlay: () => _playGame(game),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeMeta {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _ModeMeta(this.label, this.icon, this.color);
+}
+
+Map<String, _ModeMeta> _modesFor(ThemePalette theme, String Function(String) t) => {
+  'remote': _ModeMeta(t('games_mode_remote'), Icons.smartphone_rounded, theme.secondary),
+  'in_person': _ModeMeta(
+    t('games_mode_in_person'),
+    Icons.diversity_1_rounded,
+    theme.accent,
+  ),
+  'both': _ModeMeta(
+    t('games_mode_both'),
+    Icons.favorite_rounded,
+    theme.primary,
+  ),
+};
+
+/// Carte de jeu façon carte à jouer : glassmorphism + icône propre au jeu au
+/// repos, se retourne au tap pour révéler "Jouer maintenant" dans la
+/// couleur dominante du thème choisi (Dynamic Glow).
+class _GameFlipCard extends StatefulWidget {
+  final Game game;
+  final ThemePalette theme;
+  final VoidCallback onPlay;
+
+  const _GameFlipCard({
+    required this.game,
+    required this.theme,
+    required this.onPlay,
+  });
+
+  @override
+  State<_GameFlipCard> createState() => _GameFlipCardState();
+}
+
+class _GameFlipCardState extends State<_GameFlipCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flip = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+  bool _pressed = false;
+
+  void _toggleFlip() {
+    if (_flip.value < 0.5) {
+      _flip.forward();
+    } else {
+      _flip.reverse();
+    }
+  }
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
+  void dispose() {
+    _flip.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final t = LocaleScope.of(context).t;
+    final mode =
+        _modesFor(theme, t)[widget.game.mode] ??
+        _ModeMeta('', Icons.sports_esports_rounded, theme.secondary);
+
+    return GestureDetector(
+      onTapDown: (_) => _setPressed(true),
+      onTapCancel: () => _setPressed(false),
+      onTapUp: (_) => _setPressed(false),
+      onTap: _toggleFlip,
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: SizedBox(
+          height: 138,
+          child: AnimatedBuilder(
+            animation: _flip,
+            builder: (context, _) {
+              final angle = _flip.value * math.pi;
+              final showingBack = _flip.value > 0.5;
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0011)
+                  ..rotateY(angle),
+                child: showingBack
+                    ? Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()..rotateY(math.pi),
+                        child: _CardBack(
+                          game: widget.game,
+                          theme: theme,
+                          onPlay: widget.onPlay,
+                        ),
+                      )
+                    : _CardFront(game: widget.game, theme: theme, mode: mode),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardFront extends StatelessWidget {
+  final Game game;
+  final ThemePalette theme;
+  final _ModeMeta mode;
+
+  const _CardFront({
+    required this.game,
+    required this.theme,
+    required this.mode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final localeCode = LocaleScope.of(context).current.code;
+    final description = game.descriptionFor(localeCode);
+
+    return Stack(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                alpha: 0.07,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: mode.color.withValues(alpha: 0.16),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: mode.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: _gameIcon(game, mode.color),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      game.nameFor(localeCode),
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: theme.textOnBackground,
+                      ),
+                    ),
+                    if (description != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          color: theme.textOnBackgroundMuted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    // Tag doux (pilule translucide) plutôt qu'un logo Wi-Fi brut.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: mode.color.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(mode.icon, size: 12, color: mode.color),
+                          const SizedBox(width: 4),
+                          Text(
+                            mode.label,
+                            style: GoogleFonts.nunito(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: mode.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Même bouton "Comment jouer" que sur le verso (_CardBack) — pour
+        // qu'il soit consultable des deux côtés de la carte, pas seulement
+        // une fois retournée sur "Jouer maintenant".
+        _RulesButton(game: game, theme: theme),
+      ],
+    );
+  }
+}
+
+/// Icône "Comment jouer" en médaillon, coin haut-droit — partagée par le
+/// recto (_CardFront) et le verso (_CardBack) de la carte-jeu.
+class _RulesButton extends StatelessWidget {
+  final Game game;
+  final ThemePalette theme;
+  // Le verso (_CardBack) centre son contenu verticalement — un même top
+  // que le recto y ferait paraître le badge trop bas par rapport au titre.
+  final double top;
+  final double right;
+
+  const _RulesButton({required this.game, required this.theme, this.top = 8, this.right = 8});
+
+  @override
+  Widget build(BuildContext context) {
+    final rulesText = game.rulesFor(LocaleScope.of(context).current.code);
+    final hasRules = rulesText != null && rulesText.trim().isNotEmpty;
+    if (!hasRules) return const SizedBox.shrink();
+
+    return Positioned(
+      top: top,
+      right: right,
+      child: GestureDetector(
+        onTap: () => showGameRulesDialog(context, game),
+        child: Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: theme.primary.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.lightbulb_rounded, size: 14, color: theme.primary),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardBack extends StatelessWidget {
+  final Game game;
+  final ThemePalette theme;
+  final VoidCallback onPlay;
+
+  const _CardBack({
+    required this.game,
+    required this.theme,
+    required this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = LocaleScope.of(context).t;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.primary.withValues(alpha: 0.3)),
+      ),
+      // clipBehavior: none — le badge "Comment jouer" déborde légèrement du
+      // haut de la carte (top négatif), Stack le rognerait sinon (clip par
+      // défaut : Clip.hardEdge).
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                game.nameFor(LocaleScope.of(context).current.code),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: theme.textOnBackground,
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Bouton "Jouer" dans la couleur dominante du thème choisi — lie
+              // le jeu au monde du thème (doré, rose, émeraude...).
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onPlay,
+                      child: Ink(
+                        height: 42,
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [theme.primary, theme.primaryDeep],
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              t('games_play_now'),
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // Même bouton "Comment jouer" que sur le recto (_CardFront) —
+          // consultable des deux côtés de la carte. Contenu centré ici (pas
+          // en haut comme sur le recto) : remonté pour rester aligné au
+          // coin de la carte plutôt qu'au niveau du titre.
+          _RulesButton(game: game, theme: theme, top: -8, right: 2),
+        ],
+      ),
+    );
+  }
+}
