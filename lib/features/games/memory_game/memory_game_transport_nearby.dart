@@ -76,6 +76,9 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
       'movesCount': _state.movesCount,
       'movesByUser': _state.movesByUser,
       'finished': _state.finished,
+      'startedAt': _state.startedAt?.toIso8601String(),
+      'pausedByUserId': _state.pausedByUserId,
+      'pausedAt': _state.pausedAt?.toIso8601String(),
     });
   }
 
@@ -105,6 +108,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
             .map((e) => MemoryGameMatchedPair.fromJson(e as Map<String, dynamic>))
             .toList();
         final mismatchRaw = message['mismatch'] as List?;
+        final pausedByUserId = message['pausedByUserId'] as String?;
         _state = _state.copyWith(
           matched: matched,
           flipped: (message['flipped'] as List).map((e) => e as int).toList(),
@@ -114,6 +118,10 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
           movesCount: message['movesCount'] as int,
           movesByUser: (message['movesByUser'] as Map).map((k, v) => MapEntry(k as String, v as int)),
           finished: message['finished'] as bool,
+          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : _state.startedAt,
+          pausedByUserId: pausedByUserId,
+          pausedAt: message['pausedAt'] != null ? DateTime.parse(message['pausedAt'] as String) : null,
+          clearPause: pausedByUserId == null,
         );
         _controller.add(_state);
       case 'flip':
@@ -121,11 +129,41 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
         // l'arbitre et redistribue le nouvel état (voir flip() ci-dessous,
         // même chemin que pour ses propres flips).
         if (isHost) _applyHostFlip(message['index'] as int, kNearbyGuestRole);
+      case 'pause_request':
+        // Reçu côté hôte uniquement — n'importe lequel des deux peut
+        // demander la pause (voir pause() ci-dessous), l'hôte arbitre et
+        // redistribue (même principe que flip, voir demande utilisateur).
+        if (isHost) _applyHostPause(kNearbyGuestRole);
+      case 'resume_request':
+        // Reçu côté hôte uniquement — réservé à qui a posé la pause, voir
+        // _applyHostResume qui vérifie le rôle avant d'agir.
+        if (isHost) _applyHostResume(kNearbyGuestRole);
     }
   }
 
+  void _applyHostPause(String byRole) {
+    if (_state.isPaused || _state.finished) return;
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _controller.add(_state);
+    _sendState();
+  }
+
+  void _applyHostResume(String byRole) {
+    // Réservé à qui a posé la pause (voir demande utilisateur) — un appel
+    // par l'autre rôle est silencieusement ignoré, même principe que le
+    // 403 côté backend pour le mode à distance.
+    if (!_state.isPaused || _state.pausedByUserId != byRole) return;
+    final paused = _state.pausedAt;
+    if (paused != null && _state.startedAt != null) {
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+    }
+    _state = _state.copyWith(clearPause: true);
+    _controller.add(_state);
+    _sendState();
+  }
+
   void _applyHostFlip(int index, String byRole) {
-    if (_state.finished) return;
+    if (_state.finished || _state.isPaused) return;
     final result = MemoryGameEngine.flip(
       board: _state.board,
       matched: _state.matched,
@@ -171,6 +209,28 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
     _state = _state.copyWith(finished: true);
     _controller.add(_state);
     if (isHost) _sendState();
+  }
+
+  @override
+  Future<void> pause() async {
+    if (isHost) {
+      _applyHostPause(kNearbyHostRole);
+    } else {
+      _send({'type': 'pause_request'});
+    }
+  }
+
+  @override
+  Future<void> resume() async {
+    // L'UI ne propose de toute façon jamais ce bouton à qui n'a pas posé
+    // la pause (voir MemoryGameBoardState.pausedByMe) — ce garde-fou
+    // couvre juste le cas défensif d'un appel direct.
+    if (!_state.pausedByMe) return;
+    if (isHost) {
+      _applyHostResume(kNearbyHostRole);
+    } else {
+      _send({'type': 'resume_request'});
+    }
   }
 
   /// Traduit `matched` (rôles internes host/guest) vers les vrais

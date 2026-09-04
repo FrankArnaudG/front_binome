@@ -167,7 +167,17 @@ class _CurrencyTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Text(_currencyLabel(option.currency), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+              // Flexible + ellipsis : libellé de devise potentiellement long
+              // (voir option.currency, source admin) sans limite de largeur
+              // sinon, à côté d'un Expanded qui prend déjà le plus de place.
+              Flexible(
+                child: Text(
+                  _currencyLabel(option.currency),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+                ),
+              ),
             ],
           ),
         ),

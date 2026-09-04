@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -20,11 +20,11 @@ import '../../models/slide.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
-import '../../widgets/coin_balance_badge.dart';
 import '../../widgets/coin_icon.dart';
 import '../../widgets/composer_actions.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/send_status_tick.dart';
+import '../../widgets/waiting_dots.dart';
 import '../box/box_service.dart';
 import '../content/content_service.dart';
 import '../content/packs_screen.dart';
@@ -32,7 +32,6 @@ import '../content/widgets/heartbeat_card.dart';
 import '../content/widgets/heartbeat_reply_modal.dart';
 import '../content/widgets/pack_reply_modal.dart';
 import '../content/widgets/slide_pack_viewer.dart';
-import '../shop/shop_screen.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'game_box_session_screen.dart';
 import 'game_service.dart';
@@ -40,6 +39,49 @@ import 'truth_or_dare_session_screen.dart';
 import 'widgets/blind_poll_match_scoreboard.dart';
 import 'widgets/game_box_icon.dart';
 import 'widgets/game_card_widgets.dart';
+
+const _weekdayKeys = [
+  'weekday_monday',
+  'weekday_tuesday',
+  'weekday_wednesday',
+  'weekday_thursday',
+  'weekday_friday',
+  'weekday_saturday',
+  'weekday_sunday',
+];
+const _monthKeys = [
+  'month_january',
+  'month_february',
+  'month_march',
+  'month_april',
+  'month_may',
+  'month_june',
+  'month_july',
+  'month_august',
+  'month_september',
+  'month_october',
+  'month_november',
+  'month_december',
+];
+
+/// Même étiquette de séparateur de date que le Carnet de bord (voir
+/// TimelineScreen._dateHeaderFor) — même vocabulaire ("Aujourd'hui", "Hier"...)
+/// pour que tous les écrans de discussion se lisent comme un seul système.
+/// Partagée entre GameBoxHistoryScreen (liste des discussions) et
+/// GameCardThreadScreen (fil d'UNE discussion, voir _ThreadDateHeader) —
+/// avant, seule la liste l'avait, jamais le fil lui-même (voir demande
+/// utilisateur : "ça n'apparaît pas" en comparant à une capture WhatsApp).
+String dateHeaderLabel(BuildContext context, DateTime dt) {
+  final t = LocaleScope.of(context).t;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final date = DateTime(dt.year, dt.month, dt.day);
+  final diff = today.difference(date).inDays;
+  if (diff == 0) return t('date_today');
+  if (diff == 1) return t('date_yesterday');
+  if (diff < 7) return t(_weekdayKeys[dt.weekday - 1]);
+  return '${dt.day} ${t(_monthKeys[dt.month - 1])} ${dt.year}';
+}
 
 /// Liste des cartes déjà jouées d'une boîte (voir GameCardController::history)
 /// — ouverte depuis GameArchiveTray dans l'éventail de cartes. Chaque carte
@@ -177,6 +219,25 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
   }
 
   void _onRealtimeEvent(RealtimeEvent event) {
+    // Coches envoyé/reçu/lu du DERNIER message de chaque discussion (voir
+    // _HistoryRow.tick) — sans ça, elles ne se mettaient à jour qu'au
+    // prochain rechargement complet de la liste, jamais en direct pendant
+    // qu'elle reste ouverte (voir demande utilisateur, même trou déjà
+    // corrigé sur TimelineScreen).
+    if (event.event == 'SendSeen') {
+      final sendId = event.data?['send_id'] as String?;
+      if (sendId == null) return;
+      final seenAtStr = event.data?['seen_at'] as String?;
+      _applySeen(sendId, seenAtStr != null ? DateTime.parse(seenAtStr) : DateTime.now());
+      return;
+    }
+    if (event.event == 'SendDelivered') {
+      final sendIds = (event.data?['send_ids'] as List?)?.map((e) => e as String).toList();
+      if (sendIds == null || sendIds.isEmpty) return;
+      final deliveredAtStr = event.data?['delivered_at'] as String?;
+      _applyDelivered(sendIds, deliveredAtStr != null ? DateTime.parse(deliveredAtStr) : DateTime.now());
+      return;
+    }
     // Réponse/devinette/verdict sur une carte déjà listée ici (voir
     // GameCardController::answer/guess/verdict, réservé aux jeux
     // `session_type = 'quiz'`) — met à jour son aperçu en place, comme les
@@ -224,6 +285,40 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
     setState(() => _sends = [send, ...current]);
   }
 
+  /// Met à jour la coche "lu" du DERNIER message de la discussion concernée
+  /// (voir Send.lastMessage = latestReply ?? this) — le message vu peut être
+  /// aussi bien la carte racine qu'une réponse plus récente.
+  void _applySeen(String sendId, DateTime seenAt) {
+    if (!mounted) return;
+    final current = _sends ?? [];
+    final index = current.indexWhere((s) => s.id == sendId || s.latestReply?.id == sendId);
+    if (index == -1) return;
+    final updated = List<Send>.of(current);
+    final target = updated[index];
+    updated[index] = target.latestReply?.id == sendId
+        ? target.copyWith(latestReply: target.latestReply!.copyWith(status: 'seen', seenAt: seenAt))
+        : target.copyWith(status: 'seen', seenAt: seenAt);
+    setState(() => _sends = updated);
+  }
+
+  void _applyDelivered(List<String> sendIds, DateTime deliveredAt) {
+    if (!mounted) return;
+    final current = _sends ?? [];
+    var changed = false;
+    final updated = current.map((s) {
+      if (s.latestReply != null && sendIds.contains(s.latestReply!.id) && s.latestReply!.status == 'sent') {
+        changed = true;
+        return s.copyWith(latestReply: s.latestReply!.copyWith(status: 'delivered', deliveredAt: deliveredAt));
+      }
+      if (s.latestReply == null && sendIds.contains(s.id) && s.status == 'sent') {
+        changed = true;
+        return s.copyWith(status: 'delivered', deliveredAt: deliveredAt);
+      }
+      return s;
+    }).toList();
+    if (changed) setState(() => _sends = updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
@@ -246,45 +341,8 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
     );
   }
 
-  static const _weekdayKeys = [
-    'weekday_monday',
-    'weekday_tuesday',
-    'weekday_wednesday',
-    'weekday_thursday',
-    'weekday_friday',
-    'weekday_saturday',
-    'weekday_sunday',
-  ];
-  static const _monthKeys = [
-    'month_january',
-    'month_february',
-    'month_march',
-    'month_april',
-    'month_may',
-    'month_june',
-    'month_july',
-    'month_august',
-    'month_september',
-    'month_october',
-    'month_november',
-    'month_december',
-  ];
-
-  /// Même étiquette de séparateur de date que le Carnet de bord (voir
-  /// TimelineScreen._dateHeaderFor) — même vocabulaire ("Aujourd'hui",
-  /// "Hier"...) pour que les deux écrans se lisent comme un seul système.
-  String _dateHeaderFor(DateTime dt) {
-    final t = LocaleScope.of(context).t;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(dt.year, dt.month, dt.day);
-    final diff = today.difference(date).inDays;
-    if (diff == 0) return t('date_today');
-    if (diff == 1) return t('date_yesterday');
-    final weekday = t(_weekdayKeys[dt.weekday - 1]);
-    if (diff < 7) return weekday;
-    return '$weekday ${dt.day} ${t(_monthKeys[dt.month - 1])}';
-  }
+  /// Voir dateHeaderLabel (fonction partagée en tête de fichier).
+  String _dateHeaderFor(DateTime dt) => dateHeaderLabel(context, dt);
 
   /// Même aplatissement en-têtes + éléments que TimelineScreen._groupByDate
   /// — les discussions d'une même date sont ainsi reliées par le même fil
@@ -319,9 +377,22 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
     final sends = _sends ?? [];
     if (sends.isEmpty) {
       return Center(
-        child: EmptyState(
-          icon: Icons.style_rounded,
-          message: LocaleScope.of(context).t('game_history_empty'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            EmptyState(
+              icon: Icons.style_rounded,
+              message: LocaleScope.of(context).t('game_history_empty'),
+            ),
+            // Cet écran est toujours ouvert depuis l'éventail de cartes
+            // (voir la docstring de la classe) — "ouvrir l'éventail" est
+            // donc simplement un retour en arrière, pas une nouvelle
+            // navigation, l'éventail est déjà la page juste en dessous.
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(LocaleScope.of(context).t('game_history_open_fan')),
+            ),
+          ],
         ),
       );
     }
@@ -366,7 +437,14 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
             {'sender': isMine ? LocaleScope.of(context).t('game_sent_by_you') : senderName},
           ),
           time: _formattedTime(lastMessage.createdAt),
-          answered: card.isAnswered,
+          // Même système de coches que dans le fil (voir SendTickIcon),
+          // basé sur le dernier message de la discussion — pas un statut
+          // "répondu au jeu" (voir demande utilisateur : ce symbole doit
+          // suivre "les mêmes conditions que ce qui est défini à
+          // l'intérieur d'une discussion"). Comme dans le fil, jamais
+          // affiché sur un message REÇU (voir SendTickIcon, "jamais sur
+          // celles reçues").
+          tick: isMine ? sendTickFor(lastMessage) : null,
           // Le dernier message m'a été envoyé (pas par moi) ET je ne l'ai
           // pas encore ouvert — voir Send.isSeen, mis à jour dès l'ouverture
           // de la discussion (GameCardThreadScreen._markIncomingAsSeen).
@@ -441,6 +519,38 @@ class _DateHeaderLabel extends StatelessWidget {
   }
 }
 
+/// Séparateur de date DANS un fil de discussion (voir GameCardThreadScreen)
+/// — pastille centrée, pas l'étiquette alignée à gauche de _DateHeaderLabel
+/// (celle-ci sert à la LISTE des discussions, un contexte différent) : même
+/// forme que la capture de référence WhatsApp fournie par l'utilisateur.
+class _ThreadDateHeader extends StatelessWidget {
+  final String label;
+  final ThemePalette theme;
+
+  const _ThreadDateHeader({required this.label, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.nunito(fontSize: 11.5, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Une ligne de la liste des discussions : l'avatar est relié au
 /// précédent/suivant par un fil vertical fin quand ils partagent la même
 /// date — même traitement que TimelineScreen._TimelineRow, pour que les
@@ -453,7 +563,10 @@ class _HistoryRow extends StatelessWidget {
   final String questionText;
   final String subtitle;
   final String time;
-  final bool answered;
+  // Coche d'envoi/réception/lecture du DERNIER message (voir SendTickIcon)
+  // — `null` quand ce dernier message a été reçu (pas envoyé par moi),
+  // jamais affichée dans ce cas, même règle que dans le fil.
+  final SendTick? tick;
   // Le DERNIER message de cette discussion (voir Send.lastMessage) m'a été
   // envoyé ET je ne l'ai pas encore vu (voir Send.isSeen) — même logique
   // que TimelineScreen/EmojiStoryHistoryScreen, pour un langage visuel
@@ -469,7 +582,7 @@ class _HistoryRow extends StatelessWidget {
     required this.questionText,
     required this.subtitle,
     required this.time,
-    required this.answered,
+    required this.tick,
     required this.unread,
     required this.onTap,
   });
@@ -556,12 +669,10 @@ class _HistoryRow extends StatelessWidget {
                                 decoration: BoxDecoration(shape: BoxShape.circle, color: theme.primary),
                               ),
                             ],
-                            const SizedBox(height: 6),
-                            Icon(
-                              answered ? Icons.check_circle_rounded : Icons.hourglass_empty_rounded,
-                              size: 14,
-                              color: answered ? theme.primary : theme.textOnBackgroundMuted,
-                            ),
+                            if (tick != null) ...[
+                              const SizedBox(height: 6),
+                              SendTickIcon(tick: tick!, color: theme.textOnBackgroundMuted),
+                            ],
                           ],
                         ),
                       ],
@@ -637,6 +748,18 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // sans que la réponse/révélation, plus bas, le soit).
   final Map<String, GlobalKey> _answerKeys = {};
   GlobalKey _answerKeyFor(String sendId) => _answerKeys.putIfAbsent(sendId, () => GlobalKey());
+  // Même principe, pour un simple message de chat (voir _decodeQuoted) —
+  // ni carte ni bulle de réponse, mais un message cité via "Répondre" doit
+  // pouvoir remonter jusqu'à lui aussi (voir _scrollToQuoted, demande
+  // utilisateur : "si on clique sur la réponse ça doit remonter à la carte
+  // en question", vrai aussi pour un message cité tout court).
+  final Map<String, GlobalKey> _messageKeys = {};
+  GlobalKey _messageKeyFor(String sendId) => _messageKeys.putIfAbsent(sendId, () => GlobalKey());
+  // Même principe, pour le panneau de réactions déployé sous une carte/un
+  // message (voir _reactionPanel) — permet de le faire défiler jusqu'à
+  // rester visible dès son ouverture (voir _reactionOverlay).
+  final Map<String, GlobalKey> _reactionPanelKeys = {};
+  GlobalKey _reactionPanelKeyFor(String sendId) => _reactionPanelKeys.putIfAbsent(sendId, () => GlobalKey());
   String? _localAnswer;
   // Quelle carte + quel bouton (Oui/Non) est en train d'envoyer (voir
   // _buildYesNoAnswerBar), sous la forme "<sendId>|<choix>" — plusieurs
@@ -796,18 +919,23 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       _applyDelivered(sendIds, deliveredAtStr != null ? DateTime.parse(deliveredAtStr) : DateTime.now());
       return;
     }
-    // Réponse/devinette/verdict pour la carte RACINE de cette discussion
-    // (voir GameCardController::answer/guess/verdict, réservé aux jeux
-    // `session_type = 'quiz'`) — la bulle évolue en place, jamais un nouveau
-    // message (contrairement à SendCreated ci-dessous), même principe que
-    // EmojiStorySessionScreen._onRealtimeEvent (EmojiStoryUpdated).
+    // Réponse/devinette/verdict pour la carte RACINE ou une carte relancée
+    // de cette discussion (voir GameCardController::answer/guess/verdict) —
+    // la bulle évolue en place, jamais un nouveau message (contrairement à
+    // SendCreated ci-dessous), même principe que
+    // EmojiStorySessionScreen._onRealtimeEvent (EmojiStoryUpdated). Avant,
+    // seule la carte racine était mise à jour ici : la révélation d'un
+    // "Sondage Surprise" relancé (voir _sendAnotherCard) n'apparaissait
+    // qu'à la réouverture de l'écran — l'option "Modifier" restait
+    // affichée alors que le binôme avait déjà répondu (voir demande
+    // utilisateur : ça doit être du temps réel).
     if (event.event == 'GameCardUpdated') {
       final sendJson = event.data?['send'] as Map<String, dynamic>?;
       if (sendJson == null) return;
       final updated = Send.fromJson(sendJson);
-      if (updated.id != widget.send.id) return;
+      if (updated.id != _rootSend.id && !_replies.any((r) => r.id == updated.id)) return;
       if (!mounted) return;
-      setState(() => _rootSend = updated);
+      setState(() => _updateSend(updated));
       return;
     }
     // Réaction posée par l'un OU l'autre membre du couple sur N'IMPORTE
@@ -936,9 +1064,39 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   Widget? _reactionOverlay(ThemePalette theme, Send send) {
     final mine = _myReactionOn(send);
     final partner = _partnerReactionOn(send);
-    void onTap() => setState(
-          () => _reactionPickerOpenForSendId = _reactionPickerOpenForSendId == send.id ? null : send.id,
-        );
+    void onTap() {
+      final opening = _reactionPickerOpenForSendId != send.id;
+      setState(() => _reactionPickerOpenForSendId = opening ? send.id : null);
+      // Le panneau s'ouvre EN PLACE, juste sous [send] (voir _reactionPanel)
+      // — sans ça, une carte proche du bas de l'écran fait apparaître le
+      // panneau hors du cadre visible, juste au-dessus de la barre de
+      // saisie fixe, donnant l'impression qu'il reste "caché derrière le
+      // bouton +" (voir demande utilisateur). Il est déployé par un
+      // AnimatedSize (220ms, voir _buildMessageList) : le mesurer dès la
+      // frame suivante (comme _scrollToAnswer) donnait une hauteur encore
+      // proche de zéro, donc un calcul de défilement correct la première
+      // fois (peu de distance à parcourir) mais insuffisant les fois
+      // suivantes (davantage de contenu déjà accumulé au-dessus, voir
+      // demande utilisateur : "la seconde ou troisième fois ça reste
+      // caché") — attendre la fin de l'animation avant de mesurer donne un
+      // résultat fiable à chaque fois.
+      if (opening) {
+        // alignment: 1 (pas 0.8) — colle le BAS du panneau au bas du
+        // cadre visible, la révélation la plus complète possible plutôt
+        // qu'une simple approximation (voir demande utilisateur : "même
+        // au premier clic" — 0.8 laissait apparemment encore le bas du
+        // panneau hors champ selon la hauteur exacte du contenu déjà
+        // affiché). 300ms (pas 230) : marge de sécurité au-delà des 220ms
+        // de l'AnimatedSize, pour ne jamais mesurer une hauteur encore en
+        // cours d'animation sur un appareil plus lent.
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          final ctx = _reactionPanelKeyFor(send.id).currentContext;
+          if (ctx == null) return;
+          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 1);
+        });
+      }
+    }
 
     if (mine == null && partner == null) {
       return _ReactionTriggerCircle(emoji: _reactionEmojis.first, onTap: onTap);
@@ -1031,12 +1189,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.1);
   }
 
-  /// Remonte jusqu'au message cité par la bannière "Tu réponds à..." (voir
-  /// _replyQuoteSendId) — carte OU bulle de réponse, selon ce qui a été
-  /// cité. Ne fait rien pour un simple message de chat cité (pas de clé
-  /// dédiée pour ceux-là) plutôt que de planter.
+  /// Remonte jusqu'au message cité — carte, bulle de réponse OU simple
+  /// message de chat, selon ce qui a été cité (voir _replyQuoteSendId pour
+  /// la bannière "Tu réponds à...", et _decodeQuoted pour une citation déjà
+  /// affichée dans une bulle envoyée/reçue, voir demande utilisateur). Ne
+  /// fait rien si la clé n'existe plus (ex. citation d'un message trop
+  /// ancien, pas encore chargé dans ce fil) plutôt que de planter.
   void _scrollToQuoted(String sendId) {
-    final ctx = _cardKeys[sendId]?.currentContext ?? _answerKeys[sendId]?.currentContext;
+    final ctx = _cardKeys[sendId]?.currentContext ??
+        _answerKeys[sendId]?.currentContext ??
+        _messageKeys[sendId]?.currentContext;
     if (ctx == null) return;
     Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.1);
   }
@@ -1091,55 +1253,62 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     return _rootSend;
   }
 
-  /// Le Send (racine OU une relance envoyée via "envoyer une autre carte",
-  /// voir _replies) qui M'ATTEND encore pour "Le Sondage Surprise" — celui
-  /// qui me l'a envoyée a déjà choisi sa réponse cachée au moment de
-  /// l'envoi (voir GameCardController::send), c'est à MOI de répondre.
-  /// Avant, seule la carte racine était prise en compte ici : toute carte
-  /// relancée dans la même discussion restait bloquée sans aucun moyen d'y
-  /// répondre (le champ de saisie libre était affiché à la place, mais
-  /// GameCardController::answer refuse un texte libre pour ce jeu).
-  Send? get _pendingBlindPollSend {
-    if (!widget.game.isBlindPoll) return null;
-    for (final s in [_rootSend, ..._replies]) {
-      final c = s.gameCard;
-      if (c == null) continue;
-      if (s.recipientId == widget.user.id && c.answer == null) return s;
-    }
-    return null;
-  }
+  /// Id du Send (racine OU une relance, voir _replies) dont la carte de ce
+  /// jeu est EN COURS d'envoi de ma réponse — null si aucune. Chaque carte
+  /// "Le Sondage Surprise" en attente garde son propre picker collé sous
+  /// elle (voir _buildBlindPollAnswerBar, appelé une fois par carte non
+  /// répondue dans _buildMessageList) plutôt qu'un seul picker partagé dans
+  /// la barre de saisie qui ne pouvait répondre qu'à UNE carte à la fois —
+  /// avant, une deuxième carte reçue dans la même discussion avant d'avoir
+  /// répondu à la première restait bloquée sans aucun moyen d'y répondre
+  /// (voir demande utilisateur : "on doit pouvoir répondre à chacune").
+  String? _submittingBlindAnswer;
 
-  /// Remplace la barre de saisie libre par des boutons de choix tant qu'une
-  /// carte de ce jeu attend ma réponse (voir _pendingBlindPollSend et
-  /// _buildBlindPollAnswerBar) — [_localAnswer] gère l'affichage optimiste
-  /// de la carte racine spécifiquement (voir _submitBlindPollAnswer).
-  bool get _needsBlindPollPicker {
-    final pending = _pendingBlindPollSend;
-    if (pending == null) return false;
-    return pending.id != _rootSend.id || _localAnswer == null;
-  }
-
-
-  bool _submittingBlindAnswer = false;
-
-  Future<void> _submitBlindPollAnswer(String answer) async {
-    final pending = _pendingBlindPollSend;
-    final card = pending?.gameCard;
-    if (pending == null || card == null || _submittingBlindAnswer) return;
-    setState(() => _submittingBlindAnswer = true);
+  Future<void> _submitBlindPollAnswer(Send target, String answer) async {
+    final card = target.gameCard;
+    if (card == null || _submittingBlindAnswer != null) return;
+    setState(() => _submittingBlindAnswer = target.id);
     try {
       final updated = await GameService.instance.answerBlindPoll(card.id, answer);
       if (!mounted) return;
+      // Pas de _scrollToBottom() ici, contrairement aux autres envois du
+      // fil : la révélation apparaît directement à la place du picker,
+      // là où l'œil est déjà posé — un saut vers le bas déplacerait la vue
+      // sans raison (voir demande utilisateur : "l'écran ne me renvoie
+      // plus en bas").
       setState(() {
-        if (pending.id == _rootSend.id) _localAnswer = answer;
-        _updateSend(pending.copyWith(gameCard: updated));
+        if (target.id == _rootSend.id) _localAnswer = answer;
+        _updateSend(target.copyWith(gameCard: updated));
       });
-      _scrollToBottom();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
-      if (mounted) setState(() => _submittingBlindAnswer = false);
+      if (mounted) setState(() => _submittingBlindAnswer = null);
+    }
+  }
+
+  /// Id de la carte "Le Sondage Surprise" dont je suis en train de modifier
+  /// MA réponse (voir _buildPollWaitingBubble) — un seul picker de
+  /// modification ouvert à la fois, comme pour l'envoi initial.
+  String? _editingBlindPollAnswerFor;
+
+  Future<void> _updateBlindPollSenderAnswer(GameCardSend card, String answer) async {
+    if (_submittingBlindAnswer != null) return;
+    setState(() => _submittingBlindAnswer = card.id);
+    try {
+      final updated = await GameService.instance.updateBlindPollSenderAnswer(card.id, answer);
+      if (!mounted) return;
+      setState(() {
+        _editingBlindPollAnswerFor = null;
+        final target = [_rootSend, ..._replies].firstWhere((s) => s.gameCard?.id == card.id);
+        _updateSend(target.copyWith(gameCard: updated));
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _submittingBlindAnswer = null);
     }
   }
 
@@ -1182,11 +1351,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     // utilisateur) — un champ à coup unique ne le permettrait pas.
     final quote = _replyQuoteText;
     if (quote != null) {
+      final quoteId = _replyQuoteSendId;
       setState(() {
         _replyQuoteText = null;
         _replyQuoteSendId = null;
       });
-      final pending = _PendingText(text: _encodeQuoted(quote, rawText), time: _nextPendingTime());
+      final pending = _PendingText(
+        text: _encodeQuoted(quote, rawText, quoteSendId: quoteId),
+        time: _nextPendingTime(),
+      );
       setState(() => _pending = [..._pending, pending]);
       _scrollToBottom();
       await _sendPending(pending);
@@ -1225,21 +1398,36 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // normal (voir ContentService.sendTextReply).
   static const _quoteStart = '\u0002';
   static const _quoteEnd = '\u0003';
+  static const _quoteIdSeparator = '\u0004';
+  // Sépare l'id du message cité de son texte, À L'INTÉRIEUR de la citation
+  // (voir _encodeQuoted) — permet de remonter au message cité en tapant
+  // dessus (voir _scrollToQuoted), tout en restant lisible pour les
+  // messages déjà envoyés AVANT cet ajout (quoteId reste `null` pour
+  // ceux-là plutôt que de planter, voir _decodeQuoted).
 
-  String _encodeQuoted(String quote, String text) => '$_quoteStart$quote$_quoteEnd$text';
+  String _encodeQuoted(String quote, String text, {String? quoteSendId}) {
+    final quotePart = quoteSendId != null ? '$quoteSendId$_quoteIdSeparator$quote' : quote;
+    return '$_quoteStart$quotePart$_quoteEnd$text';
+  }
 
-  /// Sépare un texte de message éventuellement cité en (citation, texte
-  /// réel) — `quote` reste `null` pour un message de chat normal (l'énorme
-  /// majorité), aucun risque de faux positif : `_quoteStart` n'apparaît
-  /// jamais dans un texte tapé au clavier.
-  ({String? quote, String text}) _decodeQuoted(String raw) {
+  /// Sépare un texte de message éventuellement cité en (id du message cité,
+  /// citation, texte réel) — `quote` reste `null` pour un message de chat
+  /// normal (l'énorme majorité), aucun risque de faux positif : `_quoteStart`
+  /// n'apparaît jamais dans un texte tapé au clavier.
+  ({String? quoteId, String? quote, String text}) _decodeQuoted(String raw) {
     if (raw.startsWith(_quoteStart)) {
       final endIndex = raw.indexOf(_quoteEnd);
       if (endIndex != -1) {
-        return (quote: raw.substring(1, endIndex), text: raw.substring(endIndex + 1));
+        final quotePart = raw.substring(1, endIndex);
+        final text = raw.substring(endIndex + 1);
+        final sepIndex = quotePart.indexOf(_quoteIdSeparator);
+        if (sepIndex != -1) {
+          return (quoteId: quotePart.substring(0, sepIndex), quote: quotePart.substring(sepIndex + 1), text: text);
+        }
+        return (quoteId: null, quote: quotePart, text: text);
       }
     }
-    return (quote: null, text: raw);
+    return (quoteId: null, quote: null, text: raw);
   }
 
   /// Menu générique de clic-maintenu — sur N'IMPORTE QUEL message du fil
@@ -1270,6 +1458,14 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     final theme = ThemeScope.paletteOf(context);
     final t = LocaleScope.of(context).t;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    // "Sans Détour" (voir Game.isYesNoOnly) n'a JAMAIS de zone de texte
+    // libre — le Oui/Non brut EST la réponse finale, sans justification
+    // possible (voir _buildActionsOnlyComposer). "Répondre" permettrait de
+    // contourner ça en citant n'importe quel message avec un texte libre :
+    // masqué pour CE jeu uniquement, quel que soit ce qui est cité (carte,
+    // poème, battement de cœur...), pas seulement pour les cartes "défi"
+    // (voir demande utilisateur : "uniquement pour ce jeu").
+    final effectiveHideReply = hideReply || widget.game.isYesNoOnly;
     final selected = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -1278,7 +1474,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       ),
       color: theme.surface,
       items: [
-        if (!hideReply)
+        if (!effectiveHideReply)
           PopupMenuItem(
             value: 'reply',
             child: Row(
@@ -1498,9 +1694,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     try {
       final reply = await ContentService.instance.sendTextReply(widget.send.id, pending.text);
       if (!mounted) return;
+      // Meme protection que _sendHeartbeatReply : l'echo temps reel peut
+      // deja avoir ajoute ce message avant que cette reponse HTTP revienne.
       setState(() {
         _pending = _pending.where((p) => p != pending).toList();
-        _replies = [..._replies, reply];
+        if (!_replies.any((r) => r.id == reply.id)) {
+          _replies = [..._replies, reply];
+        }
       });
       _syncRepliesCacheSilently();
     } catch (_) {
@@ -1759,7 +1959,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       // rechargement complet) avant que quoi que ce soit apparaisse.
       final reply = await ContentService.instance.sendHeartbeat(message: message, replyToSendId: widget.send.id);
       if (!mounted) return;
-      setState(() => _replies = [..._replies, reply]);
+      // L'écho temps réel de notre propre envoi (voir _onRealtimeEvent) peut
+      // arriver avant cette réponse HTTP et l'ajouter en premier — éviter un
+      // doublon si c'est déjà le cas (voir demande utilisateur : le message
+      // apparaissait deux fois jusqu'à quitter/revenir sur l'écran).
+      if (!_replies.any((r) => r.id == reply.id)) {
+        setState(() => _replies = [..._replies, reply]);
+      }
       _scrollToBottom();
       _syncRepliesCacheSilently();
       // Le solde affiché ailleurs (badge en haut) peut se rafraîchir en
@@ -2007,18 +2213,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 ),
               ),
             ),
-          // Même badge que dans Duo (voir DashboardTab) — ouvre la Boutique
-          // au tap, pour recharger sans quitter la discussion.
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: CoinBalanceBadge(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ShopScreen()),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
       body: ThemedBackground(
@@ -2040,10 +2234,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                     children: [
                       Expanded(child: _buildMessageList(theme, card)),
                       Padding(
-                        padding: EdgeInsets.fromLTRB(12, 6, 12, MediaQuery.of(context).viewInsets.bottom + 12),
-                        child: _needsBlindPollPicker
-                            ? _buildBlindPollAnswerBar(theme, _pendingBlindPollSend!.gameCard!)
-                            : _buildComposer(theme),
+                        // Le Scaffold remonte déjà tout seul au-dessus du
+                        // clavier (resizeToAvoidBottomInset, par défaut à
+                        // true) — ajouter ENCORE viewInsets.bottom ici
+                        // comptait la hauteur du clavier deux fois, laissant
+                        // un grand vide entre la zone de texte et le clavier
+                        // (voir capture utilisateur : "la zone de texte
+                        // s'est décalée en haut").
+                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                        child: _buildComposer(theme),
                       ),
                     ],
                   ),
@@ -2060,6 +2259,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       children: [
+        // Séparateur de date pour la carte racine — premier message du fil,
+        // toujours daté (voir demande utilisateur, capture de référence
+        // WhatsApp : "Aujourd'hui"/"Hier"/nom du jour/date complète).
+        _ThreadDateHeader(label: dateHeaderLabel(context, widget.send.createdAt), theme: theme),
         GestureDetector(
           // Clic-maintenu → menu "Répondre"/pensée/poème (voir
           // _showMessageActionsMenu) — disponible sur N'IMPORTE QUEL
@@ -2078,6 +2281,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             question: card.questionTextFor(LocaleScope.of(context).current.code),
             boxTitle: card.gameBoxTitleFor(LocaleScope.of(context).current.code),
             imagePath: widget.box.imagePath,
+            imageFocusX: widget.box.imageFocusX,
+            imageFocusY: widget.box.imageFocusY,
             iconKey: widget.box.iconKey,
             time: widget.send.createdAt,
             tick: _isMine ? sendTickFor(_rootSend) : null,
@@ -2099,7 +2304,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   padding: const EdgeInsets.only(top: 20, bottom: 4),
                   child: Align(
                     alignment: _isMine ? Alignment.centerRight : Alignment.centerLeft,
-                    child: _reactionPanel(theme, _rootSend),
+                    child: KeyedSubtree(
+                      key: _reactionPanelKeyFor(_rootSend.id),
+                      child: _reactionPanel(theme, _rootSend),
+                    ),
                   ),
                 )
               : const SizedBox.shrink(),
@@ -2217,6 +2425,23 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           // Oui/Non juste au-dessus (voir demande utilisateur).
           const SizedBox(height: 6),
           _buildDefiVerdictBar(theme, _rootSend),
+        ] else if (widget.game.isBlindPoll && _isMine && card.senderAnswer != null) ...[
+          // Ma propre réponse (déjà posée à l'envoi, voir
+          // GameCardController::send) reste invisible pour mon binôme tant
+          // qu'iel n'a pas répondu à son tour — mais MOI, je dois pouvoir la
+          // revoir en attendant (voir demande utilisateur : "je dois
+          // pouvoir voir ma propre réponse en attendant que mon binôme
+          // réponde"), pas juste un silence total jusqu'à la révélation.
+          const SizedBox(height: 6),
+          _buildPollWaitingBubble(theme, card),
+        ] else if (widget.game.isBlindPoll && !_isMine && card.senderAnswer != null) ...[
+          // Picker collé à CETTE carte pour MA réponse en tant que
+          // destinataire, même principe que le picker Oui/Non juste
+          // au-dessus — sans ça, une deuxième carte reçue avant d'avoir
+          // répondu à la première restait bloquée sans aucun moyen d'y
+          // répondre (voir demande utilisateur).
+          const SizedBox(height: 6),
+          _buildBlindPollAnswerBar(theme, _rootSend),
         ],
         if (_loadingReplies)
           const Padding(
@@ -2230,9 +2455,12 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         // toujours rendue en dernier auparavant) passer AVANT un message
         // envoyé après elle (constaté en réel, voir demande utilisateur :
         // "le plus récent doit être en bas").
-        for (final entry in _buildTimelineEntries(theme)) ...[
+        // Un séparateur de date est inséré à chaque changement de jour (voir
+        // dateHeaderLabel) — `lastDate` commence à la date de la carte
+        // racine, déjà datée juste au-dessus.
+        for (final entry in _timelineEntriesWithDateHeaders(theme)) ...[
           const SizedBox(height: 6),
-          entry.widget,
+          entry,
         ],
       ],
     );
@@ -2291,6 +2519,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   question: reply.gameCard!.questionTextFor(localeCode),
                   boxTitle: reply.gameCard!.gameBoxTitleFor(localeCode),
                   imagePath: widget.box.imagePath,
+                  imageFocusX: widget.box.imageFocusX,
+                  imageFocusY: widget.box.imageFocusY,
                   iconKey: widget.box.iconKey,
                   time: reply.createdAt,
                   tick: reply.senderId == widget.user.id ? sendTickFor(reply) : null,
@@ -2312,7 +2542,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                         child: Align(
                           alignment:
                               reply.senderId == widget.user.id ? Alignment.centerRight : Alignment.centerLeft,
-                          child: _reactionPanel(theme, reply),
+                          child: KeyedSubtree(
+                            key: _reactionPanelKeyFor(reply.id),
+                            child: _reactionPanel(theme, reply),
+                          ),
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -2325,6 +2558,23 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               if (widget.game.isBlindPoll && reply.gameCard!.isPollRevealed) ...[
                 const SizedBox(height: 6),
                 KeyedSubtree(key: _answerKeyFor(reply.id), child: _buildPollRevealBubble(theme, reply.gameCard!)),
+              ] else if (widget.game.isBlindPoll &&
+                  reply.senderId == widget.user.id &&
+                  reply.gameCard!.senderAnswer != null) ...[
+                // Même repli que pour la carte racine (voir
+                // _buildPollWaitingBubble) : je dois voir ma propre réponse
+                // sur CETTE carte relancée aussi, pas seulement la toute
+                // première du fil.
+                const SizedBox(height: 6),
+                _buildPollWaitingBubble(theme, reply.gameCard!),
+              ] else if (widget.game.isBlindPoll &&
+                  reply.recipientId == widget.user.id &&
+                  reply.gameCard!.senderAnswer != null) ...[
+                // Picker collé à CETTE carte relancée pour MA réponse en
+                // tant que destinataire, même principe que pour la racine
+                // juste au-dessus.
+                const SizedBox(height: 6),
+                _buildBlindPollAnswerBar(theme, reply),
               ],
               // Réponse à CETTE carte relancée pour les jeux avec un
               // mécanisme dédié (Sondage Surprise déjà géré au-dessus,
@@ -2477,15 +2727,23 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         final decoded = _decodeQuoted(_replyText(reply));
         entries.add(_TimelineEntry(
           reply.createdAt,
-          _ChatBubble(
-            theme: theme,
-            isMine: reply.senderId == widget.user.id,
-            text: decoded.text,
-            time: reply.createdAt,
-            tick: reply.senderId == widget.user.id ? sendTickFor(reply) : null,
-            replyPreview: decoded.quote,
-            onLongPress: (pos) =>
-                _showMessageActionsMenu(context, pos, quoteText: decoded.text, quoteSendId: reply.id),
+          KeyedSubtree(
+            key: _messageKeyFor(reply.id),
+            child: _ChatBubble(
+              theme: theme,
+              isMine: reply.senderId == widget.user.id,
+              text: decoded.text,
+              time: reply.createdAt,
+              tick: reply.senderId == widget.user.id ? sendTickFor(reply) : null,
+              replyPreview: decoded.quote,
+              // Citation tappable pour remonter au message cité (voir
+              // _scrollToQuoted) — quoteId reste `null` pour un message
+              // envoyé AVANT l'ajout de ce lien (voir _decodeQuoted), pas
+              // de lien plutôt que de planter dans ce cas.
+              onReplyTap: decoded.quoteId == null ? null : () => _scrollToQuoted(decoded.quoteId!),
+              onLongPress: (pos) =>
+                  _showMessageActionsMenu(context, pos, quoteText: decoded.text, quoteSendId: reply.id),
+            ),
           ),
         ));
       }
@@ -2503,9 +2761,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           tick: pending.failed ? SendTick.failed : SendTick.sending,
           onRetry: pending.failed ? () => _sendPending(pending) : null,
           replyPreview: decoded.quote,
-          // Pas encore d'id serveur stable (voir _PendingText) — citation
-          // possible, mais sans lien "remonter à" tant que l'envoi n'est
-          // pas confirmé.
+          // Le message cité (s'il y en a un) a déjà un id stable, même si
+          // CE message-ci (encore en attente, voir _PendingText) n'en a pas
+          // lui-même — le lien "remonter à" fonctionne donc dès l'affichage
+          // optimiste, pas seulement une fois confirmé.
+          onReplyTap: decoded.quoteId == null ? null : () => _scrollToQuoted(decoded.quoteId!),
+          // Pas encore d'id serveur stable pour CE message — citation
+          // possible, mais personne ne peut encore "remonter à" lui tant
+          // que l'envoi n'est pas confirmé (voir onLongPress sans
+          // quoteSendId).
           onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: decoded.text),
         ),
       ));
@@ -2520,6 +2784,24 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         return byTime != 0 ? byTime : a.key.compareTo(b.key);
       });
     return indexed.map((e) => e.value).toList();
+  }
+
+  /// Insère un _ThreadDateHeader entre deux entrées de jours différents (et
+  /// avant la première si elle tombe un autre jour que la carte racine,
+  /// déjà datée juste au-dessus dans _buildMessageList) — voir
+  /// dateHeaderLabel/demande utilisateur, capture de référence WhatsApp.
+  List<Widget> _timelineEntriesWithDateHeaders(ThemePalette theme) {
+    final widgets = <Widget>[];
+    var lastDate = DateTime(widget.send.createdAt.year, widget.send.createdAt.month, widget.send.createdAt.day);
+    for (final entry in _buildTimelineEntries(theme)) {
+      final entryDate = DateTime(entry.time.year, entry.time.month, entry.time.day);
+      if (entryDate != lastDate) {
+        widgets.add(_ThreadDateHeader(label: dateHeaderLabel(context, entry.time), theme: theme));
+        lastDate = entryDate;
+      }
+      widgets.add(entry.widget);
+    }
+    return widgets;
   }
 
   Widget _buildClassicAnswerBubble(ThemePalette theme, Send target) {
@@ -2553,43 +2835,61 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   Widget _buildHeartbeatBubble(ThemePalette theme, Send reply, String messageText) {
     final isMine = reply.senderId == widget.user.id;
     final hasImages = reply.heartbeatImages.isNotEmpty;
+    // Cette bulle ne fait que 210px de large — le texte manuscrit par
+    // défaut (HeartbeatCard) est pensé pour une carte pleine largeur et y
+    // débordait/paraissait démesuré (voir demande utilisateur, même
+    // correctif que _PoemReplyBubble pour les cartes-poèmes).
     final card = hasImages
         ? SizedBox(
             width: 210,
             child: AspectRatio(
               aspectRatio: 3 / 4,
-              child: HeartbeatCard(images: reply.heartbeatImages, message: messageText, theme: theme),
+              child: HeartbeatCard(images: reply.heartbeatImages, message: messageText, theme: theme, scale: 0.6),
             ),
           )
         : ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 240),
-            child: HeartbeatCard(images: const [], message: messageText, theme: theme),
+            child: HeartbeatCard(images: const [], message: messageText, theme: theme, scale: 0.6),
           );
 
+    // Heure + accusé de lecture posés DIRECTEMENT sur la carte (coin bas
+    // droit, pastille sombre), pas comme un élément séparé en dessous — un
+    // Align/Row sous une carte de largeur variable pouvait finir visuellement
+    // détaché du bord de la carte (voir demande utilisateur : "il y a des
+    // heures qui se baladent"). Même traitement, garanti fiable, que
+    // _GameCardMessageBubble.
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onTap: () => showHeartbeatReplyModal(context, images: reply.heartbeatImages, message: messageText),
         onLongPressStart: (details) =>
             _showMessageActionsMenu(context, details.globalPosition, quoteText: messageText, quoteSendId: reply.id),
-        child: Column(
-          crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        child: Stack(
           children: [
             card,
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${reply.createdAt.toLocal().hour.toString().padLeft(2, '0')}:${reply.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
-                  style: GoogleFonts.nunito(fontSize: 10.5, color: theme.textOnBackgroundMuted),
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                if (isMine) ...[
-                  const SizedBox(width: 4),
-                  SendTickIcon(tick: sendTickFor(reply), color: theme.textOnBackgroundMuted, onRetry: null),
-                ],
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${reply.createdAt.toLocal().hour.toString().padLeft(2, '0')}:${reply.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
+                      style: GoogleFonts.nunito(fontSize: 10.5, color: Colors.white),
+                    ),
+                    if (isMine) ...[
+                      const SizedBox(width: 4),
+                      SendTickIcon(tick: sendTickFor(reply), color: Colors.white, onRetry: null),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -2867,9 +3167,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     }
   }
 
-  /// Boutons de choix remplaçant la barre de saisie libre tant que le
-  /// binôme n'a pas répondu — voir _needsBlindPollPicker.
-  Widget _buildBlindPollAnswerBar(ThemePalette theme, GameCardSend card) {
+  /// Boutons de choix collés SOUS [target] elle-même dans le fil (voir
+  /// _buildMessageList) tant qu'elle attend ma réponse — chaque carte non
+  /// répondue garde son propre picker, même principe que
+  /// _buildYesNoAnswerBar (voir demande utilisateur : plusieurs cartes de
+  /// ce jeu peuvent attendre ma réponse en même temps dans la même
+  /// discussion).
+  Widget _buildBlindPollAnswerBar(ThemePalette theme, Send target) {
+    final card = target.gameCard!;
+    final loading = _submittingBlindAnswer == target.id;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -2896,8 +3202,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   label: option,
                   color: theme.primary,
                   filled: false,
-                  loading: _submittingBlindAnswer,
-                  onTap: _submittingBlindAnswer ? null : () => _submitBlindPollAnswer(option),
+                  loading: loading,
+                  onTap: _submittingBlindAnswer != null ? null : () => _submitBlindPollAnswer(target, option),
                 ),
             ],
           ),
@@ -3006,6 +3312,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   /// _submitSenderAnswer plutôt que answer.
   Widget _buildSenderAnswerBar(ThemePalette theme, Send target) {
     final t = LocaleScope.of(context).t;
+    final partnerName = _partner?.prenom ?? t('game_partner_name_fallback');
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -3017,9 +3324,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            t('game_sender_answer_prompt'),
+            t('game_sender_answer_prompt', {'partner': partnerName}),
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13, color: theme.textOnBackground),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t('game_sender_answer_subtitle'),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
           ),
           const SizedBox(height: 10),
           Row(
@@ -3074,9 +3387,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           children: [
             Icon(Icons.hourglass_top_rounded, size: 12, color: theme.textOnBackgroundMuted),
             const SizedBox(width: 4),
-            Text(
-              LocaleScope.of(context).t('game_invite_waiting_label', {'partner': partnerName}),
-              style: GoogleFonts.nunito(fontSize: 11, fontStyle: FontStyle.italic, color: theme.textOnBackgroundMuted),
+            // Flexible + ellipsis : un prénom (ou une traduction) trop long
+            // débordait sinon hors de l'écran (Row sans limite de largeur,
+            // voir demande utilisateur) — se tronque proprement à la place.
+            Flexible(
+              child: Text(
+                LocaleScope.of(context).t('game_invite_waiting_label', {'partner': partnerName}),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.nunito(fontSize: 11, fontStyle: FontStyle.italic, color: theme.textOnBackgroundMuted),
+              ),
             ),
           ],
         ),
@@ -3102,16 +3422,17 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     // utilisateur : avant, l'entrée disparaissait purement et simplement,
     // sans plus aucun moyen de vérifier qu'elle avait bien été envoyée).
     final alreadyInvited = card.senderInvitedAt != null || _invitingSenderForSendId == cardSend.id;
-    final iconColor = answeredByMe ? Colors.white.withValues(alpha: 0.75) : theme.textOnBackgroundMuted;
+    // Le bouton flotte maintenant dans un petit cercle theme.surface au
+    // coin de la bulle (voir _ChatBubble) — toujours sur ce même fond
+    // neutre, quel que soit le dégradé de la bulle en dessous, donc plus
+    // besoin de bascule blanc/gris selon [answeredByMe] comme avant (un
+    // icône blanc y devenait invisible, voir demande utilisateur : "revoir").
+    final iconColor = theme.primary;
     final partnerName = _partner?.prenom ?? t('game_partner_name_fallback');
-    // Rendu DANS le menu déroulant lui-même (toujours sur theme.surface,
-    // jamais sur le dégradé de la bulle) — même teinte grisée que les
-    // autres textes du menu, pas de mélange avec [iconColor] ci-dessus qui
-    // sert uniquement au petit icône déclencheur SUR la bulle.
     final invitedColor = theme.textOnBackgroundMuted.withValues(alpha: 0.5);
 
     return PopupMenuButton<String>(
-      icon: Icon(Icons.more_vert_rounded, size: 18, color: iconColor),
+      icon: Icon(Icons.more_vert_rounded, size: 14, color: iconColor),
       padding: EdgeInsets.zero,
       color: theme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -3120,7 +3441,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           case 'invite':
             if (alreadyInvited) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(t('game_invite_already_sent'))),
+                SnackBar(content: Text(t('game_invite_already_sent', {'partner': partnerName}))),
               );
             } else {
               _inviteSenderToAnswer(cardSend);
@@ -3293,6 +3614,104 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Ma propre réponse, seule (voir _buildPollRevealBubble pour la version
+  /// à deux réponses une fois le binôme aussi répondu) — affichée UNIQUEMENT
+  /// pour qui a envoyé la carte (jamais côté binôme, qui ne doit rien voir
+  /// avant sa propre réponse, voir demande utilisateur sur le caractère
+  /// "à l'aveugle" du jeu).
+  Widget _buildPollWaitingBubble(ThemePalette theme, GameCardSend card) {
+    final t = LocaleScope.of(context).t;
+    final editing = _editingBlindPollAnswerFor == card.id;
+    final updating = _submittingBlindAnswer == card.id;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (editing) ...[
+            // Tant que le binôme n'a pas répondu (cette bulle n'existe que
+            // dans ce cas, voir _buildMessageList), ma réponse cachée reste
+            // modifiable — verrouillé dès que la révélation existe (voir
+            // GameCardController::updateSenderAnswer, demande utilisateur).
+            Text(
+              t('game_blind_poll_edit_your_answer'),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13, color: theme.textOnBackground),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in card.options)
+                  _QuizActionButton(
+                    label: option,
+                    color: theme.primary,
+                    filled: option == card.senderAnswer,
+                    loading: updating,
+                    onTap: _submittingBlindAnswer != null
+                        ? null
+                        : () => _updateBlindPollSenderAnswer(card, option),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton(
+                onPressed: updating ? null : () => setState(() => _editingBlindPollAnswerFor = null),
+                child: Text(
+                  t('common_cancel'),
+                  style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
+                ),
+              ),
+            ),
+          ] else ...[
+            _PollAnswerCard(theme: theme, name: t('common_you'), answer: card.senderAnswer ?? ''),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton(
+                onPressed: () => setState(() => _editingBlindPollAnswerFor = card.id),
+                child: Text(
+                  t('common_edit'),
+                  style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                WaitingDots(color: theme.textOnBackgroundMuted),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    t(
+                      'game_blind_poll_waiting_for_partner',
+                      {'partner': partnerReferenceLabel(context, _partner, card.id)},
+                    ),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: theme.textOnBackgroundMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -3527,6 +3946,8 @@ class _GameCardMessageBubble extends StatelessWidget {
   final String question;
   final String boxTitle;
   final String? imagePath;
+  final double imageFocusX;
+  final double imageFocusY;
   final String? iconKey;
   final DateTime time;
   // Uniquement "en cours d'envoi"/"envoyé"/"lu" — jamais "échec" : les
@@ -3552,6 +3973,8 @@ class _GameCardMessageBubble extends StatelessWidget {
     required this.question,
     required this.boxTitle,
     required this.imagePath,
+    this.imageFocusX = 50,
+    this.imageFocusY = 50,
     required this.iconKey,
     required this.time,
     this.tick,
@@ -3563,6 +3986,13 @@ class _GameCardMessageBubble extends StatelessWidget {
     final local = time.toLocal();
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
+
+  /// Même mapping que GameBox.imageAlignment — pas d'accès à l'objet
+  /// GameBox complet ici, seulement son point de focus brut.
+  Alignment get _imageAlignment => Alignment(
+        (imageFocusX.clamp(0, 100) / 100) * 2 - 1,
+        (imageFocusY.clamp(0, 100) / 100) * 2 - 1,
+      );
 
   // Très légèrement arrondi plutôt que totalement fermé (même ratio que
   // les bulles du Carnet de bord, voir _ChatBubble dans SlideDetailScreen :
@@ -3617,6 +4047,7 @@ class _GameCardMessageBubble extends StatelessWidget {
                         Image.network(
                           imagePath!,
                           fit: BoxFit.cover,
+                          alignment: _imageAlignment,
                           errorBuilder: (context, error, stackTrace) => Center(
                             child: Icon(iconForGameBox(iconKey), size: 56, color: Colors.white.withValues(alpha: 0.55)),
                           ),
@@ -3710,6 +4141,44 @@ class _GameCardMessageBubble extends StatelessWidget {
                                 shadows: const [Shadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 2))],
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            // Heure + accusé de lecture directement sur la
+                            // carte, en bas à droite (voir capture
+                            // utilisateur : "voici comment l'heure sur
+                            // WhatsApp est représentée, faire pareil").
+                            // Pastille sombre (même traitement que le badge
+                            // "CARTE" plus haut) plutôt qu'un texte blanc nu
+                            // avec juste une ombre — sur un fond clair
+                            // (dégradé de la carte, pas toujours sombre en
+                            // bas), le texte devenait illisible/invisible
+                            // (voir demande utilisateur : "aucune date
+                            // n'apparaît nulle part").
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _time,
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 10.5,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    if (isMine && tick != null) ...[
+                                      const SizedBox(width: 4),
+                                      SendTickIcon(tick: tick!, color: Colors.white),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -3736,17 +4205,6 @@ class _GameCardMessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-          SizedBox(height: reactionOverlay != null ? 2 : 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_time, style: GoogleFonts.nunito(fontSize: 10.5, color: theme.textOnBackgroundMuted)),
-              if (isMine && tick != null) ...[
-                const SizedBox(width: 4),
-                SendTickIcon(tick: tick!, color: theme.textOnBackgroundMuted),
-              ],
-            ],
-          ),
         ],
       ),
     );
@@ -3937,11 +4395,19 @@ class _ReactionSummaryStrip extends StatelessWidget {
                   children: [
                     Text(reaction.emoji, style: const TextStyle(fontSize: 16)),
                     const SizedBox(width: 8),
-                    Text(
-                      reaction.userId == myUserId
-                          ? LocaleScope.of(context).t('common_you')
-                          : (reaction.user?.prenom ?? LocaleScope.of(context).t('game_partner_name_fallback')),
-                      style: GoogleFonts.nunito(fontSize: 12.5, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                    // Flexible + ellipsis : un prénom long débordait sinon
+                    // hors du cadre de la bande (ConstrainedBox 0.84 *
+                    // largeur d'écran, voir plus bas), même motif que
+                    // _buildInviteStatusLabel plus haut dans ce fichier.
+                    Flexible(
+                      child: Text(
+                        reaction.userId == myUserId
+                            ? LocaleScope.of(context).t('common_you')
+                            : (reaction.user?.prenom ?? LocaleScope.of(context).t('game_partner_name_fallback')),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(fontSize: 12.5, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                      ),
                     ),
                   ],
                 ),
@@ -4121,7 +4587,15 @@ class _ChatBubble extends StatelessWidget {
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        child: Container(
+        // Stack plutôt qu'un simple Container : quand [actionsMenu] existe
+        // (ex. inviter le binôme à répondre à son tour), il flotte en petit
+        // bouton rond au coin haut-droit de la bulle (voir plus bas) — avant,
+        // il était noyé dans la même ligne que l'heure/l'accusé de lecture,
+        // en bas, et passait facilement inaperçu (voir demande utilisateur).
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
           padding: const EdgeInsets.fromLTRB(14, 10, 10, 8),
           decoration: BoxDecoration(
             gradient: isMine ? LinearGradient(colors: [theme.primary, theme.secondary]) : null,
@@ -4211,10 +4685,6 @@ class _ChatBubble extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (actionsMenu != null) ...[
-                    actionsMenu!,
-                    const SizedBox(width: 2),
-                  ],
                   Text(
                     _time,
                     style: GoogleFonts.nunito(
@@ -4230,6 +4700,31 @@ class _ChatBubble extends StatelessWidget {
               ),
             ],
           ),
+            ),
+            if (actionsMenu != null)
+              Positioned(
+                top: -6,
+                right: -6,
+                // Taille imposée : PopupMenuButton réclame sinon sa zone de
+                // tap minimale par défaut (48x48, celle d'un IconButton
+                // normal), largement surdimensionnée pour ce petit badge
+                // flottant (voir demande utilisateur : "trop gros").
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.surface,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 5, offset: const Offset(0, 1)),
+                      ],
+                    ),
+                    child: actionsMenu,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
       ),
@@ -4311,6 +4806,13 @@ class _PoemReplyBubbleState extends State<_PoemReplyBubble> {
         // horizontale seulement, pas de marge verticale (sinon le fond de
         // la bulle apparaît en bordure comme un cadre).
         slideMargin: const EdgeInsets.symmetric(horizontal: 6),
+        // Cette bulle ne fait que 200px de large — la légende par défaut
+        // (SlideVisualCard) est pensée pour une carte pleine largeur et
+        // s'y retrouvait coupée en mots isolés sur des lignes minuscules
+        // (voir demande utilisateur, capture "chaque jour il" sur sa
+        // propre ligne). Même principe que SlideDetailScreen._packPreview,
+        // qui réduit déjà pour sa miniature de 130px.
+        scale: 0.6,
       );
     }
 
@@ -4321,9 +4823,12 @@ class _PoemReplyBubbleState extends State<_PoemReplyBubble> {
         onLongPressStart: widget.onLongPress == null
             ? null
             : (details) => widget.onLongPress!(details.globalPosition),
-        child: Column(
-          crossAxisAlignment: widget.isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        // Heure + accusé de lecture en overlay directement sur la carte
+        // (coin bas droit, pastille sombre) plutôt qu'en élément séparé
+        // dessous — même correctif fiable que _GameCardMessageBubble/
+        // _buildHeartbeatBubble (voir demande utilisateur : "il y a des
+        // heures qui se baladent").
+        child: Stack(
           children: [
             SizedBox(
               width: 200,
@@ -4335,23 +4840,33 @@ class _PoemReplyBubbleState extends State<_PoemReplyBubble> {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${widget.reply.createdAt.toLocal().hour.toString().padLeft(2, '0')}:${widget.reply.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
-                  style: GoogleFonts.nunito(fontSize: 10.5, color: theme.textOnBackgroundMuted),
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                if (widget.isMine) ...[
-                  const SizedBox(width: 4),
-                  SendTickIcon(
-                    tick: sendTickFor(widget.reply),
-                    color: theme.textOnBackgroundMuted,
-                    onRetry: null,
-                  ),
-                ],
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${widget.reply.createdAt.toLocal().hour.toString().padLeft(2, '0')}:${widget.reply.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
+                      style: GoogleFonts.nunito(fontSize: 10.5, color: Colors.white),
+                    ),
+                    if (widget.isMine) ...[
+                      const SizedBox(width: 4),
+                      SendTickIcon(
+                        tick: sendTickFor(widget.reply),
+                        color: Colors.white,
+                        onRetry: null,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ],
         ),

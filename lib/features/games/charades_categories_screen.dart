@@ -92,11 +92,20 @@ class _CategoryTile extends StatelessWidget {
               Container(
                 width: 52,
                 height: 52,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 24),
+                child: box.imagePath != null
+                    ? Image.network(
+                        box.imagePath!,
+                        fit: BoxFit.cover,
+                        alignment: box.imageAlignment,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 24),
+                      )
+                    : Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 24),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -111,7 +120,10 @@ class _CategoryTile extends StatelessWidget {
                     Text(box.themeFor(localeCode), style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted)),
                     const SizedBox(height: 2),
                     Text(
-                      '${box.questions.length} mots à mimer',
+                      LocaleScope.of(context).t(
+                        box.questions.length > 1 ? 'charades_words_count_other' : 'charades_words_count_one',
+                        {'count': '${box.questions.length}'},
+                      ),
                       style: GoogleFonts.nunito(fontSize: 11, color: theme.primary),
                     ),
                   ],

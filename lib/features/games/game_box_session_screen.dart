@@ -449,7 +449,7 @@ class _GameBoxSessionScreenState extends State<GameBoxSessionScreen> with Single
         ),
         if (widget.game.isBlindPoll) ...[
           const SizedBox(height: 18),
-          _buildAnswerPicker(theme, card),
+          _buildAnswerPicker(theme, card, partner),
         ],
         const SizedBox(height: 24),
         GameCardActions(
@@ -467,12 +467,15 @@ class _GameBoxSessionScreenState extends State<GameBoxSessionScreen> with Single
   /// uniquement (voir Game.isBlindPoll). Le binôme ne verra ce choix qu'une
   /// fois SA propre réponse donnée à son tour (voir GameCardThreadScreen,
   /// révélation automatique).
-  Widget _buildAnswerPicker(ThemePalette theme, GameBoxQuestion card) {
+  Widget _buildAnswerPicker(ThemePalette theme, GameBoxQuestion card, AppUser? partner) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          LocaleScope.of(context).t('game_blind_poll_hidden_answer_label'),
+          LocaleScope.of(context).t(
+            'game_blind_poll_hidden_answer_label',
+            {'partner': partnerReferenceLabel(context, partner, card.id)},
+          ),
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
         ),
@@ -545,7 +548,9 @@ class _FanCardFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = box.imagePath != null;
+    // Réglable depuis l'espace admin (voir GameBox.imageInFan) — l'image
+    // peut rester sur la tuile de la boîte sans apparaître ici.
+    final hasImage = box.imagePath != null && box.imageInFan;
 
     return Container(
       width: 132,
@@ -584,6 +589,7 @@ class _FanCardFace extends StatelessWidget {
                   child: Image.network(
                     box.imagePath!,
                     fit: BoxFit.cover,
+                    alignment: box.imageAlignment,
                     errorBuilder: (context, error, stackTrace) => _CardIconBadge(
                       theme: theme,
                       box: box,

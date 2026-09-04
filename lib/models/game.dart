@@ -4,6 +4,16 @@ class Game {
   final Map<String, String>? description;
   final Map<String, String>? rules;
   final String? iconPath;
+  // Réglables depuis l'espace admin, sans effet hors type "Vérité ou Défi"
+  // (voir truth_or_dare_session_screen.dart, _CategoryTile) — remplacent
+  // l'icône/couleur fixes des deux tuiles de choix quand renseignées.
+  final String? truthImagePath;
+  final String? dareImagePath;
+  // Si faux, l'image (quand renseignée) reste sur la tuile de choix mais
+  // n'apparaît PAS dans l'éventail de sélection des cartes (voir
+  // _CategoryCardFace).
+  final bool truthImageInFan;
+  final bool dareImageInFan;
   final String mode; // remote | in_person | both
   final String status; // active | inactive
   // classic | truth_or_dare | emoji_story | charades | prompt_reveal |
@@ -18,6 +28,10 @@ class Game {
     this.description,
     this.rules,
     this.iconPath,
+    this.truthImagePath,
+    this.dareImagePath,
+    this.truthImageInFan = true,
+    this.dareImageInFan = true,
     required this.mode,
     required this.status,
     this.sessionType = 'classic',
@@ -42,17 +56,42 @@ class Game {
   // MemoryGameModeScreen) ; ni boîtes/prompts ni fil de discussion, un
   // écran dédié entièrement à part (voir GamesMenuScreen._playGame).
   bool get isMemoryGame => sessionType == 'memory_game';
+  // "Morpion à Deux" — plateau 3x3 partagé, mêmes 3 modes que
+  // isMemoryGame (voir TicTacToeModeScreen), écran dédié entièrement à
+  // part lui aussi.
+  bool get isTicTacToe => sessionType == 'tic_tac_toe';
+  // "Le Jeu des Carrés" — grande feuille de points partagée, mêmes 3 modes
+  // que isMemoryGame/isTicTacToe (voir DotSquaresModeScreen), écran dédié
+  // entièrement à part lui aussi.
+  bool get isDotSquares => sessionType == 'dot_squares';
+  bool get isNumberHunt => sessionType == 'number_hunt';
+  bool get isWarCard => sessionType == 'war_card';
+  bool get isConnectFour => sessionType == 'connect_four';
+  bool get isBattleship => sessionType == 'battleship';
+  bool get isPictionary => sessionType == 'pictionary';
 
   /// Jeux dont la navigation dépend d'une liste de boîtes/catégories (voir
   /// GamesMenuScreen._playGame) — classic/truth_or_dare/charades/quiz/
   /// blind_poll (voir "Le Sondage Surprise", envoyé et répondu dans la
   /// discussion comme une carte classique depuis sa refonte). Contrairement
   /// aux gabarits à prompt unique restants (prompt_reveal/timed_challenge)
-  /// ou à "Devine mon émoji"/"Jeu de Mémoire" (composition libre / écran
-  /// dédié), ces jeux ne doivent JAMAIS retomber sur le gabarit générique
-  /// GameSessionScreen — un échec de chargement des boîtes y est une vraie
-  /// erreur à signaler, pas une raison de rediriger vers un écran obsolète.
-  bool get usesBoxes => !isEmojiStory && !isPromptReveal && !isTimedChallenge && !isMemoryGame;
+  /// ou à "Devine mon émoji"/"Jeu de Mémoire"/"Morpion à Deux"/"Le Jeu des
+  /// Carrés" (composition libre / écran dédié), ces jeux ne doivent JAMAIS
+  /// retomber sur le gabarit générique GameSessionScreen — un échec de
+  /// chargement des boîtes y est une vraie erreur à signaler, pas une
+  /// raison de rediriger vers un écran obsolète.
+  bool get usesBoxes =>
+      !isEmojiStory &&
+      !isPromptReveal &&
+      !isTimedChallenge &&
+      !isMemoryGame &&
+      !isTicTacToe &&
+      !isDotSquares &&
+      !isNumberHunt &&
+      !isWarCard &&
+      !isConnectFour &&
+      !isBattleship &&
+      !isPictionary;
 
   String nameFor(String localeCode) {
     if (name.containsKey(localeCode)) return name[localeCode]!;
@@ -70,6 +109,10 @@ class Game {
         description: json['description'] != null ? _localeMap(json['description']) : null,
         rules: json['rules'] != null ? _localeMap(json['rules']) : null,
         iconPath: json['icon_path'] as String?,
+        truthImagePath: json['truth_image_path'] as String?,
+        dareImagePath: json['dare_image_path'] as String?,
+        truthImageInFan: json['truth_image_in_fan'] as bool? ?? true,
+        dareImageInFan: json['dare_image_in_fan'] as bool? ?? true,
         mode: json['mode'] as String,
         status: json['status'] as String,
         sessionType: json['session_type'] as String? ?? 'classic',

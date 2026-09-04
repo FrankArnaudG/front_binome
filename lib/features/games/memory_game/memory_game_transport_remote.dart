@@ -38,6 +38,8 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
         finished: session.isFinished || session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
+        pausedByUserId: session.pausedByUserId,
+        pausedAt: session.pausedAt,
       );
 
   void _onRealtimeEvent(RealtimeEvent event) {
@@ -75,6 +77,25 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
   @override
   Future<void> abandon() async {
     final session = await GameService.instance.abandonMemoryGame(sessionId);
+    _state = _stateFrom(session);
+    _controller.add(_state);
+  }
+
+  @override
+  Future<void> pause() async {
+    final session = await GameService.instance.pauseMemoryGame(sessionId);
+    _state = _stateFrom(session);
+    _controller.add(_state);
+  }
+
+  @override
+  Future<void> resume() async {
+    // Réservé à qui a posé la pause — le backend renvoie 403 sinon (voir
+    // MemoryGameController::resume) ; l'UI ne propose de toute façon jamais
+    // ce bouton à l'autre (voir MemoryGameBoardState.pausedByMe), donc
+    // n'appeler l'API que dans le cas déjà autorisé.
+    if (!_state.pausedByMe) return;
+    final session = await GameService.instance.resumeMemoryGame(sessionId);
     _state = _stateFrom(session);
     _controller.add(_state);
   }

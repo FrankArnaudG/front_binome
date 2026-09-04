@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart' show Alignment;
+
 class GameBoxQuestion {
   final String id;
   final Map<String, String> text;
@@ -47,6 +49,15 @@ class GameBox {
   final Map<String, String> theme;
   final String? iconKey;
   final String? imagePath;
+  // Point de focus du recadrage BoxFit.cover, déplaçable à la souris dans
+  // l'espace admin (voir GameBox.imageAlignment) — pourcentages 0-100,
+  // 50/50 = centre.
+  final double imageFocusX;
+  final double imageFocusY;
+  // Réglable depuis l'espace admin — si faux, l'image (quand renseignée)
+  // reste sur la tuile de la boîte mais n'apparaît PAS dans l'éventail de
+  // sélection des cartes (voir GameBoxSessionScreen._FanCardFace).
+  final bool imageInFan;
   final int order;
   final bool completed;
   final bool unlocked;
@@ -58,6 +69,9 @@ class GameBox {
     required this.theme,
     this.iconKey,
     this.imagePath,
+    this.imageFocusX = 50,
+    this.imageFocusY = 50,
+    this.imageInFan = false,
     required this.order,
     required this.completed,
     required this.unlocked,
@@ -76,12 +90,22 @@ class GameBox {
     return theme.values.isNotEmpty ? theme.values.first : '';
   }
 
+  /// Traduit [imageFocusX]/[imageFocusY] (0-100, 50/50 = centre) en
+  /// [Alignment] (-1 à 1) pour `Image.network(..., alignment: ...)`.
+  Alignment get imageAlignment => Alignment(
+        (imageFocusX.clamp(0, 100) / 100) * 2 - 1,
+        (imageFocusY.clamp(0, 100) / 100) * 2 - 1,
+      );
+
   factory GameBox.fromJson(Map<String, dynamic> json) => GameBox(
         id: json['id'] as String,
         title: _localeMap(json['title']),
         theme: _localeMap(json['theme']),
         iconKey: json['icon_key'] as String?,
         imagePath: json['image_path'] as String?,
+        imageFocusX: (json['image_focus_x'] as num?)?.toDouble() ?? 50,
+        imageFocusY: (json['image_focus_y'] as num?)?.toDouble() ?? 50,
+        imageInFan: json['image_in_fan'] as bool? ?? false,
         order: json['order'] as int? ?? 0,
         completed: json['completed'] as bool? ?? false,
         unlocked: json['unlocked'] as bool? ?? false,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,9 +42,15 @@ class ApiClient {
       ..files.add(await http.MultipartFile.fromPath(fieldName, file.path));
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
 
-    final streamed = await request.send().timeout(const Duration(seconds: 30));
-    final response = await http.Response.fromStream(streamed);
-    return _decode(response);
+    try {
+      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamed);
+      return _decode(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw _networkErrorToApiException(e);
+    }
   }
 
   Future<dynamic> _send(String method, String path, {Map<String, dynamic>? body}) async {
@@ -64,22 +71,53 @@ class ApiClient {
     // GamesMenuScreen._playGame).
     const timeout = Duration(seconds: 25);
     late final http.Response response;
-    switch (method) {
-      case 'GET':
-        response = await http.get(uri, headers: headers).timeout(timeout);
-        break;
-      case 'POST':
-        response = await http.post(uri, headers: headers, body: jsonEncode(body ?? {})).timeout(timeout);
-        break;
-      case 'PUT':
-        response = await http.put(uri, headers: headers, body: jsonEncode(body ?? {})).timeout(timeout);
-        break;
-      case 'DELETE':
-        response = await http.delete(uri, headers: headers, body: jsonEncode(body ?? {})).timeout(timeout);
-        break;
+    // Pas de filtrage des caractères de contrôle ici : STX/ETX (0x02/0x03)
+    // sont utilisés DÉLIBÉRÉMENT par GameCardThreadScreen pour encoder une
+    // citation dans le texte d'un message (voir _encodeQuoted/_decodeQuoted)
+    // — les retirer casserait cette fonctionnalité. Ce qui ressemblait à un
+    // glitch clavier était en fait ce mécanisme (voir demande utilisateur).
+    final encodedBody = jsonEncode(body ?? {});
+    try {
+      switch (method) {
+        case 'GET':
+          response = await http.get(uri, headers: headers).timeout(timeout);
+          break;
+        case 'POST':
+          response = await http.post(uri, headers: headers, body: encodedBody).timeout(timeout);
+          break;
+        case 'PUT':
+          response = await http.put(uri, headers: headers, body: encodedBody).timeout(timeout);
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers, body: encodedBody).timeout(timeout);
+          break;
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw _networkErrorToApiException(e);
     }
 
     return _decode(response);
+  }
+
+  /// Une panne réseau (serveur injoignable, DNS, timeout...) lève une
+  /// exception BRUTE (SocketException/TimeoutException/ClientException),
+  /// PAS une [ApiException] — sans cette conversion, tout appelant qui ne
+  /// rattrape QUE `on ApiException` (le cas le plus courant dans l'app,
+  /// voir startMemoryGameAndPush par ex.) laisse l'exception se propager
+  /// sans jamais réinitialiser son état de chargement local : l'écran
+  /// reste bloqué sur un loader indéfiniment, sans le moindre message
+  /// (voir demande utilisateur : "ça tourne (le loader) depuis sans rien
+  /// d'autre" après un souci réseau côté serveur local).
+  ApiException _networkErrorToApiException(Object error) {
+    if (error is TimeoutException) {
+      return ApiException('Le serveur met trop de temps à répondre. Réessaie dans un instant.', 0);
+    }
+    if (error is SocketException || error is http.ClientException) {
+      return ApiException('Impossible de joindre le serveur. Vérifie ta connexion.', 0);
+    }
+    return ApiException('Une erreur réseau est survenue.', 0);
   }
 
   dynamic _decode(http.Response response) {

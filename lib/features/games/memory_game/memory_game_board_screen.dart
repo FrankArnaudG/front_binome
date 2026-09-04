@@ -1,17 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/app_router.dart' show AppRouter;
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../widgets/game_comment_overlay.dart';
 import '../widgets/memory_game_match_scoreboard.dart';
+import '../widgets/voice_call_overlay.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_transport.dart';
+import 'memory_game_transport_remote.dart';
 
 /// Plateau de "Jeu de Mémoire" — UNIQUE écran de jeu partagé par les 3
 /// modes (voir MemoryGameTransport) : ne connaît que l'état abstrait
@@ -68,6 +73,10 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.showGlobalNavBar.value = false;
+    });
   }
 
   void _onState(MemoryGameBoardState state) {
@@ -105,6 +114,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
 
   Future<void> _onTapCard(int index) async {
     if (_state.finished) return;
+    if (_state.isPaused) return;
     if (_state.matchedIndices.contains(index)) return;
     if (_state.flipped.contains(index)) return;
     if (_displayMismatch != null) return; // laisse le temps de voir la paire ratée
@@ -113,12 +123,32 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     await widget.transport.flip(index);
   }
 
+  // Réactions en direct (voir GameCommentOverlay) : uniquement en mode "à
+  // distance", seul mode où un canal de Box existe déjà côté client — le
+  // présentiel connecté (Nearby) reste du pur P2P sans notion de Box.
+  String? get _commentsBoxId {
+    final transport = widget.transport;
+    return transport is RemoteMemoryGameTransport ? transport.boxId : null;
+  }
+
+  String get _partnerUserId =>
+      widget.playerNames.keys.firstWhere((id) => id != widget.user.id, orElse: () => widget.user.id);
+
   int _pairsFoundBy(String userId) => _state.matched.where((pair) => pair.userId == userId).length;
 
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final seconds = DateTime.now().difference(started).inSeconds;
+    // Figé au moment où la pause a commencé (voir MemoryGameBoardState.
+    // pausedAt) — sinon le chrono continuerait de tourner à l'écran pendant
+    // la pause, alors que startedAt n'est décalé qu'à la reprise.
+    final now = _state.pausedAt ?? DateTime.now();
+    // max(0, ...) : si l'horloge du téléphone est en retard sur celle du
+    // serveur (courant sur un appareil de test dont la date n'est pas
+    // synchronisée), la différence peut devenir négative — un chrono
+    // négatif n'a aucun sens à l'écran (voir demande utilisateur, capture
+    // "-27:59").
+    final seconds = now.difference(started).inSeconds.clamp(0, 1 << 31);
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;
     return '$minutes:${rest.toString().padLeft(2, '0')}';
@@ -130,6 +160,8 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     _mismatchTimer?.cancel();
     _clockTimer?.cancel();
     widget.transport.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    AppRouter.showGlobalNavBar.value = true;
     super.dispose();
   }
 
@@ -166,39 +198,89 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     final difficulty = MemoryGameDifficulty.all.firstWhere((d) => d.cardCount == board.length);
     final turnName = _state.currentTurnUserId != null ? widget.playerNames[_state.currentTurnUserId] : null;
 
-    return Scaffold(
+    final commentsBoxId = _commentsBoxId;
+    return Stack(
+      children: [
+        // Isole tout le plateau du clavier (voir GameCommentOverlay) : SANS
+        // ce retrait explicite de l'inset, `resizeToAvoidBottomInset: false`
+        // seul ne suffit pas toujours à empêcher la grille de remonter sur
+        // certains appareils/versions Android (voir demande utilisateur :
+        // "les images ne doivent jamais remonter") — ici, RIEN sous ce
+        // point ne peut plus voir le clavier, quoi qu'il arrive.
+        MediaQuery.removeViewInsets(
+          context: context,
+          removeBottom: true,
+          child: Scaffold(
       backgroundColor: theme.background,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         systemOverlayStyle: theme.statusBarOverlayStyle,
         foregroundColor: theme.textOnBackground,
         title: Text(
-          widget.game.nameFor('fr'),
+          widget.game.nameFor(LocaleScope.of(context).current.code),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.flag_outlined),
-            tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
-            onPressed: () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text(LocaleScope.t(ctx, 'memory_board_abandon_title')),
-                  content: Text(LocaleScope.t(ctx, 'memory_board_abandon_content')),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      child: Text(LocaleScope.t(ctx, 'memory_board_abandon_confirm'), style: const TextStyle(color: Colors.redAccent)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) await widget.transport.abandon();
-            },
-          ),
+          if (!_state.finished)
+            if (_state.isPaused)
+              // En pause : bouton "Reprendre" UNIQUEMENT pour qui l'a posée
+              // (voir demande utilisateur) — désactivé (grisé, pas caché)
+              // côté binôme, pour que ça reste visible que le jeu est en
+              // pause sans laisser croire qu'iel peut la lever.
+              IconButton(
+                icon: const Icon(Icons.play_circle_outline),
+                tooltip: _state.pausedByMe
+                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                        'name': widget.playerNames[_state.pausedByUserId] ??
+                            LocaleScope.t(context, 'memory_board_partner_fallback'),
+                      }),
+                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.pause_circle_outline),
+                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                onPressed: () => widget.transport.pause(),
+              ),
+          // Masqué une fois la partie terminée — sinon un retap n'a plus
+          // aucun effet visible (la partie est déjà `finished`) et donne
+          // l'impression que le bouton "ne fonctionne pas" (même bug
+          // trouvé et corrigé sur Morpion à Deux, voir demande utilisateur).
+          if (!_state.finished)
+            IconButton(
+              icon: const Icon(Icons.flag_outlined),
+              tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(LocaleScope.t(ctx, 'memory_board_abandon_title')),
+                    content: Text(LocaleScope.t(ctx, 'memory_board_abandon_content')),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: Text(LocaleScope.t(ctx, 'memory_board_abandon_confirm'), style: const TextStyle(color: Colors.redAccent)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) await widget.transport.abandon();
+              },
+            ),
+          // Une fois la partie finie, le seul moyen de rejouer était la
+          // fenêtre de score qui vient de se fermer — bouton permanent une
+          // fois qu'elle a disparu (même correctif que Morpion à Deux, voir
+          // demande utilisateur).
+          if (_state.finished && widget.onRematch != null)
+            IconButton(
+              icon: const Icon(Icons.replay_rounded),
+              tooltip: LocaleScope.t(context, 'memory_score_rematch'),
+              onPressed: () => widget.onRematch!(context),
+            ),
         ],
       ),
       body: ThemedBackground(
@@ -206,19 +288,28 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                // Entête resserrée (voir demande utilisateur : "remonter
+                // l'entête et réduire un peu l'espace, mais toujours bien
+                // lisible") — plus de hauteur libre pour la grille elle-même,
+                // sans rien couper à la taille du texte.
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Flexible(
                       child: Text(
-                        widget.transport.requiresTurnToFlip
-                            ? (_state.isMyTurn
-                                ? LocaleScope.t(context, 'memory_board_your_turn')
-                                : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                    'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                  }))
-                            : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'}),
+                        // Une fois la partie finie, "Au tour de..." n'a
+                        // plus de sens (même correctif que Morpion à Deux,
+                        // voir demande utilisateur).
+                        _state.finished
+                            ? LocaleScope.t(context, 'game_board_finished_label')
+                            : (widget.transport.requiresTurnToFlip
+                                ? (_state.isMyTurn
+                                    ? LocaleScope.t(context, 'memory_board_your_turn')
+                                    : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                        'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                      }))
+                                : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'})),
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -234,7 +325,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
                 child: Row(
                   children: [
                     for (final userId in widget.playerNames.keys) ...[
@@ -254,26 +345,40 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                 ),
               ),
               Expanded(
-                child: Padding(
+                child: Stack(
+                  children: [
+                    Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       // Ratio calculé pour que la grille remplisse
                       // exactement l'espace disponible (ni débordement, ni
                       // espace mort), quel que soit le palier de difficulté
-                      // (3×4 à 8×8) ou la taille d'écran — au lieu d'un
+                      // (3×4 à 8×14) ou la taille d'écran — au lieu d'un
                       // ratio fixe qui ne convenait qu'à une seule grille.
+                      // clamp() large (pas 0.55–1.3) : cette fourchette
+                      // resserrait le ratio dès qu'une grille avait peu de
+                      // colonnes pour beaucoup de lignes (ex. 16 paires,
+                      // 4×8) — le ratio RESSERRÉ (pas le naturel) servait
+                      // alors à calculer la hauteur de chaque carte, et
+                      // gonflait la grille entière au-delà de l'espace
+                      // disponible (voir demande utilisateur : "le 16
+                      // paires déborde"). Le calcul ci-dessus garantit déjà
+                      // un ajustement exact par construction ; ce clamp()
+                      // élargi ne sert plus que de filet de sécurité contre
+                      // un cas dégénéré (fenêtre quasi nulle), jamais à
+                      // resserrer un ratio par ailleurs valide.
                       const spacing = 8.0;
                       final cardWidth = (constraints.maxWidth - (difficulty.columns - 1) * spacing) / difficulty.columns;
                       final cardHeight = (constraints.maxHeight - (difficulty.rows - 1) * spacing) / difficulty.rows;
-                      final aspectRatio = (cardWidth / cardHeight).clamp(0.55, 1.3);
+                      final aspectRatio = (cardWidth / cardHeight).clamp(0.35, 2.2);
 
                       return GridView.builder(
                         // Le ratio ci-dessus fait déjà tenir la grille dans
                         // l'espace disponible dans le cas normal — le
                         // scroll reste actif uniquement comme filet de
                         // sécurité si le clamp() a dû resserrer le ratio
-                        // (très petit écran + grille dense, ex. 8×8).
+                        // (fenêtre quasi nulle uniquement, voir plus haut).
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: difficulty.columns,
                           mainAxisSpacing: spacing,
@@ -294,12 +399,68 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                       );
                     },
                   ),
+                    ),
+                    if (_state.isPaused)
+                      // Empêche tout tap sur la grille en dessous tant que
+                      // la pause est active (en plus du garde-fou dans
+                      // _onTapCard) — Positioned.fill capte tous les gestes
+                      // de cette zone.
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.background.withValues(alpha: 0.94),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          alignment: Alignment.center,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.pause_circle_filled_rounded, size: 48, color: theme.primary),
+                                const SizedBox(height: 12),
+                                Text(
+                                  LocaleScope.t(context, 'memory_board_paused_title'),
+                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _state.pausedByMe
+                                      ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
+                                      : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
+                                          'name': widget.playerNames[_state.pausedByUserId] ??
+                                              LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                        }),
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+                                ),
+                                if (_state.pausedByMe) ...[
+                                  const SizedBox(height: 20),
+                                  ElevatedButton.icon(
+                                    onPressed: () => widget.transport.resume(),
+                                    icon: const Icon(Icons.play_arrow_rounded),
+                                    label: Text(LocaleScope.t(context, 'memory_board_resume_button')),
+                                    style: ElevatedButton.styleFrom(backgroundColor: theme.primary, foregroundColor: Colors.white),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
+    ),
+        ),
+        if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
+        if (commentsBoxId != null)
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
+      ],
     );
   }
 }
@@ -328,7 +489,7 @@ class _PlayerStatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: active ? theme.primary.withValues(alpha: 0.12) : theme.surface.withValues(alpha: theme.isDark ? 0.5 : 0.75),
         borderRadius: BorderRadius.circular(14),
@@ -337,7 +498,7 @@ class _PlayerStatChip extends StatelessWidget {
       child: Row(
         children: [
           CircleAvatar(
-            radius: 14,
+            radius: 12,
             backgroundColor: theme.primary.withValues(alpha: 0.16),
             backgroundImage: (avatar != null && avatar!.isNotEmpty) ? NetworkImage(avatar!) : null,
             child: (avatar == null || avatar!.isEmpty)
@@ -359,7 +520,7 @@ class _PlayerStatChip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackground),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Row(
                   children: [
                     Icon(Icons.favorite_rounded, size: 12, color: theme.primary),

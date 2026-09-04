@@ -41,7 +41,7 @@ class LocalMemoryGameTransport extends MemoryGameTransport {
 
   @override
   Future<void> flip(int index) async {
-    if (_state.finished) return;
+    if (_state.finished || _state.isPaused) return;
     final currentPlayer = _state.currentTurnUserId ?? myUserId;
     final otherPlayer = currentPlayer == myUserId ? partnerUserId : myUserId;
 
@@ -73,6 +73,36 @@ class LocalMemoryGameTransport extends MemoryGameTransport {
   @override
   Future<void> abandon() async {
     _state = _state.copyWith(finished: true);
+    _controller.add(_state);
+  }
+
+  // En pass-and-play, les deux "joueurs" partagent le même appareil et le
+  // même écran — la restriction "seul qui a posé la pause peut la lever"
+  // n'a physiquement aucun sens ici (voir demande utilisateur, réservée au
+  // cas deux téléphones) : `pausedByUserId` sert juste à figer le chrono/
+  // bloquer les flips. `myUserId` (jamais `partnerUserId`, voir le champ
+  // `myUserId` du state, fixe pour toute la partie — pas le joueur dont
+  // c'est le tour) garantit que `pausedByMe` reste vrai ici, donc que
+  // "Reprendre" reste toujours affiché sur cet appareil partagé (voir
+  // demande utilisateur, capture : le bouton restait caché avant ce
+  // correctif, un marqueur qui ne correspondait à personne était utilisé).
+  @override
+  Future<void> pause() async {
+    if (_state.isPaused || _state.finished) return;
+    _state = _state.copyWith(pausedByUserId: myUserId, pausedAt: DateTime.now());
+    _controller.add(_state);
+  }
+
+  @override
+  Future<void> resume() async {
+    if (!_state.isPaused) return;
+    // Décale startedAt du temps passé en pause (voir MemoryGameController::
+    // resume côté backend, même principe).
+    final paused = _state.pausedAt;
+    if (paused != null && _state.startedAt != null) {
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+    }
+    _state = _state.copyWith(clearPause: true);
     _controller.add(_state);
   }
 

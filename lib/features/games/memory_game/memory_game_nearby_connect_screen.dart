@@ -186,7 +186,7 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
           game: widget.game,
           user: widget.user,
           transport: transport,
-          playerNames: {myRole: 'Toi', partnerRole: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback')},
+          playerNames: {myRole: widget.user.prenom, partnerRole: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback')},
           playerAvatars: {myRole: widget.user.avatar, partnerRole: partner?.avatar},
         ),
       ),

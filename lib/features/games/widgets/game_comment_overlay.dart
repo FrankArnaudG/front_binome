@@ -1,0 +1,339 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../../core/realtime_client.dart';
+import '../../../l10n/locale_scope.dart';
+import '../game_service.dart';
+
+/// Réactions en direct pendant une partie à deux téléphones (voir demande
+/// utilisateur : "à tout moment les deux binômes peuvent écrire un
+/// commentaire... uniquement quand on utilise 2 téléphones") — bulle
+/// flottante façon TikTok, éphémère côté SERVEUR (jamais persistée, voir
+/// GameCommentSent), mais gardée en mémoire côté client tant que l'écran
+/// de jeu reste ouvert (voir demande utilisateur : "il remonte mais ne
+/// disparaît pas automatiquement... si y'a trop de commentaires ils
+/// seront progressivement cachés" — pas de suppression après un délai, les
+/// plus anciens sortent juste du cadre visible en défilant, toujours en
+/// mémoire jusqu'à un tap sur la croix qui vide tout). N'affiche/n'écoute
+/// rien tant que [enabled] est faux (pass-and-play sur un seul appareil :
+/// les deux joueurs regardent déjà le même écran).
+class GameCommentOverlay extends StatefulWidget {
+  final String boxId;
+  final bool enabled;
+
+  const GameCommentOverlay({super.key, required this.boxId, required this.enabled});
+
+  @override
+  State<GameCommentOverlay> createState() => _GameCommentOverlayState();
+}
+
+class _LiveComment {
+  final int id;
+  final String prenom;
+  final String text;
+  const _LiveComment({required this.id, required this.prenom, required this.text});
+}
+
+class _GameCommentOverlayState extends State<GameCommentOverlay> {
+  final List<_LiveComment> _comments = [];
+  int _nextId = 0;
+  bool _composing = false;
+  bool _sending = false;
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) {
+      RealtimeClient.instance.subscribeToBox(widget.boxId, onEvent: _onRealtimeEvent);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.enabled) {
+      RealtimeClient.instance.unsubscribeFromBox(widget.boxId, onEvent: _onRealtimeEvent);
+    }
+    _controller.dispose();
+    _focusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    if (event.event != 'GameCommentSent') return;
+    final data = event.data;
+    if (data == null) return;
+    final prenom = data['prenom'] as String? ?? '';
+    final text = data['text'] as String?;
+    if (text == null || text.trim().isEmpty) return;
+    _appendComment(prenom, text);
+  }
+
+  void _appendComment(String prenom, String text) {
+    if (!mounted) return;
+    setState(() {
+      _comments.add(_LiveComment(id: _nextId++, prenom: prenom, text: text));
+    });
+    // La zone défilante est en `reverse: true` (voir _buildBubbleLog) :
+    // l'offset 0 correspond déjà au dernier message (visuellement en bas),
+    // donc y revenir fait remonter les bulles précédentes au fur et à
+    // mesure que le contenu déborde du cadre visible.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _clearAll() {
+    if (!mounted) return;
+    setState(() => _comments.clear());
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    _controller.clear();
+    try {
+      await GameService.instance.sendGameComment(text);
+    } catch (_) {
+      // Éphémère et non critique : un envoi raté n'affecte pas la partie,
+      // on se contente de ne pas relancer l'utilisateur avec une erreur.
+    }
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      _composing = false;
+    });
+    _focusNode.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return const SizedBox.shrink();
+
+    // Le clavier doit se superposer au jeu, jamais le pousser (voir demande
+    // utilisateur — le Scaffold porteur passe `resizeToAvoidBottomInset:
+    // false`) : on remonte donc nous-mêmes la zone de saisie/les bulles de
+    // la hauteur du clavier pour qu'elles restent visibles au-dessus.
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: false,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 12,
+              right: 72,
+              bottom: 96 + keyboardInset,
+              child: _buildBubbleLog(context),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 24 + keyboardInset,
+              child: _composing ? _buildComposer(context) : _buildFab(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBubbleLog(BuildContext context) {
+    if (_comments.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Nettement au-dessus du journal, à gauche (voir demande
+        // utilisateur) — jamais superposée au message le plus haut.
+        GestureDetector(
+          onTap: _clearAll,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), shape: BoxShape.circle),
+            child: const Icon(Icons.close_rounded, color: Colors.white70, size: 14),
+          ),
+        ),
+        // NeverScrollable : c'est le widget qui pilote le défilement
+        // (auto-scroll vers le bas à chaque nouveau commentaire), pas le
+        // doigt — les commentaires les plus anciens sortent juste du cadre
+        // visible au fur et à mesure (voir doc de classe), rien à faire
+        // glisser manuellement.
+        SizedBox(
+          height: 220,
+          child: IgnorePointer(
+            child: ClipRect(
+              // `reverse: true` avec les commentaires dans l'ordre
+              // chronologique normal (le plus récent en dernier enfant) :
+              // tant que le contenu tient dans les 220px, il reste ancré
+              // EN BAS du cadre (voir demande utilisateur : "il doit
+              // apparaître en bas") ; une fois qu'il déborde, l'offset 0
+              // montre justement le dernier message, les plus anciens
+              // sortant par le haut.
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                reverse: true,
+                physics: const NeverScrollableScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final comment in _comments)
+                      _CommentBubble(key: ValueKey(comment.id), prenom: comment.prenom, text: comment.text),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFab(BuildContext context) {
+    return FloatingActionButton.small(
+      heroTag: 'game_comment_fab_${widget.boxId}',
+      backgroundColor: Colors.black.withValues(alpha: 0.55),
+      elevation: 0,
+      onPressed: () {
+        setState(() => _composing = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+      },
+      child: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
+    );
+  }
+
+  Widget _buildComposer(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 260),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                autofocus: true,
+                maxLength: 140,
+                style: GoogleFonts.nunito(color: Colors.white, fontSize: 14),
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  counterText: '',
+                  hintText: LocaleScope.t(context, 'game_comment_hint'),
+                  hintStyle: GoogleFonts.nunito(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              tooltip: LocaleScope.t(context, 'game_comment_send'),
+              onPressed: _sending ? null : _send,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+              onPressed: () {
+                _controller.clear();
+                _focusNode.unfocus();
+                setState(() => _composing = false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Une bulle de commentaire — apparaît EN BAS puis remonte en s'estompant
+/// vers son opacité finale (voir demande utilisateur : "il doit apparaître
+/// en bas et défiler/remonter comme dans la version précédente"), puis
+/// reste en place DÉFINITIVEMENT dans le journal défilant (voir
+/// [_GameCommentOverlayState]) — contrairement à la toute première version,
+/// plus de suppression automatique après un délai.
+class _CommentBubble extends StatefulWidget {
+  final String prenom;
+  final String text;
+
+  const _CommentBubble({super.key, required this.prenom, required this.text});
+
+  @override
+  State<_CommentBubble> createState() => _CommentBubbleState();
+}
+
+class _CommentBubbleState extends State<_CommentBubble> with SingleTickerProviderStateMixin {
+  // Décalage en PIXELS fixes (pas relatif à la taille de la bulle, voir
+  // demande utilisateur : "j'ai testé, pas de défilement" — un décalage
+  // relatif type SlideTransition(begin: Offset(0, 0.6)) donnait un
+  // mouvement de quelques pixels à peine pour un message court, donc
+  // quasi invisible) : ici toujours 42px de remontée, quel que soit le
+  // texte.
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  )..forward();
+  late final Animation<double> _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+  late final Animation<double> _rise = Tween<double>(
+    begin: 42,
+    end: 0,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, _rise.value),
+        child: Opacity(opacity: _fade.value, child: child),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '${widget.prenom}  ',
+                style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+              TextSpan(text: widget.text, style: GoogleFonts.nunito(fontSize: 13, color: Colors.white)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

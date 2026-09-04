@@ -8,6 +8,7 @@ import '../../widgets/nav_bars/nav_item.dart';
 import '../content/unread_timeline_service.dart';
 import 'tab_navigation_controller.dart';
 import 'widgets/game_card_bubble.dart';
+import 'widgets/game_invite_overlay.dart';
 
 /// Coquille globale qui superpose la barre de navigation classique à
 /// n'importe quel écran poussé après l'authentification — pas seulement
@@ -77,6 +78,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 children: [
                   widget.child,
                   const GameCardBubble(),
+                  const GameInviteOverlay(),
                 ],
               ),
               bottomNavigationBar: ClassicNavBar(

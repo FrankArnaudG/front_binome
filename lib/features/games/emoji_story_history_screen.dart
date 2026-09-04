@@ -309,9 +309,11 @@ class _EmojiStoryHistoryScreenState extends State<EmojiStoryHistoryScreen> {
     final diff = today.difference(date).inDays;
     if (diff == 0) return t('date_today');
     if (diff == 1) return t('date_yesterday');
-    final weekday = t(_weekdayKeys[dt.weekday - 1]);
-    if (diff < 7) return weekday;
-    return '$weekday ${dt.day} ${t(_monthKeys[dt.month - 1])}';
+    if (diff < 7) return t(_weekdayKeys[dt.weekday - 1]);
+    // Au-delà d'une semaine, plus de nom de jour mais l'année (voir capture
+    // de référence WhatsApp utilisateur : "4 juillet 2026", pas de jour de
+    // semaine pour une date ancienne).
+    return '${dt.day} ${t(_monthKeys[dt.month - 1])} ${dt.year}';
   }
 
   List<_HistoryEntry> _groupByDate(List<EmojiStorySession> sessions) {

@@ -1,3 +1,17 @@
+/// Laravel encode un tableau PHP associatif VIDE (`[]`) en JSON comme un
+/// tableau `[]`, pas un objet `{}` — impossible à distinguer d'une vraie
+/// liste sans regarder son contenu (voir demande utilisateur : crash au
+/// tout premier état d'une partie, avant le moindre coup, quand
+/// `moves_by_user` est encore `{}`). `as Map<String, dynamic>?` plante net
+/// dans ce cas précis ; on traite tout ce qui n'est pas déjà une Map comme
+/// vide plutôt que de faire confiance au typage JSON brut.
+Map<String, int> _parseIntMap(dynamic value) {
+  if (value is Map) {
+    return value.map((key, v) => MapEntry(key as String, v as int));
+  }
+  return const {};
+}
+
 /// Une paire déjà trouvée — [indices] vaut `null` pour les parties
 /// enregistrées après coup via `recordResult` (présentiel connecté/pass-
 /// and-play), où aucun plateau n'a jamais transité par le serveur ; seul
@@ -40,6 +54,8 @@ class MemoryGameSession {
   final bool abandoned;
   final DateTime? startedAt;
   final DateTime? finishedAt;
+  final DateTime? pausedAt;
+  final String? pausedByUserId;
 
   const MemoryGameSession({
     required this.id,
@@ -56,9 +72,12 @@ class MemoryGameSession {
     this.abandoned = false,
     this.startedAt,
     this.finishedAt,
+    this.pausedAt,
+    this.pausedByUserId,
   });
 
   bool get isFinished => finishedAt != null;
+  bool get isPaused => pausedAt != null;
 
   Set<int> get matchedIndices => matched
       .expand((pair) => pair.indices ?? const <int>[])
@@ -77,10 +96,11 @@ class MemoryGameSession {
         flipped: (json['flipped'] as List? ?? const []).map((e) => e as int).toList(),
         currentTurnUserId: json['current_turn_user_id'] as String?,
         movesCount: json['moves_count'] as int? ?? 0,
-        movesByUser: (json['moves_by_user'] as Map<String, dynamic>? ?? const {})
-            .map((key, value) => MapEntry(key, value as int)),
+        movesByUser: _parseIntMap(json['moves_by_user']),
         abandoned: json['abandoned'] as bool? ?? false,
         startedAt: json['started_at'] != null ? DateTime.parse(json['started_at'] as String) : null,
         finishedAt: json['finished_at'] != null ? DateTime.parse(json['finished_at'] as String) : null,
+        pausedAt: json['paused_at'] != null ? DateTime.parse(json['paused_at'] as String) : null,
+        pausedByUserId: json['paused_by_user_id'] as String?,
       );
 }

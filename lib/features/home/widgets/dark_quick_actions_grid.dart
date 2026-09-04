@@ -18,6 +18,7 @@ import '../../content/content_service.dart';
 import '../../content/gifts_screen.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
+import '../../roman_photo/roman_photo_library_screen.dart';
 import '../../sounds/shared_sounds_screen.dart';
 import '../../vault/photo_vault_screen.dart';
 import 'heart_burst.dart';
@@ -351,6 +352,20 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         (t) => t.accent,
         (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => SharedSoundsScreen(user: widget.user))),
         'sounds',
+      ),
+      // Prototype front-end pur (voir demande utilisateur) : pas de
+      // FeatureFlagsService.isEnabled('roman_photo') défini côté admin —
+      // isEnabled() retombe alors sur `true` par défaut (voir
+      // FeatureFlagsService), donc la tuile n'est jamais verrouillée sans
+      // qu'il faille toucher au backend pour ce test.
+      DarkActionItem(
+        'Roman-photo',
+        Icons.auto_stories_rounded,
+        (t) => t.primary,
+        (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute(builder: (_) => const RomanPhotoLibraryScreen()),
+        ),
+        'roman_photo',
       ),
     ];
 

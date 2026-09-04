@@ -486,6 +486,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
                 blockedByStreak: veriteBlocked,
                 onTap: _deckVerite.isEmpty ? null : (veriteBlocked ? null : () => _pickCategory('verite')),
                 onBlockedTap: veriteBlocked ? () => _showBlockedDialog('verite') : null,
+                imagePath: widget.game.truthImagePath,
               ),
             ),
             const SizedBox(width: 14),
@@ -498,6 +499,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
                 blockedByStreak: defiBlocked,
                 onTap: _deckDefi.isEmpty ? null : (defiBlocked ? null : () => _pickCategory('defi')),
                 onBlockedTap: defiBlocked ? () => _showBlockedDialog('defi') : null,
+                imagePath: widget.game.dareImagePath,
               ),
             ),
           ],
@@ -540,6 +542,9 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
     final deck = _currentDeck;
     final color = _currentColor;
     final isDefi = _chosenCategory == 'defi';
+    final imagePath = isDefi
+        ? (widget.game.dareImageInFan ? widget.game.dareImagePath : null)
+        : (widget.game.truthImageInFan ? widget.game.truthImagePath : null);
 
     return Column(
       key: ValueKey('fan-$_chosenCategory'),
@@ -576,7 +581,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
           child: PageView.builder(
             controller: _pageController,
             itemCount: deck.length,
-            itemBuilder: (context, index) => Center(child: _buildFanCard(theme, index, color)),
+            itemBuilder: (context, index) => Center(child: _buildFanCard(theme, index, color, imagePath)),
           ),
         ),
         const SizedBox(height: 18),
@@ -600,7 +605,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
     );
   }
 
-  Widget _buildFanCard(ThemePalette theme, int index, Color color) {
+  Widget _buildFanCard(ThemePalette theme, int index, Color color, String? imagePath) {
     return AnimatedBuilder(
       animation: _pageController!,
       builder: (context, _) {
@@ -627,7 +632,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
                     _pageController!.animateToPage(index, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
                   }
                 },
-                child: _CategoryCardFace(color: color, highlighted: isCentered),
+                child: _CategoryCardFace(color: color, highlighted: isCentered, imagePath: imagePath),
               ),
             ),
           ),
@@ -722,23 +727,31 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
 class _CategoryCardFace extends StatelessWidget {
   final Color color;
   final bool highlighted;
+  // Réglable depuis l'espace admin (voir Game.truthImagePath/dareImagePath
+  // + truthImageInFan/dareImageInFan) — remplace tout le fond teinté par une
+  // image quand renseignée ET autorisée à apparaître ici.
+  final String? imagePath;
 
-  const _CategoryCardFace({required this.color, required this.highlighted});
+  const _CategoryCardFace({required this.color, required this.highlighted, this.imagePath});
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = imagePath != null && imagePath!.isNotEmpty;
+
     return Container(
       width: 132,
       height: 190,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: highlighted
-              ? [color, color.withValues(alpha: 0.65)]
-              : [color.withValues(alpha: 0.5), color.withValues(alpha: 0.3)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: hasImage
+            ? null
+            : LinearGradient(
+                colors: highlighted
+                    ? [color, color.withValues(alpha: 0.65)]
+                    : [color.withValues(alpha: 0.5), color.withValues(alpha: 0.3)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: highlighted ? Colors.white.withValues(alpha: 0.75) : Colors.white.withValues(alpha: 0.2),
@@ -748,20 +761,44 @@ class _CategoryCardFace extends StatelessWidget {
             ? [BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 22, offset: const Offset(0, 10))]
             : [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 6))],
       ),
-      child: Center(
-        child: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: highlighted ? 0.7 : 0.4)),
-          ),
-          child: Icon(
-            Icons.style_rounded,
-            color: Colors.white.withValues(alpha: highlighted ? 0.95 : 0.55),
-            size: 24,
-          ),
-        ),
+      child: hasImage
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                Opacity(
+                  opacity: highlighted ? 1 : 0.55,
+                  child: Image.network(
+                    imagePath!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => _CategoryCardIcon(color: color, highlighted: highlighted),
+                  ),
+                ),
+              ],
+            )
+          : Center(child: _CategoryCardIcon(color: color, highlighted: highlighted)),
+    );
+  }
+}
+
+class _CategoryCardIcon extends StatelessWidget {
+  final Color color;
+  final bool highlighted;
+
+  const _CategoryCardIcon({required this.color, required this.highlighted});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withValues(alpha: highlighted ? 0.7 : 0.4)),
+      ),
+      child: Icon(
+        Icons.style_rounded,
+        color: Colors.white.withValues(alpha: highlighted ? 0.95 : 0.55),
+        size: 24,
       ),
     );
   }
@@ -781,6 +818,11 @@ class _CategoryTile extends StatelessWidget {
   // (voir _showBlockedDialog) — la tuile reste tapable dans ce cas pour
   // pouvoir expliquer la règle, contrairement à `onTap` qui reste null.
   final VoidCallback? onBlockedTap;
+  // Réglable depuis l'espace admin (voir Game.truthImagePath/dareImagePath)
+  // — remplace tout le fond dégradé par une image quand renseignée, avec un
+  // voile sombre pour garder le texte lisible (même principe que
+  // GameBox.imagePath dans _FanCardFace).
+  final String? imagePath;
 
   const _CategoryTile({
     required this.label,
@@ -790,11 +832,13 @@ class _CategoryTile extends StatelessWidget {
     required this.blockedByStreak,
     required this.onTap,
     this.onBlockedTap,
+    this.imagePath,
   });
 
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
+    final hasImage = imagePath != null && imagePath!.isNotEmpty;
 
     return Opacity(
       opacity: disabled ? 0.45 : 1,
@@ -804,37 +848,72 @@ class _CategoryTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           onTap: onTap ?? onBlockedTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 10),
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [color.withValues(alpha: 0.85), color.withValues(alpha: 0.55)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              gradient: hasImage
+                  ? null
+                  : LinearGradient(
+                      colors: [color.withValues(alpha: 0.85), color.withValues(alpha: 0.55)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-              boxShadow: disabled
+              // La lueur teintée (boxShadow) restait pensée pour le dégradé
+              // plat — contre une photo, elle ressortait comme un halo
+              // disgracieux autour de l'image (voir demande utilisateur) ;
+              // la bordure blanche, elle, reste dans les deux cas.
+              boxShadow: hasImage || disabled
                   ? []
                   : [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 10))],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
               children: [
-                Icon(disabled && blockedByStreak ? Icons.lock_rounded : icon, color: Colors.white, size: 30),
-                const SizedBox(height: 10),
-                Text(
-                  label,
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  remaining == 0
-                      ? LocaleScope.of(context).t('truth_or_dare_no_cards')
-                      : LocaleScope.of(context).t(
-                          remaining > 1 ? 'truth_or_dare_cards_count_other' : 'truth_or_dare_cards_count_one',
-                          {'count': '$remaining'},
+                if (hasImage)
+                  Positioned.fill(
+                    child: Image.network(
+                      imagePath!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [color.withValues(alpha: 0.85), color.withValues(alpha: 0.55)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                         ),
-                  style: GoogleFonts.nunito(fontSize: 11, color: Colors.white.withValues(alpha: 0.85)),
+                      ),
+                    ),
+                  ),
+                if (hasImage) Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.32))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!hasImage)
+                        Icon(disabled && blockedByStreak ? Icons.lock_rounded : icon, color: Colors.white, size: 30)
+                      else if (disabled && blockedByStreak)
+                        const Icon(Icons.lock_rounded, color: Colors.white, size: 30)
+                      else
+                        const SizedBox(height: 30),
+                      const SizedBox(height: 10),
+                      Text(
+                        label,
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        remaining == 0
+                            ? LocaleScope.of(context).t('truth_or_dare_no_cards')
+                            : LocaleScope.of(context).t(
+                                remaining > 1 ? 'truth_or_dare_cards_count_other' : 'truth_or_dare_cards_count_one',
+                                {'count': '$remaining'},
+                              ),
+                        style: GoogleFonts.nunito(fontSize: 11, color: Colors.white.withValues(alpha: 0.85)),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

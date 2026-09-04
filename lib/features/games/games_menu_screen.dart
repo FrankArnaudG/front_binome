@@ -18,6 +18,13 @@ import 'game_boxes_screen.dart';
 import 'game_service.dart';
 import 'game_session_screen.dart';
 import 'memory_game/memory_game_mode_screen.dart';
+import 'dot_squares/dot_squares_mode_screen.dart';
+import 'number_hunt/number_hunt_mode_screen.dart';
+import 'battleship/battleship_mode_screen.dart';
+import 'connect_four/connect_four_mode_screen.dart';
+import 'pictionary/pictionary_mode_screen.dart';
+import 'war_card/war_card_mode_screen.dart';
+import 'tic_tac_toe/tic_tac_toe_mode_screen.dart';
 import 'timed_challenge_session_screen.dart';
 import 'widgets/couple_stats_card.dart';
 import 'widgets/game_rules_dialog.dart';
@@ -151,6 +158,55 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
     if (game.isMemoryGame) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => MemoryGameModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isTicTacToe) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => TicTacToeModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isDotSquares) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DotSquaresModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isNumberHunt) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => NumberHuntModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isWarCard) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => WarCardModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isConnectFour) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ConnectFourModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isBattleship) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => BattleshipModeScreen(game: game, user: widget.user)),
+      );
+      return;
+    }
+
+    if (game.isPictionary) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => PictionaryModeScreen(game: game, user: widget.user)),
       );
       return;
     }
@@ -495,6 +551,13 @@ class _CardFront extends StatelessWidget {
                   children: [
                     Text(
                       game.nameFor(localeCode),
+                      // Sans borne, un titre traduit plus long (voir capture
+                      // utilisateur, version japonaise) passait sur 2 lignes
+                      // et faisait déborder la carte (hauteur fixe, voir
+                      // SizedBox(height: 138) plus haut) — bandes
+                      // jaune/noir d'avertissement Flutter.
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -628,6 +691,8 @@ class _CardBack extends StatelessWidget {
               Text(
                 game.nameFor(LocaleScope.of(context).current.code),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,

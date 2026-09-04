@@ -16,6 +16,16 @@ class MemoryGameBoardState {
   final bool finished;
   final DateTime? startedAt;
   final String myUserId;
+  // Non-null tant que la partie est en pause — id de qui l'a posée (voir
+  // demande utilisateur : "c'est uniquement celui qui a mis la pose qui
+  // peut la lever").
+  final String? pausedByUserId;
+  // Moment où la pause EN COURS a commencé — sert uniquement à figer
+  // l'affichage du chrono (voir MemoryGameBoardScreen._elapsed) : sans ça,
+  // le temps continuerait de s'écouler à l'écran pendant la pause, alors
+  // que startedAt n'est décalé qu'À LA REPRISE (voir MemoryGameController::
+  // resume et son équivalent local/Nearby).
+  final DateTime? pausedAt;
 
   const MemoryGameBoardState({
     required this.board,
@@ -28,9 +38,13 @@ class MemoryGameBoardState {
     this.finished = false,
     this.startedAt,
     required this.myUserId,
+    this.pausedByUserId,
+    this.pausedAt,
   });
 
   bool get isMyTurn => currentTurnUserId == myUserId;
+  bool get isPaused => pausedByUserId != null;
+  bool get pausedByMe => pausedByUserId == myUserId;
 
   Set<int> get matchedIndices => matched.expand((pair) => pair.indices ?? const <int>[]).toSet();
 
@@ -43,6 +57,14 @@ class MemoryGameBoardState {
     int? movesCount,
     Map<String, int>? movesByUser,
     bool? finished,
+    DateTime? startedAt,
+    String? pausedByUserId,
+    DateTime? pausedAt,
+    // Distingue "ne pas toucher pausedByUserId/pausedAt" (défaut) de "les
+    // remettre à null" (voir resume(), même motif que clearMismatch) —
+    // sans ce flag, passer littéralement `null` pour lever la pause serait
+    // indiscernable de "je ne fournis rien".
+    bool clearPause = false,
   }) =>
       MemoryGameBoardState(
         board: board,
@@ -53,8 +75,10 @@ class MemoryGameBoardState {
         movesCount: movesCount ?? this.movesCount,
         movesByUser: movesByUser ?? this.movesByUser,
         finished: finished ?? this.finished,
-        startedAt: startedAt,
+        startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
+        pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),
+        pausedAt: clearPause ? null : (pausedAt ?? this.pausedAt),
       );
 }
 
@@ -80,6 +104,17 @@ abstract class MemoryGameTransport {
   Future<void> flip(int index);
 
   Future<void> abandon();
+
+  /// Met la partie en pause — n'importe lequel des deux peut la déclencher,
+  /// mais seule cette personne pourra la lever (voir resume(), demande
+  /// utilisateur). Bloque flip() pour les deux tant qu'elle est active.
+  Future<void> pause();
+
+  /// Lève la pause — réservé à qui l'a posée ; chaque implémentation refuse
+  /// silencieusement (no-op) un appel par l'autre plutôt que de planter,
+  /// l'UI ne propose de toute façon jamais ce bouton à qui n'a pas le
+  /// droit (voir MemoryGameBoardState.pausedByMe).
+  Future<void> resume();
 
   void dispose();
 }

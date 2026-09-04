@@ -11,9 +11,11 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'api_client.dart';
 import 'app_router.dart';
+import 'game_invite_notifier.dart';
 import 'timeline_refresh_signal.dart';
 import 'token_storage.dart';
 import '../features/content/push_send_open_screen.dart';
+import '../features/games/push_game_session_open_screen.dart';
 import '../features/home/tab_navigation_controller.dart';
 import '../models/app_user.dart';
 
@@ -167,6 +169,61 @@ class PushNotificationService {
     if (context == null) return;
 
     Navigator.of(context).popUntil((r) => r.isFirst);
+
+    // Notification "invitation à une partie" (voir GameInviteController) —
+    // remonte le même pop-up d'acceptation que celui affiché app-wide via
+    // le temps réel (voir GameInviteNotifier/GameInviteOverlay), pour les
+    // cas où l'app était fermée/en arrière-plan quand l'invitation a été
+    // envoyée (le canal WebSocket n'a alors rien pu délivrer directement).
+    final inviteId = message.data['game_invite_id'] as String?;
+    if (message.data['type'] == 'game_invite' && inviteId != null) {
+      TabNavigationController.instance.setIndex(2);
+      await GameInviteNotifier.instance.showInviteById(inviteId);
+      return;
+    }
+
+    // Notification "partie lancée" par le binôme (voir MemoryGameController/
+    // TicTacToeController/DotSquaresController::start) — ouvre directement
+    // la partie EN COURS plutôt que de laisser l'utilisateur aller la
+    // chercher lui-même (voir demande utilisateur : "il faut que j'aille
+    // ouvrir"). Index 2 : l'onglet Jeux (voir MainTabScreen._pages), pour
+    // qu'un retour depuis l'écran de jeu atterrisse dessus plutôt que sur
+    // le Carnet de bord.
+    final gameSessionType = switch (message.data['type']) {
+      'memory_game_session' => PushGameSessionType.memoryGame,
+      'tic_tac_toe_session' => PushGameSessionType.ticTacToe,
+      'dot_square_session' => PushGameSessionType.dotSquares,
+      'number_hunt_session' => PushGameSessionType.numberHunt,
+      'war_card_session' => PushGameSessionType.warCard,
+      'connect_four_session' => PushGameSessionType.connectFour,
+      'battleship_session' => PushGameSessionType.battleship,
+      'pictionary_session' => PushGameSessionType.pictionary,
+      _ => null,
+    };
+    if (gameSessionType != null) {
+      final sessionId = switch (gameSessionType) {
+        PushGameSessionType.memoryGame => message.data['memory_game_session_id'] as String?,
+        PushGameSessionType.ticTacToe => message.data['tic_tac_toe_session_id'] as String?,
+        PushGameSessionType.dotSquares => message.data['dot_square_session_id'] as String?,
+        PushGameSessionType.numberHunt => message.data['number_hunt_session_id'] as String?,
+        PushGameSessionType.warCard => message.data['war_card_session_id'] as String?,
+        PushGameSessionType.connectFour => message.data['connect_four_session_id'] as String?,
+        PushGameSessionType.battleship => message.data['battleship_session_id'] as String?,
+        PushGameSessionType.pictionary => message.data['pictionary_session_id'] as String?,
+      };
+      if (sessionId == null) return;
+      final user = await _cachedUser();
+      if (user == null || !context.mounted) return;
+
+      TabNavigationController.instance.setIndex(2);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PushGameSessionOpenScreen(sessionType: gameSessionType, sessionId: sessionId, user: user),
+        ),
+      );
+      return;
+    }
+
     // Index 0 : le Carnet de bord est devenu le premier onglet (page
     // d'accueil, voir TabNavigationController).
     TabNavigationController.instance.setIndex(0);

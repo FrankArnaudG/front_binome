@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -18,11 +19,21 @@ class HeartbeatCard extends StatefulWidget {
   final String message;
   final ThemePalette theme;
 
+  /// Multiplie tailles de texte/espacements — 1.0 par défaut (taille
+  /// "pleine carte", voir SlideDetailScreen/showHeartbeatReplyModal). À
+  /// réduire (voir GameBoxHistoryScreen._buildHeartbeatBubble) quand la
+  /// carte est affichée en miniature dans le fil : les valeurs par défaut
+  /// sont pensées pour une carte pleine largeur et débordaient/paraissaient
+  /// démesurées telles quelles sur une petite carte (même correctif que
+  /// SlideVisualCard.scale).
+  final double scale;
+
   const HeartbeatCard({
     super.key,
     required this.images,
     required this.message,
     required this.theme,
+    this.scale = 1,
   });
 
   @override
@@ -140,31 +151,31 @@ class _HeartbeatCardState extends State<HeartbeatCard> {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
+              padding: EdgeInsets.symmetric(horizontal: 22 * widget.scale, vertical: 28 * widget.scale),
               child: Center(
                 child: Text(
                   widget.message,
                   textAlign: TextAlign.center,
-                  style: handwrittenFont('dancing_script', color: theme.textOnBackground, fontSize: 30),
+                  style: handwrittenFont('dancing_script', color: theme.textOnBackground, fontSize: 30 * widget.scale),
                 ),
               ),
             ),
             // Repère discret "ceci est un battement de cœur", en toutes
             // lettres — même repère que la variante avec photo plus bas.
             Positioned(
-              top: 10,
-              right: 14,
+              top: 10 * widget.scale,
+              right: 14 * widget.scale,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.favorite_rounded, size: 11, color: theme.primary.withValues(alpha: 0.45)),
-                  const SizedBox(width: 4),
+                  Icon(Icons.favorite_rounded, size: 11 * widget.scale, color: theme.primary.withValues(alpha: 0.45)),
+                  SizedBox(width: 4 * widget.scale),
                   Text(
                     'Battement de cœur',
                     style: handwrittenFont(
                       'caveat',
                       color: theme.textOnBackgroundMuted.withValues(alpha: 0.75),
-                      fontSize: 15,
+                      fontSize: 15 * widget.scale,
                     ),
                   ),
                 ],
@@ -245,16 +256,22 @@ class _HeartbeatCardState extends State<HeartbeatCard> {
             ),
           ),
           Positioned(
-            left: 24,
-            right: 24,
-            bottom: 26,
+            left: 24 * widget.scale,
+            right: 24 * widget.scale,
+            // Voir SlideVisualCard.scale : plancher qui garde de la place
+            // pour le repère "Battement de cœur" du coin haut-droit même à
+            // faible échelle, plutôt qu'un simple 26 * scale qui s'en
+            // approchait trop (même correctif que pour les cartes-poèmes).
+            bottom: math.max(26 * widget.scale, 22),
             child: Text(
               _glueTrailingEmoji(widget.message),
               textAlign: TextAlign.center,
+              maxLines: widget.scale < 1 ? 3 : null,
+              overflow: widget.scale < 1 ? TextOverflow.ellipsis : null,
               // Police manuscrite plutôt que l'italique "élégant" des
               // poèmes — un battement de cœur se lit comme un mot glissé à
               // la main sur la photo.
-              style: handwrittenFont('dancing_script', color: Colors.white, fontSize: 30).copyWith(
+              style: handwrittenFont('dancing_script', color: Colors.white, fontSize: 30 * widget.scale).copyWith(
                 shadows: const [
                   Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
                 ],
@@ -266,10 +283,10 @@ class _HeartbeatCardState extends State<HeartbeatCard> {
           // dégradé ne démarre qu'à 45% de la hauteur), donc toujours
           // lisible même sur une photo claire.
           Positioned(
-            top: 12,
-            right: 12,
+            top: 12 * widget.scale,
+            right: 12 * widget.scale,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: EdgeInsets.symmetric(horizontal: 8 * widget.scale, vertical: 4 * widget.scale),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.28),
                 borderRadius: BorderRadius.circular(20),
@@ -277,11 +294,11 @@ class _HeartbeatCardState extends State<HeartbeatCard> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.favorite_rounded, size: 12, color: Colors.white),
-                  const SizedBox(width: 4),
+                  Icon(Icons.favorite_rounded, size: 12 * widget.scale, color: Colors.white),
+                  SizedBox(width: 4 * widget.scale),
                   Text(
                     'Battement de cœur',
-                    style: handwrittenFont('caveat', color: Colors.white, fontSize: 15),
+                    style: handwrittenFont('caveat', color: Colors.white, fontSize: 15 * widget.scale),
                   ),
                 ],
               ),

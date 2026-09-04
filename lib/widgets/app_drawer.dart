@@ -55,9 +55,15 @@ class AppDrawer extends StatelessWidget {
                         : null,
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    user.prenom,
-                    style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600),
+                  // Flexible + ellipsis : le tiroir a une largeur fixe, un
+                  // prénom long débordait sinon hors de l'écran.
+                  Flexible(
+                    child: Text(
+                      user.prenom,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),

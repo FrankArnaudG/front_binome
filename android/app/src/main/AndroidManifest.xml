@@ -1,8 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Prise de photo directe pour le Jardin secret (voir image_picker,
          ImageSource.camera) — la sélection depuis la galerie ne nécessite
-         elle aucune permission déclarée ici, image_picker s'en charge. -->
+         elle aucune permission déclarée ici, image_picker s'en charge.
+         Réutilisée aussi par la caméra optionnelle de la voix en direct
+         (voir VoiceCallService.toggleVideo). -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Voix en direct pendant une partie à deux téléphones (voir
+         VoiceCallService, WebRTC) — micro toujours actif, caméra en plus
+         si activée manuellement. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Mode "présentiel connecté" du Jeu de Mémoire (nearby_connections,
          Bluetooth + WiFi Direct, aucun internet requis, Android uniquement
          — voir memory_game_transport_nearby.dart). -->

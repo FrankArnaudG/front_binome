@@ -12,6 +12,7 @@ import '../models/box.dart';
 import '../widgets/milestone_reminder_dialog.dart';
 import '../widgets/notification_opt_in_prompt.dart';
 import 'delivery_ack_service.dart';
+import 'game_invite_notifier.dart';
 import 'milestone_reminder_service.dart';
 import 'push_notification_service.dart';
 
@@ -53,6 +54,12 @@ class AppRouter {
     // PushNotificationService, dégrade silencieusement si Firebase/permission
     // indisponible).
     _handlePushPermission();
+
+    // Écoute les invitations à une partie dès maintenant, pour toute la
+    // durée de la session — voir demande utilisateur : le pop-up doit
+    // pouvoir apparaître "peu importe où" dans l'app, pas seulement depuis
+    // un écran de jeu particulier.
+    GameInviteNotifier.instance.init(user.id);
 
     if (box == null || box.isDissolved) {
       toBoxChoice(context, user, replace: true);

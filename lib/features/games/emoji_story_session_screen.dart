@@ -17,6 +17,7 @@ import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/emoji_compose_bar.dart';
 import '../../widgets/send_status_tick.dart';
+import '../../widgets/waiting_dots.dart';
 import '../box/box_scope.dart';
 import '../box/box_service.dart';
 import '../content/content_service.dart';
@@ -2002,7 +2003,7 @@ class _StoryBubbleState extends State<_StoryBubble> {
             ),
           ),
           const SizedBox(height: 4),
-          _WaitingDots(color: mutedColor),
+          WaitingDots(color: mutedColor),
         ],
       );
     }
@@ -2082,7 +2083,7 @@ class _StoryBubbleState extends State<_StoryBubble> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _WaitingDots(color: mutedColor),
+            WaitingDots(color: mutedColor),
             const SizedBox(width: 6),
             SendTickIcon(tick: tick, color: mutedColor),
           ],
@@ -2173,56 +2174,3 @@ class _SmallActionButton extends StatelessWidget {
 /// décoratif (ce n'est PAS une détection de frappe en direct côté
 /// partenaire, juste un signal visuel "c'est en attente", façon indicateur
 /// de saisie des messageries classiques).
-class _WaitingDots extends StatefulWidget {
-  final Color color;
-
-  const _WaitingDots({required this.color});
-
-  @override
-  State<_WaitingDots> createState() => _WaitingDotsState();
-}
-
-class _WaitingDotsState extends State<_WaitingDots>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 22,
-      height: 10,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(3, (i) {
-              final t = (_controller.value - i * 0.2) % 1.0;
-              final bounce = t < 0.5 ? t * 2 : (1 - t) * 2;
-              return Transform.translate(
-                offset: Offset(0, -3 * bounce),
-                child: Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.color,
-                  ),
-                ),
-              );
-            }),
-          );
-        },
-      ),
-    );
-  }
-}

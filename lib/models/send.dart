@@ -7,6 +7,25 @@ import 'pack.dart';
 import 'send_reaction.dart';
 import 'slide.dart';
 
+// STX/ETX (caractères de contrôle qu'aucun clavier/IME ne produit jamais) —
+// voir GameCardThreadScreen._encodeQuoted/_decodeQuoted, qui encode une
+// citation "Répondre à..." directement dans le texte d'un message plutôt
+// que via un champ serveur dédié. Repris ici (String.fromCharCode plutôt
+// qu'un caractère littéral, invisible et donc fragile à l'édition) pour que
+// shortPreview (liste de discussions) affiche seulement le VRAI texte du
+// message, jamais la citation encodée (voir demande utilisateur : "ignorer
+// le commentaire et mettre juste le message").
+final String _quoteStart = String.fromCharCode(2);
+final String _quoteEnd = String.fromCharCode(3);
+
+String _withoutQuotedPrefix(String raw) {
+  if (raw.startsWith(_quoteStart)) {
+    final endIndex = raw.indexOf(_quoteEnd);
+    if (endIndex != -1) return raw.substring(endIndex + 1);
+  }
+  return raw;
+}
+
 class Send {
   final String id;
   final String boxId;
@@ -204,7 +223,10 @@ class Send {
     if (isHeartbeat) return heartbeatMessageFor(localeCode) ?? 'Un cœur qui bat pour toi 💓';
     if (isEmojiStory) return emojiStory?.emojis ?? '💬';
     if (isEmojiReply) return emojiReplyText ?? '💬';
-    if (isTextReply) return textReplyText ?? '';
+    // Ignore la citation éventuellement encodée dans le texte (voir
+    // _withoutQuotedPrefix) — seul le vrai message compte dans un aperçu
+    // de liste (voir demande utilisateur).
+    if (isTextReply) return _withoutQuotedPrefix(textReplyText ?? '');
     return '';
   }
 

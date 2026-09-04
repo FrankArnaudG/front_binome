@@ -1,0 +1,264 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+
+import '../voice_call_service.dart';
+
+/// Bouton flottant "voix en direct" (voir VoiceCallService et demande
+/// utilisateur : "ouvrir un micro pour que les joueurs échangent") — un
+/// simple tap active/rejoint l'appel dès que le binôme fait de même
+/// (négociation WebRTC automatique en arrière-plan) ; une fois connecté,
+/// on MAINTIENT le bouton appuyé pour parler (push-to-talk, voir doc de
+/// classe de VoiceCallService — jamais de canal ouvert en permanence). Une
+/// petite croix apparaît une fois l'appel activé pour raccrocher.
+///
+/// La caméra (voir demande utilisateur : "et si on veut ajouter une
+/// vidéo ?") est un second bouton, séparé et OPTIONNEL — jamais activée
+/// par défaut, contrairement au micro qui se négocie dès la connexion.
+class VoiceCallOverlay extends StatefulWidget {
+  final String boxId;
+  final String myUserId;
+  final String partnerUserId;
+  final bool enabled;
+
+  const VoiceCallOverlay({
+    super.key,
+    required this.boxId,
+    required this.myUserId,
+    required this.partnerUserId,
+    required this.enabled,
+  });
+
+  @override
+  State<VoiceCallOverlay> createState() => _VoiceCallOverlayState();
+}
+
+class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
+  VoiceCallService? _service;
+  StreamSubscription<VoiceCallStatus>? _subscription;
+  StreamSubscription<bool>? _remoteVideoSubscription;
+  VoiceCallStatus _status = VoiceCallStatus.idle;
+  bool _talking = false;
+  bool _cameraOn = false;
+  bool _remoteVideoOn = false;
+  bool _togglingCamera = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) _createService();
+  }
+
+  void _createService() {
+    final service = VoiceCallService(
+      boxId: widget.boxId,
+      myUserId: widget.myUserId,
+      partnerUserId: widget.partnerUserId,
+    );
+    _service = service;
+    _subscription = service.statusStream.listen((status) {
+      if (!mounted) return;
+      setState(() => _status = status);
+      // L'appel se termine (raccroché/échoué) : la caméra locale est déjà
+      // coupée côté service (voir _teardown), on aligne juste l'état visuel.
+      if (status == VoiceCallStatus.idle || status == VoiceCallStatus.failed) {
+        setState(() => _cameraOn = false);
+      }
+    });
+    _remoteVideoSubscription = service.remoteVideoActiveStream.listen((active) {
+      if (!mounted) return;
+      setState(() => _remoteVideoOn = active);
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _remoteVideoSubscription?.cancel();
+    unawaited(_service?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _onTapMic() async {
+    final service = _service;
+    if (service == null) return;
+    if (_status == VoiceCallStatus.idle || _status == VoiceCallStatus.failed) {
+      await service.enable();
+    }
+  }
+
+  void _onTalkStart() {
+    if (_status != VoiceCallStatus.connected) return;
+    setState(() => _talking = true);
+    _service?.setTalking(true);
+  }
+
+  void _onTalkStop() {
+    if (!_talking) return;
+    setState(() => _talking = false);
+    _service?.setTalking(false);
+  }
+
+  Future<void> _hangup() async {
+    await _service?.disable();
+    setState(() {
+      _talking = false;
+      _cameraOn = false;
+    });
+  }
+
+  Future<void> _toggleCamera() async {
+    final service = _service;
+    if (service == null || _status != VoiceCallStatus.connected || _togglingCamera) return;
+    setState(() => _togglingCamera = true);
+    final result = await service.toggleVideo(!_cameraOn);
+    if (!mounted) return;
+    setState(() {
+      _cameraOn = result;
+      _togglingCamera = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return const SizedBox.shrink();
+
+    final active = _status != VoiceCallStatus.idle;
+    final showVideoArea = _cameraOn || _remoteVideoOn;
+
+    return Positioned(
+      left: 16,
+      bottom: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showVideoArea) ...[
+            _buildVideoPreviews(),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GestureDetector(
+                    onTap: _onTapMic,
+                    onTapDown: (_) => _onTalkStart(),
+                    onTapUp: (_) => _onTalkStop(),
+                    onTapCancel: _onTalkStop,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _colorFor(_status, _talking),
+                        shape: BoxShape.circle,
+                      ),
+                      child: _iconFor(_status),
+                    ),
+                  ),
+                  if (active)
+                    Positioned(
+                      top: -6,
+                      right: -6,
+                      child: GestureDetector(
+                        onTap: _hangup,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle),
+                          child: const Icon(Icons.close_rounded, color: Colors.white70, size: 13),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (_status == VoiceCallStatus.connected) ...[
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _toggleCamera,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _cameraOn
+                          ? Colors.greenAccent.shade400.withValues(alpha: 0.9)
+                          : Colors.black.withValues(alpha: 0.55),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _togglingCamera
+                        ? const Padding(
+                            padding: EdgeInsets.all(9),
+                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                          )
+                        : Icon(
+                            _cameraOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoPreviews() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_remoteVideoOn) _videoBox(_service!.remoteRenderer, mirror: false),
+        if (_remoteVideoOn && _cameraOn) const SizedBox(width: 6),
+        if (_cameraOn) _videoBox(_service!.localRenderer, mirror: true),
+      ],
+    );
+  }
+
+  Widget _videoBox(RTCVideoRenderer renderer, {required bool mirror}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 84,
+        height: 112,
+        color: Colors.black,
+        child: RTCVideoView(renderer, mirror: mirror, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+      ),
+    );
+  }
+
+  Color _colorFor(VoiceCallStatus status, bool talking) {
+    if (talking) return Colors.greenAccent.shade400.withValues(alpha: 0.9);
+    switch (status) {
+      case VoiceCallStatus.idle:
+        return Colors.black.withValues(alpha: 0.55);
+      case VoiceCallStatus.connecting:
+        return Colors.orangeAccent.withValues(alpha: 0.85);
+      case VoiceCallStatus.connected:
+        return Colors.black.withValues(alpha: 0.55);
+      case VoiceCallStatus.failed:
+        return Colors.redAccent.withValues(alpha: 0.75);
+    }
+  }
+
+  Widget _iconFor(VoiceCallStatus status) {
+    switch (status) {
+      case VoiceCallStatus.idle:
+        return const Icon(Icons.mic_off_rounded, color: Colors.white, size: 20);
+      case VoiceCallStatus.connecting:
+        return const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+        );
+      case VoiceCallStatus.connected:
+        return const Icon(Icons.mic_rounded, color: Colors.white, size: 20);
+      case VoiceCallStatus.failed:
+        return const Icon(Icons.mic_off_rounded, color: Colors.white, size: 20);
+    }
+  }
+}

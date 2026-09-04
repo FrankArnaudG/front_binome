@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -129,7 +131,15 @@ class SlideVisualCard extends StatelessWidget {
             Positioned(
               left: 24 * scale,
               right: captionRightPadding * scale,
-              bottom: 28 * scale,
+              // À faible échelle (voir _PoemReplyBubble : carte miniature
+              // dans le fil, scale 0.6), 28 * scale se rapprochait trop du
+              // bas de la carte et venait toucher les points de progression
+              // à cœurs de SlidePackViewer, fixés eux à bottom: 10 quelle
+              // que soit l'échelle (voir demande utilisateur, capture "le
+              // texte touche les cœurs") — plancher qui garde toujours de
+              // la place pour eux, sans rien changer à pleine taille (28 >
+              // ce plancher dès que scale approche 1).
+              bottom: math.max(28 * scale, 26),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,

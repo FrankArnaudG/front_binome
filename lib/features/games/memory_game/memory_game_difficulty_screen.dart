@@ -11,21 +11,28 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_board_screen.dart';
 import 'memory_game_mode_screen.dart';
 import 'memory_game_transport.dart';
 import 'memory_game_transport_local.dart';
-import 'memory_game_transport_remote.dart';
 
-/// Démarre une partie (à distance ou pass-and-play) et pousse l'écran de
-/// plateau — fonction autonome plutôt que méthode d'écran, car elle doit
-/// pouvoir être rappelée depuis [MemoryGameBoardScreen] lui-même pour le
-/// bouton "Rejouer" (voir onRematch ci-dessous), à un moment où l'écran de
-/// difficulté d'origine peut déjà avoir été retiré de la pile — le
+/// Démarre une partie (à distance ou pass-and-play) et pousse l'écran
+/// correspondant — fonction autonome plutôt que méthode d'écran, car elle
+/// doit pouvoir être rappelée depuis [MemoryGameBoardScreen] lui-même pour
+/// le bouton "Rejouer" (voir onRematch ci-dessous), à un moment où l'écran
+/// de difficulté d'origine peut déjà avoir été retiré de la pile — le
 /// `context` utilisé est donc toujours celui de l'appelant ACTUEL, jamais
 /// capturé depuis un State qui pourrait être démonté entre-temps.
+///
+/// Mode à distance : passe désormais par une INVITATION (voir GameInvite)
+/// plutôt que de créer la session tout de suite — pousse
+/// [GameInviteWaitingScreen], qui pousse lui-même le plateau une fois le
+/// binôme d'accord (voir demande utilisateur : pop-up d'acceptation +
+/// écran d'attente). Pass-and-play inchangé (aucun appel réseau, voir
+/// LocalMemoryGameTransport).
 Future<void> startMemoryGameAndPush(
   BuildContext context, {
   required Game game,
@@ -45,31 +52,37 @@ Future<void> startMemoryGameAndPush(
     return;
   }
 
-  final playerNames = {user.id: 'Toi', partner.id: partner.prenom};
-  final playerAvatars = {user.id: user.avatar, partner.id: partner.avatar};
-
   try {
-    late final MemoryGameTransport transport;
     if (mode == MemoryGameMode.remote) {
       final board = generateShuffledMemoryBoard(pairCount);
-      final session = await GameService.instance.startMemoryGame(game.id, pairCount: pairCount, board: board);
+      final invite = await GameService.instance.createGameInvite(
+        game.id,
+        sessionType: 'memory_game',
+        payload: {'pair_count': pairCount, 'board': board},
+      );
       if (!context.mounted) return;
-      transport = RemoteMemoryGameTransport(session: session, boxId: box!.id, myUserId: user.id);
-    } else {
-      // Pass-and-play : aucun appel réseau pour jouer, voir
-      // LocalMemoryGameTransport.
-      transport = LocalMemoryGameTransport(pairCount: pairCount, myUserId: user.id, partnerUserId: partner.id);
-      unawaited(_postLocalResultWhenFinished(game, transport));
-      if (!context.mounted) return;
+      final route = MaterialPageRoute<void>(builder: (_) => GameInviteWaitingScreen(invite: invite, user: user));
+      if (replaceCurrent) {
+        Navigator.of(context).pushReplacement(route);
+      } else {
+        Navigator.of(context).push(route);
+      }
+      return;
     }
+
+    // Pass-and-play : aucun appel réseau pour jouer, voir
+    // LocalMemoryGameTransport.
+    final transport = LocalMemoryGameTransport(pairCount: pairCount, myUserId: user.id, partnerUserId: partner.id);
+    unawaited(_postLocalResultWhenFinished(game, transport));
+    if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
       builder: (_) => MemoryGameBoardScreen(
         game: game,
         user: user,
         transport: transport,
-        playerNames: playerNames,
-        playerAvatars: playerAvatars,
+        playerNames: {user.id: user.prenom, partner.id: partner.prenom},
+        playerAvatars: {user.id: user.avatar, partner.id: partner.avatar},
         onRematch: (ctx) => startMemoryGameAndPush(
           ctx,
           game: game,
@@ -168,7 +181,7 @@ class _MemoryGameDifficultyScreenState extends State<MemoryGameDifficultyScreen>
   }
 }
 
-/// Liste des 6 paliers, extraite pour être réutilisée telle quelle par
+/// Liste des paliers, extraite pour être réutilisée telle quelle par
 /// l'hôte en présentiel connecté (voir memory_game_nearby_connect_screen.dart),
 /// qui choisit la difficulté après connexion plutôt qu'avant.
 class MemoryGameDifficultyList extends StatelessWidget {

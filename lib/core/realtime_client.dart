@@ -42,6 +42,7 @@ class RealtimeClient {
   final _eventCallbacks = <String, Set<void Function(RealtimeEvent event)>>{};
   final _presenceCallbacks = <String, Set<void Function(Set<String> memberIds)>>{};
   final _presentMembers = <String, Set<String>>{};
+  Timer? _reconnectTimer;
 
   bool get isConnected => _channel != null;
 
@@ -69,15 +70,70 @@ class RealtimeClient {
       // _channel reste null : un prochain appel à connect() retentera,
       // plutôt que de rester bloqué à croire qu'on est déjà connecté.
       debugPrint('Reverb: échec de connexion ($e)');
+      _scheduleReconnect();
       return;
     }
 
     _channel = channel;
+    _reconnectTimer?.cancel();
     _subscription = channel.stream.listen(
       _handleMessage,
       onError: (e) => debugPrint('Reverb websocket error: $e'),
-      onDone: () => _reset(),
+      // Coupure INATTENDUE (serveur redémarré, réseau perdu...) — jamais
+      // pour un [disconnect] volontaire, qui vide ses propres abonnements
+      // avant d'appeler _reset() et ne repasse donc jamais par ici avec
+      // des écouteurs encore enregistrés (voir _scheduleReconnect).
+      onDone: () {
+        _reset();
+        _scheduleReconnect();
+      },
     );
+  }
+
+  /// Retente [connect] après une courte pause, PUIS rejoue tous les
+  /// abonnements dont un écran/singleton a encore besoin (voir
+  /// [_resubscribeAll]) — sans ça, une coupure momentanée de Reverb (ex.
+  /// redémarrage du serveur en cours de test) laissait l'app définitivement
+  /// sourde au temps réel jusqu'au prochain relancement complet : rien ne
+  /// redemandait jamais la connexion (voir demande utilisateur : "toujours
+  /// rien" après un redémarrage de Reverb, alors que le serveur allait très
+  /// bien). `_eventCallbacks`/`_presenceCallbacks` ne sont volontairement
+  /// PAS effacés par [_reset] : ce sont ces mêmes abonnements qu'on rejoue
+  /// ici, aucun appelant n'a besoin de se réabonner lui-même.
+  void _scheduleReconnect() {
+    if (_eventCallbacks.isEmpty && _presenceCallbacks.isEmpty) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), () async {
+      await connect();
+      if (_channel != null) await _resubscribeAll();
+    });
+  }
+
+  /// Renvoie `pusher:subscribe` pour chaque canal qui avait encore au moins
+  /// un écouteur au moment de la coupure — voir [_scheduleReconnect].
+  Future<void> _resubscribeAll() async {
+    for (var i = 0; i < 20 && _socketId == null; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    if (_socketId == null) return;
+
+    final channelNames = {..._eventCallbacks.keys, ..._presenceCallbacks.keys};
+    for (final channelName in channelNames) {
+      if (_subscribedChannels.contains(channelName)) continue;
+
+      if (channelName.startsWith('presence-')) {
+        final auth = await _authorize(channelName, _socketId!);
+        if (auth == null) continue;
+        _subscribedChannels.add(channelName);
+        _send({
+          'event': 'pusher:subscribe',
+          'data': {'channel': channelName, 'auth': auth['auth'], 'channel_data': auth['channel_data']},
+        });
+      } else {
+        _subscribedChannels.add(channelName);
+        _send({'event': 'pusher:subscribe', 'data': {'channel': channelName}});
+      }
+    }
   }
 
   void _handleMessage(dynamic raw) {
@@ -292,7 +348,16 @@ class RealtimeClient {
     });
   }
 
+  /// Coupure VOLONTAIRE (ex. déconnexion du compte) — contrairement à une
+  /// coupure subie, vide aussi les abonnements eux-mêmes : rien ne doit
+  /// tenter de se reconnecter/se réabonner ensuite (voir
+  /// [_scheduleReconnect], qui ne fait justement rien si ces deux maps
+  /// sont vides).
   Future<void> disconnect() async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _eventCallbacks.clear();
+    _presenceCallbacks.clear();
     await _channel?.sink.close();
     _reset();
   }

@@ -59,6 +59,15 @@ dependencies:
   # Mode "Jeu de Mémoire" présentiel connecté — Bluetooth/WiFi Direct sans
   # internet, Android uniquement (voir memory_game_transport_nearby.dart).
   nearby_connections: ^4.3.0
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  screen_protector: ^1.5.3
+  path_provider: ^2.1.5
+  # Voix en direct pendant une partie à deux téléphones (voir
+  # VoiceCallService) — appel audio WebRTC, signalisation via Reverb
+  # (VoiceSignal côté back), jamais de flux audio transitant par notre
+  # backend.
+  flutter_webrtc: ^0.12.9
 
 dev_dependencies:
   flutter_test:
@@ -85,6 +94,7 @@ flutter:
   assets:
     - assets/images/
     - assets/images/shop/
+    - assets/logo/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -19,12 +19,17 @@ class SlidePackViewer extends StatefulWidget {
   /// en bordure et casse le rendu immersif "bord à bord".
   final EdgeInsets slideMargin;
 
+  /// Répercuté tel quel sur [SlideVisualCard.scale] — à réduire quand la
+  /// visionneuse est affichée en miniature (voir slide_visual_card.dart).
+  final double scale;
+
   const SlidePackViewer({
     super.key,
     required this.slides,
     required this.theme,
     this.category,
     this.slideMargin = const EdgeInsets.all(16),
+    this.scale = 1,
   });
 
   @override
@@ -48,6 +53,7 @@ class _SlidePackViewerState extends State<SlidePackViewer> {
               slide: widget.slides[i],
               theme: widget.theme,
               category: widget.category,
+              scale: widget.scale,
             ),
           ),
         ),

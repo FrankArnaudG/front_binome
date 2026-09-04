@@ -23,7 +23,12 @@ const _wordLockSeconds = 5;
 /// "300" → "5 min", "90" → "90s" — affichage lisible de _roundSeconds
 /// (voir Commencer/_RecapView) plutôt qu'un nombre de secondes à trois
 /// chiffres.
-String _durationLabel(int seconds) => seconds % 60 == 0 ? '${seconds ~/ 60} min' : '${seconds}s';
+String _durationLabel(BuildContext context, int seconds) {
+  final t = LocaleScope.of(context).t;
+  return seconds % 60 == 0
+      ? t('charades_duration_minutes', {'count': '${seconds ~/ 60}'})
+      : t('charades_duration_seconds', {'count': '$seconds'});
+}
 
 /// Manche de mime pour une catégorie (voir CharadesCategoriesScreen) : jeu
 /// en présentiel, un seul téléphone passé de main en main, aucune
@@ -34,19 +39,26 @@ class CharadesMimeSessionScreen extends StatefulWidget {
   final Game game;
   final GameBox box;
 
-  const CharadesMimeSessionScreen({super.key, required this.game, required this.box});
+  const CharadesMimeSessionScreen({
+    super.key,
+    required this.game,
+    required this.box,
+  });
 
   @override
-  State<CharadesMimeSessionScreen> createState() => _CharadesMimeSessionScreenState();
+  State<CharadesMimeSessionScreen> createState() =>
+      _CharadesMimeSessionScreenState();
 }
 
-class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen> with TickerProviderStateMixin {
-  late final AnimationController _timer = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: _roundSeconds),
-  )..addStatusListener((status) {
-      if (status == AnimationStatus.completed) _endRound();
-    });
+class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _timer =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: _roundSeconds),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _endRound();
+      });
 
   // Verrou anti-réflexe sur "Deviné !" (voir _wordLockSeconds) — redémarré à
   // chaque nouveau mot affiché, qu'il vienne du début de manche, d'un
@@ -70,7 +82,8 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen> w
     _deck = _shuffledDeck();
   }
 
-  List<GameBoxQuestion> _shuffledDeck() => List.of(widget.box.questions)..shuffle();
+  List<GameBoxQuestion> _shuffledDeck() =>
+      List.of(widget.box.questions)..shuffle();
 
   @override
   void dispose() {
@@ -144,7 +157,10 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen> w
         foregroundColor: theme.textOnBackground,
         title: Text(
           widget.box.titleFor(localeCode),
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            color: theme.textOnBackground,
+          ),
         ),
       ),
       body: ThemedBackground(
@@ -156,30 +172,30 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen> w
                 theme: theme,
                 child: switch (_phase) {
                   _Phase.ready => _ReadyView(
-                      theme: theme,
-                      box: widget.box,
-                      onStartTimed: () => _startRound(timed: true),
-                      onStartUntimed: () => _startRound(timed: false),
-                    ),
+                    theme: theme,
+                    box: widget.box,
+                    onStartTimed: () => _startRound(timed: true),
+                    onStartUntimed: () => _startRound(timed: false),
+                  ),
                   _Phase.playing => _PlayingView(
-                      theme: theme,
-                      timer: _timer,
-                      wordLock: _wordLock,
-                      timed: _timed,
-                      word: _deck.first.textFor(localeCode),
-                      score: _score,
-                      canSkip: _deck.length > 1,
-                      onCorrect: _correct,
-                      onSkip: _skip,
-                      onEndUntimed: _endRound,
-                    ),
+                    theme: theme,
+                    timer: _timer,
+                    wordLock: _wordLock,
+                    timed: _timed,
+                    word: _deck.first.textFor(localeCode),
+                    score: _score,
+                    canSkip: _deck.length > 1,
+                    onCorrect: _correct,
+                    onSkip: _skip,
+                    onEndUntimed: _endRound,
+                  ),
                   _Phase.recap => _RecapView(
-                      theme: theme,
-                      score: _score,
-                      timed: _timed,
-                      onNextRound: _prepareNextRound,
-                      onChangeCategory: () => Navigator.of(context).pop(),
-                    ),
+                    theme: theme,
+                    score: _score,
+                    timed: _timed,
+                    onNextRound: _prepareNextRound,
+                    onChangeCategory: () => Navigator.of(context).pop(),
+                  ),
                 },
               ),
             ),
@@ -196,33 +212,57 @@ class _ReadyView extends StatelessWidget {
   final VoidCallback onStartTimed;
   final VoidCallback onStartUntimed;
 
-  const _ReadyView({required this.theme, required this.box, required this.onStartTimed, required this.onStartUntimed});
+  const _ReadyView({
+    required this.theme,
+    required this.box,
+    required this.onStartTimed,
+    required this.onStartUntimed,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = box.imagePath != null && box.imagePath!.isNotEmpty;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
-          ),
-          child: Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 32),
-        ),
+        // Bandeau plein cadre quand une image est renseignée (voir
+        // GameBox.imagePath, réglable depuis l'espace admin) — plus
+        // immersif que le petit rond dégradé, qui reste le repli quand
+        // aucune image n'est choisie.
+        if (hasImage)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Image.network(
+              box.imagePath!,
+              width: double.infinity,
+              height: 170,
+              fit: BoxFit.cover,
+              alignment: box.imageAlignment,
+              errorBuilder: (context, error, stackTrace) =>
+                  _ReadyBadge(theme: theme, box: box),
+            ),
+          )
+        else
+          _ReadyBadge(theme: theme, box: box),
         const SizedBox(height: 18),
         Text(
           box.titleFor(LocaleScope.of(context).current.code),
           textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: theme.textOnBackground,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Passe le téléphone à la personne qui va mimer 🤳',
+          LocaleScope.of(context).t('charades_ready_hint'),
           textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            color: theme.textOnBackgroundMuted,
+          ),
         ),
         const SizedBox(height: 28),
         SizedBox(
@@ -230,7 +270,9 @@ class _ReadyView extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+              gradient: LinearGradient(
+                colors: [theme.primary, theme.secondary],
+              ),
             ),
             child: Material(
               color: Colors.transparent,
@@ -240,9 +282,15 @@ class _ReadyView extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Text(
-                    'Commencer (${_durationLabel(_roundSeconds)})',
+                    LocaleScope.of(context).t('charades_start_button', {
+                      'duration': _durationLabel(context, _roundSeconds),
+                    }),
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 15),
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ),
@@ -256,16 +304,44 @@ class _ReadyView extends StatelessWidget {
             onPressed: onStartUntimed,
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              side: BorderSide(color: theme.textOnBackgroundMuted.withValues(alpha: 0.3)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              side: BorderSide(
+                color: theme.textOnBackgroundMuted.withValues(alpha: 0.3),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
             child: Text(
-              'Jouer sans chrono',
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
+              LocaleScope.of(context).t('charades_start_untimed_button'),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w700,
+                color: theme.textOnBackgroundMuted,
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Repli quand la boîte n'a pas d'image personnalisée (voir _ReadyView).
+class _ReadyBadge extends StatelessWidget {
+  final ThemePalette theme;
+  final GameBox box;
+
+  const _ReadyBadge({required this.theme, required this.box});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+      ),
+      child: Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 32),
     );
   }
 }
@@ -296,21 +372,28 @@ class _PlayingView extends StatelessWidget {
   });
 
   Widget _scoreBadge() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: theme.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.primary.withValues(alpha: 0.3)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: theme.surface,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: theme.primary.withValues(alpha: 0.3)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.emoji_events_rounded, size: 14, color: theme.primary),
+        const SizedBox(width: 5),
+        Text(
+          '$score',
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: theme.textOnBackground,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.emoji_events_rounded, size: 14, color: theme.primary),
-            const SizedBox(width: 5),
-            Text('$score', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackground)),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -321,7 +404,9 @@ class _PlayingView extends StatelessWidget {
           AnimatedBuilder(
             animation: timer,
             builder: (context, _) {
-              final remaining = (_roundSeconds * (1 - timer.value)).ceil().clamp(0, _roundSeconds);
+              final remaining = (_roundSeconds * (1 - timer.value))
+                  .ceil()
+                  .clamp(0, _roundSeconds);
               final urgent = remaining <= 10;
               return Column(
                 children: [
@@ -334,7 +419,9 @@ class _PlayingView extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: urgent ? Colors.redAccent : theme.textOnBackground,
+                          color: urgent
+                              ? Colors.redAccent
+                              : theme.textOnBackground,
                           // Chiffres à chasse fixe : sans ça, "9 s"→"10 s"
                           // décale légèrement le texte à chaque changement de
                           // chiffre.
@@ -350,7 +437,9 @@ class _PlayingView extends StatelessWidget {
                       value: 1 - timer.value,
                       minHeight: 6,
                       backgroundColor: theme.primary.withValues(alpha: 0.15),
-                      valueColor: AlwaysStoppedAnimation(urgent ? Colors.redAccent : theme.primary),
+                      valueColor: AlwaysStoppedAnimation(
+                        urgent ? Colors.redAccent : theme.primary,
+                      ),
                     ),
                   ),
                 ],
@@ -364,10 +453,18 @@ class _PlayingView extends StatelessWidget {
               _scoreBadge(),
               TextButton(
                 onPressed: onEndUntimed,
-                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                ),
                 child: Text(
-                  'Terminer',
-                  style: GoogleFonts.nunito(fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
+                  LocaleScope.of(context).t('charades_finish_button'),
+                  style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.w700,
+                    color: theme.textOnBackgroundMuted,
+                  ),
                 ),
               ),
             ],
@@ -392,13 +489,25 @@ class _PlayingView extends StatelessWidget {
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, animation) => FadeTransition(
               opacity: animation,
-              child: ScaleTransition(scale: Tween(begin: 0.92, end: 1.0).animate(animation), child: child),
+              child: ScaleTransition(
+                scale: Tween(begin: 0.92, end: 1.0).animate(animation),
+                child: child,
+              ),
             ),
             child: Text(
               word,
               key: ValueKey(word),
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(fontSize: 32, fontWeight: FontWeight.w800, height: 1.2, color: theme.textOnBackground),
+              // Manuscrite plutôt que Poppins (voir demande utilisateur) —
+              // taille relevée par rapport à l'ancien style : à poids visuel
+              // égal, une police cursive a besoin d'être plus grande pour
+              // rester aussi lisible d'un coup d'œil.
+              style: GoogleFonts.caveat(
+                fontSize: 44,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+                color: theme.textOnBackground,
+              ),
             ),
           ),
         ),
@@ -410,10 +519,20 @@ class _PlayingView extends StatelessWidget {
                 onPressed: canSkip ? onSkip : null,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: BorderSide(color: theme.textOnBackgroundMuted.withValues(alpha: 0.3)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  side: BorderSide(
+                    color: theme.textOnBackgroundMuted.withValues(alpha: 0.3),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
-                child: Text('⏭️ Passer', style: GoogleFonts.nunito(fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted)),
+                child: Text(
+                  LocaleScope.of(context).t('charades_skip_button'),
+                  style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.w700,
+                    color: theme.textOnBackgroundMuted,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -422,13 +541,20 @@ class _PlayingView extends StatelessWidget {
                 animation: wordLock,
                 builder: (context, _) {
                   final locked = wordLock.status != AnimationStatus.completed;
-                  final remainingLock = (_wordLockSeconds * (1 - wordLock.value)).ceil().clamp(0, _wordLockSeconds);
+                  final remainingLock =
+                      (_wordLockSeconds * (1 - wordLock.value)).ceil().clamp(
+                        0,
+                        _wordLockSeconds,
+                      );
                   return DecoratedBox(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
                       gradient: LinearGradient(
                         colors: locked
-                            ? [theme.primary.withValues(alpha: 0.35), theme.secondary.withValues(alpha: 0.35)]
+                            ? [
+                                theme.primary.withValues(alpha: 0.35),
+                                theme.secondary.withValues(alpha: 0.35),
+                              ]
                             : [theme.primary, theme.secondary],
                       ),
                     ),
@@ -443,9 +569,20 @@ class _PlayingView extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           child: Text(
-                            locked ? '✅ Deviné ! ($remainingLock s)' : '✅ Deviné !',
+                            locked
+                                ? LocaleScope.of(context).t(
+                                    'charades_guessed_locked_button',
+                                    {'seconds': '$remainingLock'},
+                                  )
+                                : LocaleScope.of(
+                                    context,
+                                  ).t('charades_guessed_button'),
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14),
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
                           ),
                         ),
                       ),
@@ -463,12 +600,13 @@ class _PlayingView extends StatelessWidget {
 
 /// Phrase de complicité selon le score — paliers fixes pensés pour une
 /// manche de 5 minutes (voir _roundSeconds).
-String _complicityPhrase(int score) {
-  if (score <= 4) return 'Ce n\'est que le début — la complicité, ça se muscle ! 💪';
-  if (score <= 10) return 'Une belle base, la complicité est déjà là 🙂';
-  if (score <= 17) return 'Une vraie complicité, ça se sent ✨';
-  if (score <= 25) return 'Un sacré bon duo ! 🔥';
-  return 'Synchronisation parfaite, imparable ! 🏆';
+String _complicityPhrase(BuildContext context, int score) {
+  final t = LocaleScope.of(context).t;
+  if (score <= 4) return t('charades_complicity_1');
+  if (score <= 10) return t('charades_complicity_2');
+  if (score <= 17) return t('charades_complicity_3');
+  if (score <= 25) return t('charades_complicity_4');
+  return t('charades_complicity_5');
 }
 
 class _RecapView extends StatelessWidget {
@@ -493,26 +631,52 @@ class _RecapView extends StatelessWidget {
       children: [
         Icon(Icons.emoji_events_rounded, color: theme.primary, size: 44),
         const SizedBox(height: 14),
-        Text(
-          '$score mot${score > 1 ? 's' : ''} deviné${score > 1 ? 's' : ''} !',
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: LocaleScope.of(context).t(
+                  score > 1
+                      ? 'charades_words_guessed_other'
+                      : 'charades_words_guessed_one',
+                  {'count': '$score'},
+                ),
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  color: theme.textOnBackground,
+                ),
+              ),
+              // En mode libre, aucune référence de temps n'a de sens (voir
+              // _ReadyView.onStartUntimed) — ni la durée, ni le jugement
+              // du score qui irait avec, l'objectif étant justement de
+              // lâcher prise plutôt que de performer — donc rien à ajouter
+              // du tout, plutôt qu'une mention "mode libre" superflue.
+              if (timed)
+                TextSpan(
+                  text:
+                      ' ${LocaleScope.of(context).t('charades_recap_timed', {'duration': _durationLabel(context, _roundSeconds)})}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: theme.textOnBackgroundMuted,
+                  ),
+                ),
+            ],
+          ),
           textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20, color: theme.textOnBackground),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          // En mode libre, aucune référence de temps n'a de sens (voir
-          // _ReadyView.onStartUntimed) — ni la durée, ni le jugement du
-          // score qui irait avec, l'objectif étant justement de lâcher
-          // prise plutôt que de performer.
-          timed ? 'en ${_durationLabel(_roundSeconds)}' : 'en mode libre, sans chrono',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
         ),
         const SizedBox(height: 10),
         Text(
-          timed ? _complicityPhrase(score) : 'Peu importe le score, ce moment compte 💛',
+          timed
+              ? _complicityPhrase(context, score)
+              : LocaleScope.of(context).t('charades_untimed_note'),
           textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.primary),
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: theme.primary,
+          ),
         ),
         const SizedBox(height: 24),
         SizedBox(
@@ -520,7 +684,9 @@ class _RecapView extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+              gradient: LinearGradient(
+                colors: [theme.primary, theme.secondary],
+              ),
             ),
             child: Material(
               color: Colors.transparent,
@@ -530,9 +696,13 @@ class _RecapView extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Text(
-                    'C\'est maintenant le tour de ton/ta partenaire 🔁',
+                    LocaleScope.of(context).t('charades_next_turn_button'),
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ),
@@ -544,7 +714,10 @@ class _RecapView extends StatelessWidget {
           width: double.infinity,
           child: TextButton(
             onPressed: onChangeCategory,
-            child: Text('Changer de thème', style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted)),
+            child: Text(
+              LocaleScope.of(context).t('charades_change_theme_button'),
+              style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
+            ),
           ),
         ),
       ],

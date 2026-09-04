@@ -57,6 +57,39 @@ String _partnerPossessive(String? gender) {
   }
 }
 
+String _partnerPossessiveYou(String? gender) {
+  switch (gender) {
+    case 'Homme':
+      return 'ton';
+    case 'Femme':
+      return 'ta';
+    default:
+      return 'ton/ta';
+  }
+}
+
+/// Choisit une des façons de désigner le/la partenaire dans une phrase
+/// adressée à l'utilisateur·rice courant·e à propos de SON binôme (ex.
+/// "cachée jusqu'à ce que {partner} réponde aussi", voir
+/// game_blind_poll_hidden_answer_label) — même principe de tirage stable
+/// que [partnerSendLabel], mais à la deuxième personne ("ta"/"ton" plutôt
+/// que "ma"/"mon", voir demande utilisateur) et avec deux options
+/// supplémentaires ("princesse"/"prince") réservées au genre connu du/de
+/// la partenaire (jamais montrées sans genre renseigné).
+String partnerReferenceLabel(BuildContext context, AppUser? partner, String seed) {
+  final t = LocaleScope.of(context).t;
+  final options = <String>[
+    t('game_partner_ref_partner', {'possessive': _partnerPossessiveYou(partner?.gender)}),
+    t('game_partner_ref_soulmate'),
+    t('game_partner_ref_other_half'),
+    t('game_partner_ref_love'),
+    if (partner?.gender == 'Femme') t('game_partner_ref_princess'),
+    if (partner?.gender == 'Homme') t('game_partner_ref_prince'),
+  ];
+  final index = seed.hashCode.abs() % options.length;
+  return options[index];
+}
+
 /// Choisit comment désigner le/la partenaire dans l'en-tête d'une
 /// discussion (voir GameCardThreadScreen) — tirage entre son prénom et les
 /// petits noms que l'utilisateur·rice courant·e lui a donnés (voir
@@ -166,6 +199,7 @@ class GameCardBack extends StatelessWidget {
           ? Image.network(
               box.imagePath!,
               fit: BoxFit.cover,
+              alignment: box.imageAlignment,
               errorBuilder: (context, error, stackTrace) => Center(
                 child: Icon(iconForGameBox(box.iconKey), color: Colors.white.withValues(alpha: 0.85), size: 46),
               ),
@@ -400,6 +434,7 @@ class _MiniArchiveCard extends StatelessWidget {
                 Image.network(
                   box.imagePath!,
                   fit: BoxFit.cover,
+                  alignment: box.imageAlignment,
                   errorBuilder: (context, error, stackTrace) =>
                       Icon(iconForGameBox(box.iconKey), color: Colors.white.withValues(alpha: dim ? 0.7 : 0.9), size: 12),
                 ),

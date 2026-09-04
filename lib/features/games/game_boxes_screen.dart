@@ -267,6 +267,7 @@ class _GameBoxTile extends StatelessWidget {
                       ? Image.network(
                           box.imagePath!,
                           fit: BoxFit.cover,
+                          alignment: box.imageAlignment,
                           errorBuilder: (context, error, stackTrace) =>
                               Icon(iconForGameBox(box.iconKey), color: Colors.white, size: 24),
                         )

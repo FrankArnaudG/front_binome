@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_router.dart';
-import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../box/box_service.dart';
 import '../onboarding/onboarding_screen.dart';
@@ -59,18 +58,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       body: Center(
         child: ScaleTransition(
           scale: _pulse,
-          child: Container(
-            width: 88,
-            height: 88,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.primary, AppColors.secondary],
-              ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Image.asset(
+              'assets/logo/binome_logo.png',
+              width: 140,
+              height: 140 * 1024 / 1536,
+              fit: BoxFit.cover,
             ),
-            child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 42),
           ),
         ),
       ),

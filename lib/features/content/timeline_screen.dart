@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/feature_flags_service.dart';
+import '../../core/realtime_client.dart';
 import '../../core/timeline_refresh_signal.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -71,6 +72,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // reste utilisable sans badge plutôt que de bloquer.
   int? _heartbeatPrice;
 
+  // Voir _onRealtimeEvent — sans cet abonnement, les doubles-coches "reçu"/
+  // "lu" de cette liste ne se mettaient jamais à jour tant qu'on regardait
+  // l'écran (juste au prochain rafraîchissement complet, voir demande
+  // utilisateur : vérifier que le temps réel fonctionne partout où ces
+  // symboles existent). Toutes les autres listes de discussions de l'app
+  // (historique de boîte de jeu, "Devine mon émoji", fil d'un poème) s'y
+  // abonnaient déjà ; seul le Carnet de bord ne le faisait pas.
+  String? _subscribedBoxId;
+
   @override
   void initState() {
     super.initState();
@@ -94,7 +104,66 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // BoxScope a besoin du context, donc ici plutôt que initState — ne
+    // réagit qu'à un VRAI changement de box (jumelage/séparation), pas à
+    // chaque appel (voir la garde sur _subscribedBoxId).
+    final boxId = BoxScope.of(context).currentBox?.id;
+    if (boxId != null && boxId != _subscribedBoxId) {
+      if (_subscribedBoxId != null) {
+        RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
+      }
+      _subscribedBoxId = boxId;
+      RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent).catchError((_) {
+        // Best effort : sans temps réel, la liste reste utilisable, juste
+        // sans mise à jour immédiate des coches "reçu"/"lu".
+      });
+    }
+  }
+
+  /// Met à jour en direct les coches "reçu"/"lu" (voir SendTickIcon) des
+  /// envois déjà affichés, sans re-fetch complet — même principe que
+  /// GameCardThreadScreen._onRealtimeEvent/_applySeen/_applyDelivered.
+  void _onRealtimeEvent(RealtimeEvent event) {
+    if (event.event == 'SendSeen') {
+      final sendId = event.data?['send_id'] as String?;
+      if (sendId == null) return;
+      final seenAtStr = event.data?['seen_at'] as String?;
+      _applySeen(sendId, seenAtStr != null ? DateTime.parse(seenAtStr) : DateTime.now());
+      return;
+    }
+    if (event.event == 'SendDelivered') {
+      final sendIds = (event.data?['send_ids'] as List?)?.map((e) => e as String).toList();
+      if (sendIds == null || sendIds.isEmpty) return;
+      final deliveredAtStr = event.data?['delivered_at'] as String?;
+      _applyDelivered(sendIds, deliveredAtStr != null ? DateTime.parse(deliveredAtStr) : DateTime.now());
+    }
+  }
+
+  void _applySeen(String sendId, DateTime seenAt) {
+    if (!mounted || _sends == null) return;
+    setState(() {
+      _sends = _sends!.map((s) => s.id == sendId ? s.copyWith(status: 'seen', seenAt: seenAt) : s).toList();
+    });
+  }
+
+  void _applyDelivered(List<String> sendIds, DateTime deliveredAt) {
+    if (!mounted || _sends == null) return;
+    setState(() {
+      _sends = _sends!
+          .map((s) => sendIds.contains(s.id) && s.status == 'sent'
+              ? s.copyWith(status: 'delivered', deliveredAt: deliveredAt)
+              : s)
+          .toList();
+    });
+  }
+
+  @override
   void dispose() {
+    if (_subscribedBoxId != null) {
+      RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
+    }
     TimelineRefreshSignal.instance.removeListener(_refresh);
     FeatureFlagsService.instance.removeListener(_onFeatureFlagsChanged);
     _tickTimer?.cancel();
@@ -575,10 +644,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final diff = today.difference(date).inDays;
     if (diff == 0) return t('date_today');
     if (diff == 1) return t('date_yesterday');
-    final weekday = t(_weekdayKeys[dt.weekday - 1]);
-    final capitalizedWeekday = weekday.isEmpty ? weekday : weekday[0].toUpperCase() + weekday.substring(1);
-    if (diff < 7) return capitalizedWeekday;
-    return '$capitalizedWeekday ${dt.day} ${t(_monthKeys[dt.month - 1])}';
+    if (diff < 7) {
+      final weekday = t(_weekdayKeys[dt.weekday - 1]);
+      return weekday.isEmpty ? weekday : weekday[0].toUpperCase() + weekday.substring(1);
+    }
+    // Au-delà d'une semaine, plus de nom de jour mais l'année (voir capture
+    // de référence WhatsApp utilisateur : "4 juillet 2026", pas de jour de
+    // semaine pour une date ancienne).
+    return '${dt.day} ${t(_monthKeys[dt.month - 1])} ${dt.year}';
   }
 
   /// Aplatit la liste en une seule séquence d'en-têtes de date + envois,
@@ -983,16 +1056,26 @@ class _TimelineRow extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                message,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.nunito(
-                                  fontSize: 13,
-                                  fontStyle: FontStyle.italic,
-                                  letterSpacing: 0.2,
-                                  color: theme.textOnBackgroundMuted,
-                                ),
+                              Row(
+                                children: [
+                                  if (isMine) ...[
+                                    SendTickIcon(tick: sendTickFor(send), color: theme.textOnBackgroundMuted),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      message,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 13,
+                                        fontStyle: FontStyle.italic,
+                                        letterSpacing: 0.2,
+                                        color: theme.textOnBackgroundMuted,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -1001,21 +1084,12 @@ class _TimelineRow extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  time,
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 11,
-                                    color: theme.textOnBackgroundMuted,
-                                  ),
-                                ),
-                                if (isMine) ...[
-                                  const SizedBox(width: 4),
-                                  SendTickIcon(tick: sendTickFor(send), color: theme.textOnBackgroundMuted),
-                                ],
-                              ],
+                            Text(
+                              time,
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                color: theme.textOnBackgroundMuted,
+                              ),
                             ),
                             if (!isMine && !send.isSeen) ...[
                               const SizedBox(height: 6),
