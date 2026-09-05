@@ -33,6 +33,7 @@ class RemoteConnectFourTransport extends ConnectFourTransport {
         isTie: session.isTie,
         movesCount: session.movesCount,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         pausedByUserId: session.pausedByUserId,

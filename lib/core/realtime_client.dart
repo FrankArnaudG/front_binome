@@ -44,6 +44,19 @@ class RealtimeClient {
   final _presentMembers = <String, Set<String>>{};
   Timer? _reconnectTimer;
 
+  // Chien de garde : Reverb envoie un `pusher:ping` toutes les ~30-60s (voir
+  // config par défaut), donc silence total pendant plus de 45s = connexion
+  // morte à coup sûr — sans ça, une coupure SILENCIEUSE (écran verrouillé,
+  // bascule WiFi/4G, NAT d'opérateur qui tue les connexions inactives) ne
+  // déclenche jamais [onDone]/[onError] : `_channel` reste non-null pour
+  // toujours, [connect] refuse alors de rouvrir quoi que ce soit, et plus
+  // aucun événement temps réel n'arrive (invitations de jeu comprises)
+  // jusqu'à ce que le PROCESSUS de l'app soit tué et relancé (voir demande
+  // utilisateur : "sauf si je sors carrément des deux app et reviens").
+  DateTime? _lastMessageAt;
+  Timer? _watchdogTimer;
+  static const _watchdogSilenceLimit = Duration(seconds: 45);
+
   bool get isConnected => _channel != null;
 
   /// Ne lève jamais : une indisponibilité de Reverb (serveur arrêté, tunnel
@@ -76,6 +89,8 @@ class RealtimeClient {
 
     _channel = channel;
     _reconnectTimer?.cancel();
+    _lastMessageAt = DateTime.now();
+    _startWatchdog();
     _subscription = channel.stream.listen(
       _handleMessage,
       onError: (e) => debugPrint('Reverb websocket error: $e'),
@@ -88,6 +103,41 @@ class RealtimeClient {
         _scheduleReconnect();
       },
     );
+  }
+
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      final lastMessageAt = _lastMessageAt;
+      if (_channel == null || lastMessageAt == null) return;
+      if (DateTime.now().difference(lastMessageAt) >= _watchdogSilenceLimit) {
+        debugPrint('Reverb: silence > ${_watchdogSilenceLimit.inSeconds}s, connexion présumée morte — reconnexion forcée');
+        // Ferme nous-mêmes ce qui reste d'un socket à moitié mort, PUIS
+        // force [_reset]/[_scheduleReconnect] directement plutôt que de
+        // compter sur [onDone] : sur une connexion réellement morte (TCP à
+        // moitié ouvert), la fermeture peut ne jamais aboutir proprement —
+        // sans appel direct ici, `_channel` resterait non-null
+        // indéfiniment et ce tick se répéterait pour rien toutes les 10s.
+        _channel?.sink.close();
+        _reset();
+        _scheduleReconnect();
+        return;
+      }
+
+      // Filet de sécurité INDÉPENDANT du silence ci-dessus : la connexion
+      // elle-même peut rester parfaitement vivante (pings réguliers, voir
+      // _lastMessageAt) alors qu'UN abonnement précis a échoué à se
+      // rétablir après une reconnexion passée — voir [_resubscribeAll],
+      // dont l'appel à [_authorize] peut échouer une fois (backend
+      // momentanément indisponible pile à ce moment-là) et abandonner ce
+      // canal SANS RETENTER ENSUITE, silencieusement, jusqu'au prochain
+      // cycle de reconnexion complet (voir demande utilisateur : "après un
+      // jeu... ça se connecte pas" persistant malgré le chien de garde
+      // ci-dessus — la connexion elle-même n'était probablement jamais
+      // morte, juste CE canal). Rejoué ici à chaque tick : sans effet
+      // (juste un `continue` immédiat) pour un canal déjà bien abonné.
+      unawaited(_resubscribeAll());
+    });
   }
 
   /// Retente [connect] après une courte pause, PUIS rejoue tous les
@@ -137,6 +187,7 @@ class RealtimeClient {
   }
 
   void _handleMessage(dynamic raw) {
+    _lastMessageAt = DateTime.now();
     final message = jsonDecode(raw as String) as Map<String, dynamic>;
     final event = message['event'] as String?;
     final channel = message['channel'] as String?;
@@ -211,6 +262,9 @@ class RealtimeClient {
     _socketId = null;
     _subscribedChannels.clear();
     _presentMembers.clear();
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+    _lastMessageAt = null;
   }
 
   /// Signe l'accès au canal presence via notre backend (`/broadcasting/auth`,
@@ -336,7 +390,23 @@ class RealtimeClient {
 
     final stillListening = (_eventCallbacks[channelName]?.isNotEmpty ?? false) ||
         (_presenceCallbacks[channelName]?.isNotEmpty ?? false);
-    if (stillListening) return;
+    if (stillListening) {
+      // Un autre écouteur en a encore besoin (typiquement
+      // GameInviteNotifier, abonné en permanence pour les invitations) —
+      // on ne coupe pas l'abonnement partagé, mais on force un nouveau
+      // `pusher:subscribe` dessus plutôt que de le laisser tel quel. Sans
+      // ça, une partie qui se termine (abandon ou fin normale) ne
+      // garantissait jamais que ce canal partagé était réellement à jour
+      // côté serveur — un abonnement resté silencieusement caduc restait
+      // caduc jusqu'à ce que l'app entière soit relancée (voir demande
+      // utilisateur : "si je quitte le jeu... le binôme ne reçoit plus de
+      // notification... sauf si je ferme les deux app"). Idempotent et sans
+      // risque : Reverb accepte un nouveau pusher:subscribe sur un canal
+      // déjà abonné.
+      _subscribedChannels.remove(channelName);
+      unawaited(_resubscribeAll());
+      return;
+    }
 
     if (!_subscribedChannels.remove(channelName)) return;
     _eventCallbacks.remove(channelName);

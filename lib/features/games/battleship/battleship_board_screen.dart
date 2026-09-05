@@ -10,7 +10,9 @@ import '../../../models/app_user.dart';
 import '../../../models/game.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../../box/box_scope.dart';
 import '../widgets/battleship_match_scoreboard.dart';
+import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'battleship_engine.dart';
@@ -58,6 +60,11 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   late BattleshipBoardState _state;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
+  // Distingue "c'est moi qui viens d'abandonner" (voir _confirmAbandon,
+  // déjà géré par le pop immédiat) de "le binôme vient d'abandonner à
+  // distance" (voir _onState) — seul ce second cas doit afficher la
+  // pop-up dédiée plutôt que de rester silencieux.
+  bool _leavingMyself = false;
 
   bool get _isLocalPassAndPlay => widget.transport is LocalBattleshipTransport;
 
@@ -81,8 +88,61 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
+      if (state.abandoned && !_leavingMyself) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
+      }
     }
+  }
+
+  /// Affichée UNIQUEMENT quand le binôme vient d'abandonner à distance
+  /// (voir _onState) — jamais quand c'est nous qui venons de le faire (voir
+  /// _confirmAbandon, qui referme déjà l'écran tout seul). "OK" laisse
+  /// consulter le plateau tel qu'il était ; "Sortir" referme l'écran tout de
+  /// suite (voir demande utilisateur).
+  Future<void> _showPartnerLeftDialog() async {
+    if (!mounted) return;
+    final box = BoxScope.of(context).currentBox;
+    final partner = box?.partnerOf(widget.user.id);
+    final label = partnerReferenceLabel(context, partner, widget.game.id);
+    final exit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(LocaleScope.t(ctx, 'game_board_partner_left_title')),
+        content: Text(LocaleScope.t(ctx, 'game_board_partner_left_content', {'partner': label})),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'game_board_partner_left_ok'))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(LocaleScope.t(ctx, 'game_board_partner_left_exit'), style: const TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (exit == true && mounted) Navigator.of(context).pop();
+  }
+
+  /// Même dialogue pour le bouton drapeau ET la flèche retour (voir
+  /// PopScope dans build()) — voir MemoryGameBoardScreen._confirmAbandon
+  /// pour la justification complète.
+  Future<bool> _confirmAbandon() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(LocaleScope.t(ctx, 'memory_board_abandon_title')),
+        content: Text(LocaleScope.t(ctx, 'memory_board_abandon_content')),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(LocaleScope.t(ctx, 'memory_board_abandon_confirm'), style: const TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   Future<void> _showScoreboard() async {
@@ -121,7 +181,10 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     _clockTimer?.cancel();
     widget.transport.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    AppRouter.showGlobalNavBar.value = true;
+    // Différé au frame suivant (voir memory_game_board_screen.dart).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.showGlobalNavBar.value = true;
+    });
     super.dispose();
   }
 
@@ -174,7 +237,17 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
       );
     }
 
-    return Stack(
+    return PopScope(
+      canPop: _state.finished,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmAbandon()) {
+          _leavingMyself = true;
+          await widget.transport.abandon();
+          if (context.mounted) Navigator.of(context).pop();
+        }
+      },
+      child: Stack(
       children: [
         // Isole tout le plateau du clavier (voir GameCommentOverlay) : SANS
         // ce retrait explicite de l'inset, `resizeToAvoidBottomInset: false`
@@ -221,21 +294,10 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
               icon: const Icon(Icons.flag_outlined),
               tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
               onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text(LocaleScope.t(ctx, 'memory_board_abandon_title')),
-                    content: Text(LocaleScope.t(ctx, 'memory_board_abandon_content')),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: Text(LocaleScope.t(ctx, 'memory_board_abandon_confirm'), style: const TextStyle(color: Colors.redAccent)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) await widget.transport.abandon();
+                if (await _confirmAbandon()) {
+                  _leavingMyself = true;
+                  await widget.transport.abandon();
+                }
               },
             ),
           if (_state.finished && widget.onRematch != null)
@@ -354,6 +416,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
         if (commentsBoxId != null)
           VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
       ],
+      ),
     );
   }
 }

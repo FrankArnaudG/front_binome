@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../core/realtime_client.dart';
 import '../../../models/dot_square_session.dart';
 import '../game_service.dart';
+import 'dot_squares_engine.dart';
 import 'dot_squares_transport.dart';
 
 /// Mode "à distance" — synchronisation via le backend (REST pour les
@@ -12,6 +13,7 @@ class RemoteDotSquaresTransport extends DotSquaresTransport {
   final String sessionId;
   final String boxId;
   final String myUserId;
+  final String partnerUserId;
   final _controller = StreamController<DotSquaresBoardState>.broadcast();
   late DotSquaresBoardState _state;
 
@@ -19,6 +21,7 @@ class RemoteDotSquaresTransport extends DotSquaresTransport {
     required DotSquareSession session,
     required this.boxId,
     required this.myUserId,
+    required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
     RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
@@ -34,6 +37,7 @@ class RemoteDotSquaresTransport extends DotSquaresTransport {
         isTie: session.isTie,
         movesCount: session.movesCount,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         pausedByUserId: session.pausedByUserId,
@@ -64,9 +68,50 @@ class RemoteDotSquaresTransport extends DotSquaresTransport {
 
   @override
   Future<void> place(int position) async {
-    final session = await GameService.instance.playDotSquaresMove(sessionId, position);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    // Prédiction locale immédiate (voir RemoteMemoryGameTransport.flip pour
+    // le principe) — déterministe ici (pas de tirage aléatoire dans
+    // DotSquaresEngine), donc toujours identique au résultat serveur tant
+    // que l'état local était à jour.
+    try {
+      final result = DotSquaresEngine.place(
+        points: _state.points,
+        rectangles: _state.rectangles,
+        scoresByUser: _state.scoresByUser,
+        position: position,
+        userId: myUserId,
+        otherUserId: partnerUserId,
+        movesCount: _state.movesCount,
+        cols: _state.gridCols,
+      );
+      _state = _state.copyWith(
+        points: result.points,
+        rectangles: result.rectangles,
+        scoresByUser: result.scoresByUser,
+        currentTurnUserId: result.currentTurnUserId,
+        winnerUserId: result.winnerUserId,
+        isTie: result.isTie,
+        movesCount: result.movesCount,
+        finished: result.finished,
+        newlyScored: result.newlyScored,
+      );
+      _controller.add(_state);
+    } catch (_) {
+      // Coup localement invalide — le serveur tranchera.
+    }
+
+    try {
+      final session = await GameService.instance.playDotSquaresMove(sessionId, position);
+      _state = _stateFrom(session);
+      _controller.add(_state);
+    } catch (_) {
+      try {
+        final session = await GameService.instance.fetchDotSquaresState(sessionId);
+        _state = _stateFrom(session);
+        _controller.add(_state);
+      } catch (_) {
+        // best effort — voir doc de classe RealtimeClient.
+      }
+    }
   }
 
   @override

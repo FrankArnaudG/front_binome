@@ -149,7 +149,13 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
 
   @override
   void dispose() {
-    AppRouter.showGlobalNavBar.value = true;
+    // Différé au frame suivant (voir memory_game_board_screen.dart pour la
+    // justification complète) — sans ça, cette mise à jour pouvait planter
+    // silencieusement pendant le démontage (arbre de widgets verrouillé) et
+    // laisser toute la coquille globale coincée masquée.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.showGlobalNavBar.value = true;
+    });
     _controller.dispose();
     _editController?.dispose();
     _scrollController.dispose();

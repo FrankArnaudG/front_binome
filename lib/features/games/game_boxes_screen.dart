@@ -25,7 +25,13 @@ class GameBoxesScreen extends StatefulWidget {
   final Game game;
   final AppUser user;
 
-  const GameBoxesScreen({super.key, required this.game, required this.user});
+  /// Boîtes déjà récupérées par l'appelant (voir GamesMenuScreen._playGame,
+  /// qui doit de toute façon les charger pour choisir cet écran) — évite un
+  /// second aller-retour réseau identique dès l'ouverture, seule source du
+  /// délai de plusieurs secondes observé sur "Jouer maintenant".
+  final List<GameBox>? initialBoxes;
+
+  const GameBoxesScreen({super.key, required this.game, required this.user, this.initialBoxes});
 
   @override
   State<GameBoxesScreen> createState() => _GameBoxesScreenState();
@@ -44,7 +50,16 @@ class _GameBoxesScreenState extends State<GameBoxesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCachedThenRefresh();
+    if (widget.initialBoxes != null) {
+      // Déjà en main (voir initialBoxes) — affichage immédiat, pas de
+      // rechargement réseau bloquant ; un rafraîchissement silencieux passe
+      // quand même derrière pour rattraper un éventuel changement entre-temps.
+      _boxes = widget.initialBoxes;
+      _loading = false;
+      _refresh();
+    } else {
+      _loadCachedThenRefresh();
+    }
     if (widget.game.isQuiz) _loadStats();
   }
 

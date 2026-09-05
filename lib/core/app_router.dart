@@ -9,11 +9,9 @@ import '../features/home/main_tab_screen.dart';
 import '../features/home/tab_navigation_controller.dart';
 import '../models/app_user.dart';
 import '../models/box.dart';
-import '../widgets/milestone_reminder_dialog.dart';
 import '../widgets/notification_opt_in_prompt.dart';
 import 'delivery_ack_service.dart';
 import 'game_invite_notifier.dart';
-import 'milestone_reminder_service.dart';
 import 'push_notification_service.dart';
 
 /// Centralise les transitions entre écrans plutôt que de répéter
@@ -68,27 +66,7 @@ class AppRouter {
     } else {
       DeliveryAckService.instance.start(box.id, user.id);
       toHome(context, user, replace: true);
-      // Les dates à cœur sont propres au couple : seulement pertinent une
-      // fois dans une Box active (voir MilestoneReminderService).
-      _handleMilestoneReminder();
     }
-  }
-
-  /// Affiche le rappel de date à cœur DANS l'app (voir
-  /// showMilestoneReminderDialog) — canal indépendant de la permission de
-  /// notification système, contrairement à _handlePushPermission ci-dessus.
-  static Future<void> _handleMilestoneReminder() async {
-    final message = await MilestoneReminderService.instance.checkAndNotify();
-    if (message == null) return;
-
-    // Laisse la navigation vers le Dashboard se poser avant de superposer
-    // le rappel par-dessus (même raison que _handlePushPermission) — délai
-    // légèrement plus long que ce dernier pour ne pas superposer les deux
-    // modales si elles se déclenchent le même jour (rare : premier
-    // lancement + jalon déjà dans la fenêtre des 30 jours).
-    await Future.delayed(const Duration(milliseconds: 900));
-    final ctx = navigatorKey.currentContext;
-    if (ctx != null && ctx.mounted) await showMilestoneReminderDialog(ctx, message);
   }
 
   /// Avant de laisser l'OS trancher à froid dès le tout premier lancement,

@@ -57,7 +57,7 @@ Future<void> openGameSessionFromInvite(
       screen = MemoryGameBoardScreen(
         game: game,
         user: me,
-        transport: RemoteMemoryGameTransport(session: session, boxId: box.id, myUserId: me.id),
+        transport: RemoteMemoryGameTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -67,7 +67,7 @@ Future<void> openGameSessionFromInvite(
       screen = TicTacToeBoardScreen(
         game: game,
         user: me,
-        transport: RemoteTicTacToeTransport(session: session, boxId: box.id, myUserId: me.id),
+        transport: RemoteTicTacToeTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -77,7 +77,7 @@ Future<void> openGameSessionFromInvite(
       screen = DotSquaresBoardScreen(
         game: game,
         user: me,
-        transport: RemoteDotSquaresTransport(session: session, boxId: box.id, myUserId: me.id),
+        transport: RemoteDotSquaresTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -87,7 +87,7 @@ Future<void> openGameSessionFromInvite(
       screen = NumberHuntBoardScreen(
         game: game,
         user: me,
-        transport: RemoteNumberHuntTransport(session: session, boxId: box.id, myUserId: me.id),
+        transport: RemoteNumberHuntTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );

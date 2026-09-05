@@ -18,6 +18,12 @@ class DotSquaresBoardState {
   final bool isTie;
   final int movesCount;
   final bool finished;
+  // Distinct d'une fin normale (feuille pleine/close volontairement) — voir
+  // DotSquaresBoardScreen._onState : seule cette valeur déclenche la pop-up
+  // "{partenaire} a mis fin à cette partie" plutôt que le scoreboard
+  // habituel (voir demande utilisateur, même principe que
+  // MemoryGameBoardState.abandoned).
+  final bool abandoned;
   final DateTime? startedAt;
   final String myUserId;
   final String? pausedByUserId;
@@ -44,6 +50,7 @@ class DotSquaresBoardState {
     this.isTie = false,
     this.movesCount = 0,
     this.finished = false,
+    this.abandoned = false,
     this.startedAt,
     required this.myUserId,
     this.pausedByUserId,
@@ -71,6 +78,7 @@ class DotSquaresBoardState {
     bool? isTie,
     int? movesCount,
     bool? finished,
+    bool? abandoned,
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
@@ -89,6 +97,7 @@ class DotSquaresBoardState {
         isTie: isTie ?? this.isTie,
         movesCount: movesCount ?? this.movesCount,
         finished: finished ?? this.finished,
+        abandoned: abandoned ?? this.abandoned,
         startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
         pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/api_client.dart';
+import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/box.dart';
-import '../../models/box_milestone.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
@@ -14,7 +14,6 @@ import '../games/widgets/couple_stats_card.dart';
 import '../home/widgets/dark_day_counter_card.dart';
 import '../settings/widgets/box_management_card.dart';
 import 'box_scope.dart';
-import 'box_service.dart';
 
 /// Profil commun du couple — ouvert au tap sur les deux avatars (voir
 /// [CoupleAvatarsBadge]) dans le Dashboard et l'en-tête de conversation.
@@ -34,9 +33,8 @@ class CoupleProfileScreen extends StatefulWidget {
 
 class _CoupleProfileScreenState extends State<CoupleProfileScreen> {
   // Incrémenté à chaque tirer-pour-actualiser : sert de Key à
-  // CoupleStatsCard/_MilestonesSection pour forcer leur remontage (et donc
-  // leur refetch, chacune gérant son propre chargement) sans dupliquer
-  // leur logique interne ici.
+  // CoupleStatsCard pour forcer son remontage (et donc son refetch, qui
+  // gère son propre chargement) sans dupliquer sa logique interne ici.
   int _refreshTick = 0;
 
   // Copie locale modifiable : widget.user est une valeur figée passée par
@@ -45,15 +43,88 @@ class _CoupleProfileScreenState extends State<CoupleProfileScreen> {
   // l'écran sans attendre un remontage venu d'ailleurs.
   late AppUser _user = widget.user;
 
+  // Même mécanisme de présence que CoupleAvatarsBadge/DashboardTab (voir
+  // demande utilisateur : le cœur ici était purement décoratif, jamais vert
+  // quand le binôme est en ligne comme sur le Dashboard).
+  String? _subscribedBoxId;
+  String? _partnerId;
+  bool _partnerPresent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _subscribePresence());
+  }
+
+  void _subscribePresence() {
+    final box = BoxScope.of(context).currentBox;
+    if (box == null || !mounted) return;
+    _subscribedBoxId = box.id;
+    _partnerId = box.partnerOf(_user.id)?.id;
+    RealtimeClient.instance.subscribeToBox(box.id, onEvent: _onNoOpEvent, onPresenceChange: _onPresenceChange);
+  }
+
+  // Cet écran n'a besoin que de la présence, jamais des événements
+  // applicatifs du canal — une méthode d'instance stable (contrairement à
+  // une closure anonyme) pour que [dispose] puisse retirer EXACTEMENT ce
+  // même écouteur plutôt que d'en laisser un fantôme enregistré pour rien.
+  void _onNoOpEvent(RealtimeEvent event) {}
+
+  void _onPresenceChange(Set<String> memberIds) {
+    if (!mounted) return;
+    final present = _partnerId != null && memberIds.contains(_partnerId);
+    if (present != _partnerPresent) setState(() => _partnerPresent = present);
+  }
+
+  @override
+  void dispose() {
+    if (_subscribedBoxId != null) {
+      RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onNoOpEvent, onPresenceChange: _onPresenceChange);
+    }
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     await BoxScope.of(context).fetchCurrent();
     if (mounted) setState(() => _refreshTick++);
   }
 
+  // Distinct de DarkDayCounterCard._editTogetherSince (même logique,
+  // dupliquée plutôt que partagée — voir demande utilisateur : ce texte-ci
+  // n'affichait jusqu'ici QUE box.pairedAt, jamais la vraie date corrigée,
+  // et restait figé sans aucun moyen de l'éditer depuis cet endroit précis).
+  bool _savingTogetherSince = false;
+
+  Future<void> _editTogetherSince() async {
+    final box = BoxScope.of(context).currentBox;
+    if (box == null) return;
+    final boxService = BoxScope.of(context);
+    final t = LocaleScope.of(context).t;
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: box.togetherSince ?? now,
+      firstDate: DateTime(now.year - 100),
+      lastDate: now,
+      helpText: t('together_since_picker_title'),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _savingTogetherSince = true);
+    try {
+      await boxService.updateSettings(togetherSince: picked);
+    } catch (_) {
+      // best effort
+    } finally {
+      if (mounted) setState(() => _savingTogetherSince = false);
+    }
+  }
+
   /// Édition des petits noms directement depuis cet écran (déplacé
   /// depuis l'onglet Profil, voir ProfileCard) — même motif deletable-chips
   /// + champ d'ajout que l'ancien emplacement, dans une AlertDialog à
-  /// état local (StatefulBuilder) comme _MilestonesSection._addMilestone.
+  /// état local (StatefulBuilder).
   // Même limite que côté backend (voir ProfileController::updateProfile) —
   // évite un aller-retour réseau pour se faire rejeter juste après.
   static const _maxNicknames = 3;
@@ -297,6 +368,7 @@ class _CoupleProfileScreenState extends State<CoupleProfileScreen> {
                         user: _user,
                         partner: partner,
                         theme: theme,
+                        partnerPresent: _partnerPresent,
                         onEditNicknamesForPartner: _editNicknames,
                       ),
                       const SizedBox(height: 18),
@@ -310,15 +382,37 @@ class _CoupleProfileScreenState extends State<CoupleProfileScreen> {
                           color: theme.textOnBackground,
                         ),
                       ),
-                      if (box?.pairedAt != null) ...[
+                      if (box != null) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          t('together_since_label', {
-                            'date': _formattedDate(box!.pairedAt!, t),
-                          }),
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            color: theme.textOnBackgroundMuted,
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: _savingTogetherSince ? null : _editTogetherSince,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  // Tant que personne n'a corrigé la date (voir
+                                  // Box.togetherSinceOverride), on ne montre
+                                  // JAMAIS pairedAt (le jumelage technique) ici
+                                  // comme s'il s'agissait de la vraie histoire
+                                  // du couple — on invite plutôt à la
+                                  // renseigner (voir demande utilisateur).
+                                  box.togetherSinceOverride != null
+                                      ? t('together_since_label', {
+                                          'date': _formattedDate(box.togetherSinceOverride!, t),
+                                        })
+                                      : t('together_since_picker_title'),
+                                  style: GoogleFonts.nunito(
+                                    fontSize: 13,
+                                    color: theme.textOnBackgroundMuted,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.edit_rounded, size: 13, color: theme.textOnBackgroundMuted),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -332,16 +426,9 @@ class _CoupleProfileScreenState extends State<CoupleProfileScreen> {
                 const SizedBox(height: 28),
                 _SectionLabel(label: t('history_section_label'), theme: theme),
                 const SizedBox(height: 10),
-                DarkDayCounterCard(box: box, alwaysShowEditControls: true),
+                DarkDayCounterCard(box: box, alwaysShowEditControls: true, showDateEditControl: false),
                 const SizedBox(height: 12),
                 CoupleStatsCard(key: ValueKey('stats-$_refreshTick')),
-                const SizedBox(height: 24),
-                _SectionLabel(
-                  label: t('milestones_section_label'),
-                  theme: theme,
-                ),
-                const SizedBox(height: 10),
-                _MilestonesSection(key: ValueKey('milestones-$_refreshTick')),
                 if (box != null) ...[
                   const SizedBox(height: 24),
                   _SectionLabel(label: t('box_section_label'), theme: theme),
@@ -385,15 +472,19 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _AvatarsWithNicknames extends StatelessWidget {
+  static const _onlineColor = Color(0xFF2ECC71);
+
   final AppUser user;
   final AppUser? partner;
   final ThemePalette theme;
+  final bool partnerPresent;
   final VoidCallback onEditNicknamesForPartner;
 
   const _AvatarsWithNicknames({
     required this.user,
     required this.partner,
     required this.theme,
+    required this.partnerPresent,
     required this.onEditNicknamesForPartner,
   });
 
@@ -425,7 +516,10 @@ class _AvatarsWithNicknames extends StatelessWidget {
               ),
               child: Icon(
                 Icons.favorite_rounded,
-                color: theme.primary,
+                // Vert quand le binôme est en ligne — même code couleur et
+                // même principe que CoupleAvatarsBadge (voir demande
+                // utilisateur : ce cœur-ci était purement décoratif).
+                color: partnerPresent ? _onlineColor : theme.primary,
                 size: 16,
               ),
             ),
@@ -574,406 +668,6 @@ class _PersonColumn extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// Jalons importants (anniversaires, date de rencontre, mariage...) — voir
-/// BoxMilestoneController côté backend. Libellé libre, triés par prochaine
-/// occurrence (recurrence annuelle sur mois/jour, pas juste la date brute
-/// — sinon un anniversaire déjà passé cette année semblerait "loin dans le
-/// passé" au lieu de "dans X jours" l'année prochaine).
-class _MilestonesSection extends StatefulWidget {
-  const _MilestonesSection({super.key});
-
-  @override
-  State<_MilestonesSection> createState() => _MilestonesSectionState();
-}
-
-class _MilestonesSectionState extends State<_MilestonesSection> {
-  List<BoxMilestone>? _milestones;
-  bool _adding = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final milestones = await BoxService.instance.fetchMilestones();
-      if (mounted) setState(() => _milestones = milestones);
-    } catch (_) {
-      // best effort — la section reste simplement vide
-    }
-  }
-
-  /// Prochaine occurrence de ce jalon à partir d'aujourd'hui — recurrence
-  /// annuelle sur mois/jour (un anniversaire revient chaque année).
-  DateTime _nextOccurrence(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    var next = DateTime(today.year, date.month, date.day);
-    if (next.isBefore(today))
-      next = DateTime(today.year + 1, date.month, date.day);
-    return next;
-  }
-
-  Future<void> _addMilestone() async {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-    final labelController = TextEditingController();
-    DateTime? pickedDate;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: theme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(
-            t('milestone_add_title'),
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w700,
-              color: theme.textOnBackground,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: labelController,
-                autofocus: true,
-                maxLength: 60,
-                style: GoogleFonts.nunito(color: theme.textOnBackground),
-                decoration: InputDecoration(
-                  hintText: t('milestone_hint'),
-                  hintStyle: GoogleFonts.nunito(
-                    color: theme.textOnBackgroundMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Material(
-                color: theme.background,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () async {
-                    final now = DateTime.now();
-                    final selected = await showDatePicker(
-                      context: dialogContext,
-                      initialDate: pickedDate ?? now,
-                      firstDate: DateTime(now.year - 100),
-                      lastDate: DateTime(now.year + 1),
-                    );
-                    if (selected != null)
-                      setDialogState(() => pickedDate = selected);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.calendar_today_rounded,
-                          size: 18,
-                          color: theme.textOnBackgroundMuted,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          pickedDate != null
-                              ? _formatPicked(pickedDate!)
-                              : t('milestone_pick_date'),
-                          style: GoogleFonts.nunito(
-                            color: theme.textOnBackground,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(
-                t('common_cancel'),
-                style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-              ),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: theme.primary),
-              onPressed:
-                  labelController.text.trim().isEmpty || pickedDate == null
-                  ? null
-                  : () => Navigator.of(dialogContext).pop(true),
-              child: Text(t('common_add')),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (result != true || pickedDate == null) return;
-    setState(() => _adding = true);
-    try {
-      final milestone = await BoxService.instance.addMilestone(
-        label: labelController.text.trim(),
-        date: pickedDate!,
-      );
-      if (mounted) setState(() => _milestones = [...?_milestones, milestone]);
-    } catch (_) {
-      // best effort
-    } finally {
-      if (mounted) setState(() => _adding = false);
-    }
-  }
-
-  Future<void> _deleteMilestone(BoxMilestone milestone) async {
-    final previous = _milestones;
-    setState(
-      () => _milestones = _milestones
-          ?.where((m) => m.id != milestone.id)
-          .toList(),
-    );
-    try {
-      await BoxService.instance.deleteMilestone(milestone.id);
-    } catch (_) {
-      if (mounted) setState(() => _milestones = previous);
-    }
-  }
-
-  String _formatPicked(DateTime dt) {
-    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-    final milestones = _milestones;
-
-    final sorted = milestones == null
-        ? null
-        : (List.of(milestones)..sort(
-            (a, b) =>
-                _nextOccurrence(a.date).compareTo(_nextOccurrence(b.date)),
-          ));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (sorted != null && sorted.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              t('milestones_empty'),
-              style: GoogleFonts.nunito(
-                fontSize: 12,
-                color: theme.textOnBackgroundMuted,
-              ),
-            ),
-          ),
-        if (sorted != null)
-          for (final milestone in sorted)
-            _MilestoneTile(
-              milestone: milestone,
-              nextOccurrence: _nextOccurrence(milestone.date),
-              theme: theme,
-              onDelete: () => _deleteMilestone(milestone),
-            ),
-        const SizedBox(height: 8),
-        Material(
-          color: theme.surface,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: _adding ? null : _addMilestone,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _adding
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.primary,
-                          ),
-                        )
-                      : Icon(Icons.add_rounded, size: 18, color: theme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    t('milestone_add_button'),
-                    style: GoogleFonts.nunito(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: theme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MilestoneTile extends StatelessWidget {
-  final BoxMilestone milestone;
-  final DateTime nextOccurrence;
-  final ThemePalette theme;
-  final VoidCallback onDelete;
-
-  const _MilestoneTile({
-    required this.milestone,
-    required this.nextOccurrence,
-    required this.theme,
-    required this.onDelete,
-  });
-
-  String _countdownLabel(String Function(String, [Map<String, String>?]) t) {
-    final today = DateTime.now();
-    final days = DateTime(
-      nextOccurrence.year,
-      nextOccurrence.month,
-      nextOccurrence.day,
-    ).difference(DateTime(today.year, today.month, today.day)).inDays;
-    if (days == 0) return t('milestone_today');
-    if (days == 1) return t('milestone_tomorrow');
-    return t('milestone_in_days', {'days': '$days'});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = LocaleScope.of(context).t;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: theme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: (theme.isDark ? Colors.white : Colors.black).withValues(
-            alpha: 0.06,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: theme.accentGradient,
-            ),
-            child: const Icon(
-              Icons.cake_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  milestone.label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: theme.textOnBackground,
-                  ),
-                ),
-                Text(
-                  '${milestone.date.day} ${t('month_${milestone.date.month}')} ${milestone.date.year}',
-                  style: GoogleFonts.nunito(
-                    fontSize: 11,
-                    color: theme.textOnBackgroundMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            _countdownLabel(t),
-            style: GoogleFonts.nunito(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: theme.primary,
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(
-              Icons.close_rounded,
-              size: 16,
-              color: theme.textOnBackgroundMuted,
-            ),
-            onPressed: () => _confirmDelete(context),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmDelete(BuildContext context) async {
-    final t = LocaleScope.of(context).t;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: theme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          t('milestone_delete_title'),
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w700,
-            color: theme.textOnBackground,
-          ),
-        ),
-        content: Text(
-          t('milestone_delete_content', {'label': milestone.label}),
-          style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(
-              t('common_cancel'),
-              style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(
-              t('common_delete'),
-              style: GoogleFonts.nunito(
-                color: Colors.redAccent,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) onDelete();
   }
 }
 

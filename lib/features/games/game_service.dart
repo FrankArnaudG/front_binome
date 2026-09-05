@@ -759,6 +759,14 @@ class GameService {
     return GameInvite.fromJson(data);
   }
 
+  /// Invitation encore en attente pour moi, `null` s'il n'y en a aucune —
+  /// voir GameInviteNotifier, poll de secours pour la pop-up d'invitation.
+  Future<GameInvite?> fetchPendingInvite() async {
+    final data = await ApiClient.instance.get('/invites/pending');
+    if (data == null) return null;
+    return GameInvite.fromJson(data as Map<String, dynamic>);
+  }
+
   Future<GameInvite> acceptGameInvite(String inviteId) async {
     final data = await ApiClient.instance.put('/invites/$inviteId/accept') as Map<String, dynamic>;
     return GameInvite.fromJson(data);

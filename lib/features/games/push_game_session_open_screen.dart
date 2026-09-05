@@ -118,7 +118,7 @@ class _PushGameSessionOpenScreenState extends State<PushGameSessionOpenScreen> {
     final players = _players();
     if (!mounted || players == null) return;
 
-    final transport = RemoteMemoryGameTransport(session: session, boxId: session.boxId, myUserId: players.myId);
+    final transport = RemoteMemoryGameTransport(session: session, boxId: session.boxId, myUserId: players.myId, partnerUserId: players.partnerId);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => MemoryGameBoardScreen(
@@ -139,7 +139,7 @@ class _PushGameSessionOpenScreenState extends State<PushGameSessionOpenScreen> {
     final players = _players();
     if (!mounted || players == null) return;
 
-    final transport = RemoteTicTacToeTransport(session: session, boxId: session.boxId, myUserId: players.myId);
+    final transport = RemoteTicTacToeTransport(session: session, boxId: session.boxId, myUserId: players.myId, partnerUserId: players.partnerId);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => TicTacToeBoardScreen(
@@ -160,7 +160,7 @@ class _PushGameSessionOpenScreenState extends State<PushGameSessionOpenScreen> {
     final players = _players();
     if (!mounted || players == null) return;
 
-    final transport = RemoteDotSquaresTransport(session: session, boxId: session.boxId, myUserId: players.myId);
+    final transport = RemoteDotSquaresTransport(session: session, boxId: session.boxId, myUserId: players.myId, partnerUserId: players.partnerId);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => DotSquaresBoardScreen(
@@ -181,7 +181,7 @@ class _PushGameSessionOpenScreenState extends State<PushGameSessionOpenScreen> {
     final players = _players();
     if (!mounted || players == null) return;
 
-    final transport = RemoteNumberHuntTransport(session: session, boxId: session.boxId, myUserId: players.myId);
+    final transport = RemoteNumberHuntTransport(session: session, boxId: session.boxId, myUserId: players.myId, partnerUserId: players.partnerId);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => NumberHuntBoardScreen(

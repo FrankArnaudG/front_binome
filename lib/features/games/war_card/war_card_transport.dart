@@ -28,6 +28,12 @@ class WarCardBoardState {
   final String? winnerUserId;
   final bool isTie;
   final bool finished;
+  // Distinct d'une fin normale (paquet remporté en entier) — voir
+  // WarCardBoardScreen._onState : seule cette valeur déclenche la pop-up
+  // "{partenaire} a mis fin à cette partie" plutôt que le scoreboard
+  // habituel (voir demande utilisateur, même principe que
+  // MemoryGameBoardState.abandoned).
+  final bool abandoned;
   final DateTime? startedAt;
   final String myUserId;
   final String creatorId;
@@ -50,6 +56,7 @@ class WarCardBoardState {
     this.winnerUserId,
     this.isTie = false,
     this.finished = false,
+    this.abandoned = false,
     this.startedAt,
     required this.myUserId,
     required this.creatorId,
@@ -94,6 +101,7 @@ class WarCardBoardState {
     String? winnerUserId,
     bool? isTie,
     bool? finished,
+    bool? abandoned,
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
@@ -114,6 +122,7 @@ class WarCardBoardState {
         winnerUserId: winnerUserId ?? this.winnerUserId,
         isTie: isTie ?? this.isTie,
         finished: finished ?? this.finished,
+        abandoned: abandoned ?? this.abandoned,
         startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
         creatorId: creatorId,

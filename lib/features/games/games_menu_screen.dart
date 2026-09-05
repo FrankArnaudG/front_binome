@@ -281,7 +281,7 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => boxes.isNotEmpty
-            ? GameBoxesScreen(game: game, user: widget.user)
+            ? GameBoxesScreen(game: game, user: widget.user, initialBoxes: boxes)
             : GameSessionScreen(game: game),
       ),
     );
@@ -407,7 +407,7 @@ Map<String, _ModeMeta> _modesFor(ThemePalette theme, String Function(String) t) 
 class _GameFlipCard extends StatefulWidget {
   final Game game;
   final ThemePalette theme;
-  final VoidCallback onPlay;
+  final Future<void> Function() onPlay;
 
   const _GameFlipCard({
     required this.game,
@@ -426,6 +426,10 @@ class _GameFlipCardState extends State<_GameFlipCard>
     duration: const Duration(milliseconds: 420),
   );
   bool _pressed = false;
+  // Le chargement des boîtes (voir GamesMenuScreen._playGame) peut prendre
+  // quelques secondes sur un réseau lent — sans ce spinner, le bouton
+  // "Jouer maintenant" semblait figé/mort pendant l'attente.
+  bool _loadingPlay = false;
 
   void _toggleFlip() {
     if (_flip.value < 0.5) {
@@ -437,6 +441,16 @@ class _GameFlipCardState extends State<_GameFlipCard>
 
   void _setPressed(bool value) {
     if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  Future<void> _handlePlay() async {
+    if (_loadingPlay) return;
+    setState(() => _loadingPlay = true);
+    try {
+      await widget.onPlay();
+    } finally {
+      if (mounted) setState(() => _loadingPlay = false);
+    }
   }
 
   @override
@@ -481,7 +495,8 @@ class _GameFlipCardState extends State<_GameFlipCard>
                         child: _CardBack(
                           game: widget.game,
                           theme: theme,
-                          onPlay: widget.onPlay,
+                          onPlay: _handlePlay,
+                          isLoading: _loadingPlay,
                         ),
                       )
                     : _CardFront(game: widget.game, theme: theme, mode: mode),
@@ -660,11 +675,13 @@ class _CardBack extends StatelessWidget {
   final Game game;
   final ThemePalette theme;
   final VoidCallback onPlay;
+  final bool isLoading;
 
   const _CardBack({
     required this.game,
     required this.theme,
     required this.onPlay,
+    this.isLoading = false,
   });
 
   @override
@@ -707,7 +724,7 @@ class _CardBack extends StatelessWidget {
                 child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: onPlay,
+                      onTap: isLoading ? null : onPlay,
                       child: Ink(
                         height: 42,
                         padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -716,25 +733,34 @@ class _CardBack extends StatelessWidget {
                             colors: [theme.primary, theme.primaryDeep],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              t('games_play_now'),
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
+                        child: isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                                ),
+                              )
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.play_arrow_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    t('games_play_now'),
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ),

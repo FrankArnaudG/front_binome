@@ -22,6 +22,12 @@ class PictionaryBoardState {
   final String? winnerUserId;
   final int movesCount;
   final bool finished;
+  // Distinct d'une fin normale (score cible atteint) — voir
+  // PictionaryBoardScreen._onState : seule cette valeur déclenche la
+  // pop-up "{partenaire} a mis fin à cette partie" plutôt que le
+  // scoreboard habituel (voir demande utilisateur, même principe que
+  // MemoryGameBoardState.abandoned).
+  final bool abandoned;
   final DateTime? startedAt;
   final String myUserId;
   final String opponentUserId;
@@ -41,6 +47,7 @@ class PictionaryBoardState {
     this.winnerUserId,
     this.movesCount = 0,
     this.finished = false,
+    this.abandoned = false,
     this.startedAt,
     required this.myUserId,
     required this.opponentUserId,
@@ -65,6 +72,7 @@ class PictionaryBoardState {
     String? winnerUserId,
     int? movesCount,
     bool? finished,
+    bool? abandoned,
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
@@ -83,6 +91,7 @@ class PictionaryBoardState {
         winnerUserId: winnerUserId ?? this.winnerUserId,
         movesCount: movesCount ?? this.movesCount,
         finished: finished ?? this.finished,
+        abandoned: abandoned ?? this.abandoned,
         startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
         opponentUserId: opponentUserId,

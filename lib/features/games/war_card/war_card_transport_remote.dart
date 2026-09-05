@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../core/realtime_client.dart';
 import '../../../models/war_card_session.dart';
 import '../game_service.dart';
+import 'war_card_engine.dart';
 import 'war_card_transport.dart';
 
 /// Mode "à distance" — synchronisation via le backend (REST pour les
@@ -45,6 +46,7 @@ class RemoteWarCardTransport extends WarCardTransport {
         winnerUserId: session.winnerUserId,
         isTie: session.isTie,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         creatorId: creatorId,
@@ -101,9 +103,56 @@ class RemoteWarCardTransport extends WarCardTransport {
 
   @override
   Future<void> flip(String userId) async {
-    final result = await GameService.instance.flipWarCard(sessionId);
-    _state = _stateFrom(result.session);
-    _controller.add(_state);
+    // Prédiction locale immédiate (voir RemoteMemoryGameTransport.flip) —
+    // le cas fréquent (je suis le/la premier·ère à taper) est déterministe
+    // (ne fait que marquer mon propre "pendingFlip"). Si les deux ont déjà
+    // tapé, la manche se résout avec un mélange aléatoire qui peut différer
+    // du résultat serveur — sans conséquence visible, la réponse HTTP
+    // arrive presque aussitôt et écrase cette prédiction. `battlePot` est
+    // toujours vide entre deux appels (voir WarCardEngine._resolveRound,
+    // qui le vide systématiquement avant de retourner), donc sûr de passer
+    // `const []` ici même si l'état affiché ne le porte pas.
+    try {
+      final outcome = WarCardEngine.flip(
+        pileCreator: _state.pileCreator,
+        pilePartner: _state.pilePartner,
+        pendingFlipCreator: _state.pendingFlipCreator,
+        pendingFlipPartner: _state.pendingFlipPartner,
+        battlePot: const [],
+        roundsCount: _state.roundsCount,
+        userId: myUserId,
+        creatorId: creatorId,
+        partnerId: partnerId,
+      );
+      _state = _state.copyWith(
+        pileCreator: outcome.pileCreator,
+        pilePartner: outcome.pilePartner,
+        pendingFlipCreator: outcome.pendingFlipCreator,
+        pendingFlipPartner: outcome.pendingFlipPartner,
+        lastRoundResult: outcome.lastRoundResult,
+        roundsCount: outcome.roundsCount,
+        winnerUserId: outcome.winnerUserId,
+        isTie: outcome.isTie,
+        finished: outcome.finished,
+      );
+      _controller.add(_state);
+    } catch (_) {
+      // Coup localement invalide — le serveur tranchera.
+    }
+
+    try {
+      final result = await GameService.instance.flipWarCard(sessionId);
+      _state = _stateFrom(result.session);
+      _controller.add(_state);
+    } catch (_) {
+      try {
+        final session = await GameService.instance.fetchWarCardState(sessionId);
+        _state = _stateFrom(session);
+        _controller.add(_state);
+      } catch (_) {
+        // best effort — voir doc de classe RealtimeClient.
+      }
+    }
   }
 
   @override

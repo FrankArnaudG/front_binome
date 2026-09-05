@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../core/realtime_client.dart';
 import '../../../models/memory_game_session.dart';
 import '../game_service.dart';
+import 'memory_game_engine.dart';
 import 'memory_game_transport.dart';
 
 /// Mode "à distance" — synchronisation via le backend (REST pour les
@@ -15,6 +16,7 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
   final String sessionId;
   final String boxId;
   final String myUserId;
+  final String partnerUserId;
   final _controller = StreamController<MemoryGameBoardState>.broadcast();
   late MemoryGameBoardState _state;
 
@@ -22,6 +24,7 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
     required MemoryGameSession session,
     required this.boxId,
     required this.myUserId,
+    required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
     RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
@@ -36,6 +39,7 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
         movesCount: session.movesCount,
         movesByUser: session.movesByUser,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         pausedByUserId: session.pausedByUserId,
@@ -69,9 +73,59 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
 
   @override
   Future<void> flip(int index) async {
-    final session = await GameService.instance.flipMemoryCard(sessionId, index);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    // Prédiction locale immédiate avec le même moteur que les modes
+    // Nearby/pass-and-play (voir MemoryGameEngine) — sur SON PROPRE clic on
+    // n'attend JAMAIS l'aller-retour réseau (voir demande utilisateur : "ne
+    // jamais patienter lorsque c'est moi qui clique", le bouton semblait
+    // mort le temps de la requête, poussant à cliquer plusieurs fois).
+    // Sans risque de divergence ici : ce chemin n'est atteint que si c'est
+    // déjà mon tour (voir MemoryGameBoardScreen._onTapCard), donc aucun coup
+    // adverse concurrent ne peut légitimement arriver entre-temps.
+    try {
+      final result = MemoryGameEngine.flip(
+        board: _state.board,
+        matched: _state.matched,
+        flipped: _state.flipped,
+        currentTurnUserId: _state.currentTurnUserId ?? myUserId,
+        movesCount: _state.movesCount,
+        movesByUser: _state.movesByUser,
+        index: index,
+        userId: myUserId,
+        otherUserId: partnerUserId,
+      );
+      _state = _state.copyWith(
+        matched: result.matched,
+        flipped: result.flipped,
+        mismatch: result.mismatch,
+        clearMismatch: result.mismatch == null,
+        currentTurnUserId: result.currentTurnUserId,
+        movesCount: result.movesCount,
+        movesByUser: result.movesByUser,
+        finished: result.finished,
+      );
+      _controller.add(_state);
+    } catch (_) {
+      // Coup localement invalide (état déjà périmé) — laisse le serveur
+      // trancher ci-dessous plutôt que d'empêcher l'appel.
+    }
+
+    try {
+      final session = await GameService.instance.flipMemoryCard(sessionId, index);
+      _state = _stateFrom(session);
+      _controller.add(_state);
+    } catch (_) {
+      // Échec réseau : la prédiction locale reste affichée telle quelle,
+      // mais on retente une resynchronisation silencieuse pour ne pas
+      // rester durablement décalé·e du serveur.
+      try {
+        final session = await GameService.instance.fetchMemoryGameState(sessionId);
+        _state = _stateFrom(session);
+        _controller.add(_state);
+      } catch (_) {
+        // best effort — voir doc de classe RealtimeClient, jamais de crash
+        // pour une indisponibilité réseau passagère.
+      }
+    }
   }
 
   @override

@@ -43,6 +43,7 @@ class RemotePictionaryTransport extends PictionaryTransport {
         winnerUserId: session.winnerUserId,
         movesCount: session.movesCount,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         opponentUserId: opponentUserId,

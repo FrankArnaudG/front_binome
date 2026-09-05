@@ -7,7 +7,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/api_client.dart';
 import '../../core/local_cache.dart';
 import '../../models/box.dart';
-import '../../models/box_milestone.dart';
 import '../../models/box_stats.dart';
 
 /// État partagé de la Box du couple (singleton `ChangeNotifier`, dans le
@@ -134,20 +133,4 @@ class BoxService extends ChangeNotifier {
     return BoxStats.fromJson(data);
   }
 
-  Future<List<BoxMilestone>> fetchMilestones() async {
-    final data = await ApiClient.instance.get('/boxes/milestones') as List;
-    return data.map((e) => BoxMilestone.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  Future<BoxMilestone> addMilestone({required String label, required DateTime date}) async {
-    final data = await ApiClient.instance.post('/boxes/milestones', body: {
-      'label': label,
-      'date': date.toIso8601String().split('T').first,
-    }) as Map<String, dynamic>;
-    return BoxMilestone.fromJson(data);
-  }
-
-  Future<void> deleteMilestone(String id) async {
-    await ApiClient.instance.delete('/boxes/milestones/$id');
-  }
 }

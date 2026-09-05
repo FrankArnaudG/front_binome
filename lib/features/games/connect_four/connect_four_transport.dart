@@ -11,6 +11,12 @@ class ConnectFourBoardState {
   final bool isTie;
   final int movesCount;
   final bool finished;
+  // Distinct d'une fin normale (alignement de 4/grille pleine) — voir
+  // ConnectFourBoardScreen._onState : seule cette valeur déclenche la
+  // pop-up "{partenaire} a mis fin à cette partie" plutôt que le
+  // scoreboard habituel (voir demande utilisateur, même principe que
+  // MemoryGameBoardState.abandoned).
+  final bool abandoned;
   final DateTime? startedAt;
   final String myUserId;
   final String? pausedByUserId;
@@ -26,6 +32,7 @@ class ConnectFourBoardState {
     this.isTie = false,
     this.movesCount = 0,
     this.finished = false,
+    this.abandoned = false,
     this.startedAt,
     required this.myUserId,
     this.pausedByUserId,
@@ -45,6 +52,7 @@ class ConnectFourBoardState {
     bool? isTie,
     int? movesCount,
     bool? finished,
+    bool? abandoned,
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
@@ -58,6 +66,7 @@ class ConnectFourBoardState {
         isTie: isTie ?? this.isTie,
         movesCount: movesCount ?? this.movesCount,
         finished: finished ?? this.finished,
+        abandoned: abandoned ?? this.abandoned,
         startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
         pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),

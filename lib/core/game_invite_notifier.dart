@@ -25,6 +25,7 @@ class GameInviteNotifier extends ChangeNotifier {
 
   String? _myUserId;
   String? _subscribedBoxId;
+  Timer? _pollTimer;
 
   GameInvite? _pendingInvite;
   GameInvite? get pendingInvite => _pendingInvite;
@@ -39,6 +40,32 @@ class GameInviteNotifier extends ChangeNotifier {
     BoxService.instance.removeListener(_onBoxChanged);
     BoxService.instance.addListener(_onBoxChanged);
     _onBoxChanged();
+
+    // Temps réel pour une apparition instantanée de la pop-up, + un poll de
+    // secours en parallèle (indépendant du socket, même principe que
+    // BoxWaitingScreen/GameInviteWaitingScreen) — sans ça, un événement
+    // WebSocket manqué au moment précis de l'envoi ne faisait JAMAIS
+    // apparaître la pop-up côté invité·e avant de relancer l'app entière
+    // (voir demande utilisateur).
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _pollPending());
+  }
+
+  Future<void> _pollPending() async {
+    if (_subscribedBoxId == null) {
+      debugPrint('GameInviteNotifier: poll ignoré, aucune box abonnée (_subscribedBoxId == null)');
+      return;
+    }
+    try {
+      final invite = await GameService.instance.fetchPendingInvite();
+      debugPrint('GameInviteNotifier: poll -> invite=${invite?.id} inviteeId=${invite?.inviteeId} myUserId=$_myUserId');
+      if (invite != null && invite.inviteeId == _myUserId && _pendingInvite?.id != invite.id) {
+        _pendingInvite = invite;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('GameInviteNotifier: poll a échoué ($e)');
+    }
   }
 
   void _onBoxChanged() {

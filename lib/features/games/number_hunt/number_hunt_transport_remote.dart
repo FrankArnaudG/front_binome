@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../core/realtime_client.dart';
 import '../../../models/number_hunt_session.dart';
 import '../game_service.dart';
+import 'number_hunt_engine.dart';
 import 'number_hunt_transport.dart';
 
 /// Mode "à distance" — synchronisation via le backend (REST pour les
@@ -15,6 +16,7 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
   final String sessionId;
   final String boxId;
   final String myUserId;
+  final String partnerUserId;
   final _controller = StreamController<NumberHuntBoardState>.broadcast();
   late NumberHuntBoardState _state;
 
@@ -22,6 +24,7 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
     required NumberHuntSession session,
     required this.boxId,
     required this.myUserId,
+    required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
     RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
@@ -36,6 +39,7 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
         isTie: session.isTie,
         movesCount: session.movesCount,
         finished: session.isFinished || session.abandoned,
+        abandoned: session.abandoned,
         startedAt: session.startedAt,
         myUserId: myUserId,
         pausedByUserId: session.pausedByUserId,
@@ -65,9 +69,51 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
 
   @override
   Future<void> attempt(int number) async {
-    final result = await GameService.instance.attemptNumberHunt(sessionId, number);
-    _state = _stateFrom(result.session);
-    _controller.add(_state);
+    // Prédiction locale immédiate (voir RemoteMemoryGameTransport.flip) —
+    // ici PAS de tour par tour, donc un tir du binôme peut réellement
+    // arriver entre-temps (voir doc de classe : "le serveur arbitre les
+    // quasi-égalités") ; sans conséquence visible, la réponse HTTP arrive
+    // presque aussitôt et écrase cette prédiction avec l'état réel.
+    try {
+      final outcome = NumberHuntEngine.attempt(
+        currentTarget: _state.currentTarget,
+        found: _state.found,
+        scoresByUser: _state.scoresByUser,
+        number: number,
+        userId: myUserId,
+        movesCount: _state.movesCount,
+        creatorId: myUserId,
+        partnerId: partnerUserId,
+        cellCount: _state.board.length,
+      );
+      _state = _state.copyWith(
+        found: outcome.found,
+        scoresByUser: outcome.scoresByUser,
+        currentTarget: outcome.newTarget,
+        clearTarget: outcome.newTarget == null,
+        movesCount: outcome.movesCount,
+        finished: outcome.finished,
+        winnerUserId: outcome.winnerUserId,
+        isTie: outcome.isTie,
+      );
+      _controller.add(_state);
+    } catch (_) {
+      // Tentative localement invalide — le serveur tranchera.
+    }
+
+    try {
+      final result = await GameService.instance.attemptNumberHunt(sessionId, number);
+      _state = _stateFrom(result.session);
+      _controller.add(_state);
+    } catch (_) {
+      try {
+        final session = await GameService.instance.fetchNumberHuntState(sessionId);
+        _state = _stateFrom(session);
+        _controller.add(_state);
+      } catch (_) {
+        // best effort — voir doc de classe RealtimeClient.
+      }
+    }
   }
 
   @override

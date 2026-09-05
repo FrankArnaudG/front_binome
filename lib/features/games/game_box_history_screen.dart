@@ -841,7 +841,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
 
   @override
   void dispose() {
-    AppRouter.showGlobalNavBar.value = true;
+    // Différé au frame suivant (voir memory_game_board_screen.dart pour la
+    // justification complète) — assigné en direct ici, cette mise à jour
+    // plantait silencieusement pendant le démontage (arbre de widgets
+    // verrouillé), ce qui laissait TOUTE la coquille globale (barre de
+    // navigation, bulle de commentaires, pop-up d'invitation) coincée
+    // masquée jusqu'au relancement complet de l'app.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.showGlobalNavBar.value = true;
+    });
     _composeController.dispose();
     _composeFocusNode.dispose();
     _scrollController.dispose();

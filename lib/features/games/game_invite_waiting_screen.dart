@@ -34,6 +34,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   late StreamSubscription<GameInvite> _subscription;
   Timer? _tickTimer;
   Timer? _timeoutTimer;
+  Timer? _pollTimer;
   DateTime? _startedAt;
   bool _resolved = false;
 
@@ -46,6 +47,23 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
       if (mounted) setState(() {});
     });
     _timeoutTimer = Timer(_totalWait, _onTimeout);
+    // Temps réel pour une confirmation instantanée, + un poll de secours en
+    // parallèle (indépendant du socket, même principe que BoxWaitingScreen)
+    // — sans ça, un événement WebSocket manqué (voir RealtimeClient, jamais
+    // la seule source de vérité) laissait cet écran attendre jusqu'à
+    // expiration des 60s puis annuler l'invitation MÊME QUAND le binôme
+    // avait déjà rejoint et jouait de son côté (voir demande utilisateur).
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _pollStatus());
+  }
+
+  Future<void> _pollStatus() async {
+    if (_resolved) return;
+    try {
+      final invite = await GameService.instance.fetchGameInvite(widget.invite.id);
+      _onUpdate(invite);
+    } catch (_) {
+      // best effort, on retente au prochain tick.
+    }
   }
 
   void _onUpdate(GameInvite invite) {
@@ -100,6 +118,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     _subscription.cancel();
     _tickTimer?.cancel();
     _timeoutTimer?.cancel();
+    _pollTimer?.cancel();
     GameInviteNotifier.instance.disposeWatch(widget.invite.id);
     super.dispose();
   }

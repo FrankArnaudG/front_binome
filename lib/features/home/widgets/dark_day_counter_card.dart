@@ -42,6 +42,13 @@ class DarkDayCounterCard extends StatefulWidget {
   /// au tap.
   final bool alwaysShowEditControls;
 
+  /// `false` depuis CoupleProfileScreen (voir demande utilisateur) : le
+  /// texte "Ensemble depuis..." juste au-dessus, dans le même écran, porte
+  /// désormais son propre crayon dédié — inutile de le dupliquer ici, qui
+  /// devient un simple affichage de lecture pour la date. Reste `true`
+  /// ailleurs (Dashboard), seul endroit où ce crayon-ci existe encore.
+  final bool showDateEditControl;
+
   /// Ouvre "Notre Bulle à nous" au tap sur la zone texte de la carte (voir
   /// _DarkDayCounterCardState.build) — `null` désactive ce geste (utilisé
   /// depuis CoupleProfileScreen elle-même, pas la peine de se rouvrir soi-même).
@@ -51,6 +58,7 @@ class DarkDayCounterCard extends StatefulWidget {
     super.key,
     required this.box,
     this.alwaysShowEditControls = false,
+    this.showDateEditControl = true,
     this.onOpenProfile,
   });
 
@@ -399,7 +407,8 @@ class _DarkDayCounterCardState extends State<DarkDayCounterCard> {
               ),
             ),
           ),
-          if (widget.box != null &&
+          if (widget.showDateEditControl &&
+              widget.box != null &&
               (widget.alwaysShowEditControls ||
                   widget.box!.togetherSinceOverride == null))
             _saving

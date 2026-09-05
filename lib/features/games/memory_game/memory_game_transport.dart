@@ -14,6 +14,11 @@ class MemoryGameBoardState {
   final int movesCount;
   final Map<String, int> movesByUser;
   final bool finished;
+  // Distinct d'une fin normale (plateau entièrement retrouvé) — voir
+  // MemoryGameBoardScreen._onState : seule cette valeur déclenche la pop-up
+  // "{partenaire} a mis fin à cette partie" plutôt que le scoreboard
+  // habituel (voir demande utilisateur).
+  final bool abandoned;
   final DateTime? startedAt;
   final String myUserId;
   // Non-null tant que la partie est en pause — id de qui l'a posée (voir
@@ -36,6 +41,7 @@ class MemoryGameBoardState {
     this.movesCount = 0,
     this.movesByUser = const {},
     this.finished = false,
+    this.abandoned = false,
     this.startedAt,
     required this.myUserId,
     this.pausedByUserId,
@@ -57,6 +63,7 @@ class MemoryGameBoardState {
     int? movesCount,
     Map<String, int>? movesByUser,
     bool? finished,
+    bool? abandoned,
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
@@ -75,6 +82,7 @@ class MemoryGameBoardState {
         movesCount: movesCount ?? this.movesCount,
         movesByUser: movesByUser ?? this.movesByUser,
         finished: finished ?? this.finished,
+        abandoned: abandoned ?? this.abandoned,
         startedAt: startedAt ?? this.startedAt,
         myUserId: myUserId,
         pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),

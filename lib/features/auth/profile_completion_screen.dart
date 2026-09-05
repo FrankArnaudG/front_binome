@@ -205,8 +205,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
 
     return PopScope(
       // Étape obligatoire : impossible de revenir en arrière ou de fermer
-      // tant qu'elle n'est pas complétée (même motif que
-      // MilestoneReminderDialog).
+      // tant qu'elle n'est pas complétée.
       canPop: false,
       child: Scaffold(
         body: ThemedBackground(
