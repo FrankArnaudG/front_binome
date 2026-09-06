@@ -41,6 +41,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.invite.isFriendInvite) _loadFriendInvitee();
     _startedAt = DateTime.now();
     _subscription = GameInviteNotifier.instance.watch(widget.invite.id).listen(_onUpdate);
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -76,6 +77,25 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
       _showOutcomeAndPop(invite.isExpired
           ? "Ton binôme n'a pas répondu à temps."
           : 'Ton binôme a décliné ton invitation.');
+    }
+  }
+
+  // Chargé à part pour une invitation hors-Box (défi à un ami de jeu, voir
+  // demande utilisateur) : l'invité·e n'est alors JAMAIS le binôme (voir
+  // build(), qui reste synchrone pour le cas binôme existant).
+  String? _friendInviteeName;
+  String? _friendInviteeAvatar;
+
+  Future<void> _loadFriendInvitee() async {
+    try {
+      final profile = await GameService.instance.fetchPublicProfile(widget.invite.inviteeId);
+      if (!mounted) return;
+      setState(() {
+        _friendInviteeName = profile.prenom;
+        _friendInviteeAvatar = profile.avatar;
+      });
+    } catch (_) {
+      // Best-effort — repli sur le nom générique déjà géré dans build().
     }
   }
 
@@ -126,10 +146,17 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
-    final box = BoxScope.of(context).currentBox;
-    final partner = box?.partnerOf(widget.user.id);
-    final name = partner?.prenom ?? 'ton binôme';
-    final avatar = partner?.avatar;
+    final String name;
+    final String? avatar;
+    if (widget.invite.isFriendInvite) {
+      name = _friendInviteeName ?? 'ton adversaire';
+      avatar = _friendInviteeAvatar;
+    } else {
+      final box = BoxScope.of(context).currentBox;
+      final partner = box?.partnerOf(widget.user.id);
+      name = partner?.prenom ?? 'ton binôme';
+      avatar = partner?.avatar;
+    }
 
     final elapsed = _startedAt != null ? DateTime.now().difference(_startedAt!) : Duration.zero;
     final remaining = (_totalWait - elapsed).isNegative ? Duration.zero : _totalWait - elapsed;

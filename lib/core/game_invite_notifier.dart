@@ -41,6 +41,13 @@ class GameInviteNotifier extends ChangeNotifier {
     BoxService.instance.addListener(_onBoxChanged);
     _onBoxChanged();
 
+    // Canal personnel, en plus de celui de la Box ci-dessus — pour les
+    // invitations HORS-BOX (défi à un ami de jeu via son code, voir demande
+    // utilisateur), qui n'ont par définition aucune Box en commun avec
+    // l'invitant·e. Même `_onEvent` pour les deux sources : un GameInvite a
+    // la même forme peu importe d'où il vient (seul `boxId` diffère).
+    RealtimeClient.instance.subscribePrivate('App.Models.User.$myUserId', onEvent: _onEvent);
+
     // Temps réel pour une apparition instantanée de la pop-up, + un poll de
     // secours en parallèle (indépendant du socket, même principe que
     // BoxWaitingScreen/GameInviteWaitingScreen) — sans ça, un événement

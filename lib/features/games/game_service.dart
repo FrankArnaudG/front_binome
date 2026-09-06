@@ -14,6 +14,7 @@ import '../../models/game_box.dart';
 import '../../models/game_card_send.dart';
 import '../../models/memory_game_session.dart';
 import '../../models/memory_game_stats.dart';
+import '../../models/public_profile.dart';
 import '../../models/replies_page.dart';
 import '../../models/send.dart';
 import '../../models/tic_tac_toe_session.dart';
@@ -746,10 +747,22 @@ class GameService {
   // l'appel direct à startXxx() côté client pour les 3 jeux ci-dessus :
   // voir GameInviteNotifier/GameInviteWaitingScreen.
 
-  Future<GameInvite> createGameInvite(String gameId, {required String sessionType, Map<String, dynamic>? payload}) async {
+  /// [friendCode] (optionnel) bascule sur une invitation HORS-BOX — défi à
+  /// un ami de jeu via son code personnel plutôt qu'au binôme (voir
+  /// demande utilisateur). `null` conserve le comportement existant.
+  Future<GameInvite> createGameInvite(
+    String gameId, {
+    required String sessionType,
+    Map<String, dynamic>? payload,
+    String? friendCode,
+  }) async {
     final data = await ApiClient.instance.post(
       '/games/$gameId/invites',
-      body: {'session_type': sessionType, if (payload != null) 'payload': payload},
+      body: {
+        'session_type': sessionType,
+        if (payload != null) 'payload': payload,
+        if (friendCode != null) 'friend_code': friendCode,
+      },
     ) as Map<String, dynamic>;
     return GameInvite.fromJson(data);
   }
@@ -781,6 +794,32 @@ class GameService {
   Future<GameInvite> cancelGameInvite(String inviteId) async {
     final data = await ApiClient.instance.put('/invites/$inviteId/cancel') as Map<String, dynamic>;
     return GameInvite.fromJson(data);
+  }
+
+  // Amis de jeu (voir demande utilisateur : défier quelqu'un hors de sa
+  // propre Box) — jamais une demande d'amitié explicite, elle se crée
+  // automatiquement quand une invitation hors-Box est acceptée.
+
+  /// Mon propre code, à partager pour être défié·e.
+  Future<String> fetchMyFriendCode() async {
+    final data = await ApiClient.instance.get('/friends/code') as Map<String, dynamic>;
+    return data['friend_code'] as String;
+  }
+
+  Future<List<PublicProfile>> fetchFriends() async {
+    final data = await ApiClient.instance.get('/friends') as List;
+    return data.map((e) => PublicProfile.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Bloque quelqu'un pour ses futures invitations de jeu hors-Box — sans
+  /// jamais le/la prévenir (voir demande utilisateur).
+  Future<void> blockUser(String blockedUserId) {
+    return ApiClient.instance.post('/friends/block', body: {'blocked_user_id': blockedUserId});
+  }
+
+  Future<PublicProfile> fetchPublicProfile(String userId) async {
+    final data = await ApiClient.instance.get('/users/$userId/public-profile') as Map<String, dynamic>;
+    return PublicProfile.fromJson(data);
   }
 
   // "Chasse aux Chiffres" — copie structurelle conforme des méthodes des 3

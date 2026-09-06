@@ -58,6 +58,44 @@ class _GameInviteCard extends StatefulWidget {
 class _GameInviteCardState extends State<_GameInviteCard> {
   bool _responding = false;
 
+  // Chargé à part pour une invitation hors-Box (défi à un ami de jeu, voir
+  // demande utilisateur) : l'expéditeur n'est alors JAMAIS un membre de MA
+  // Box (voir build(), qui reste synchrone pour le cas binôme existant).
+  String? _friendInviterName;
+  String? _friendInviterAvatar;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.invite.isFriendInvite) _loadFriendInviter();
+  }
+
+  Future<void> _loadFriendInviter() async {
+    try {
+      final profile = await GameService.instance.fetchPublicProfile(widget.invite.inviterId);
+      if (!mounted) return;
+      setState(() {
+        _friendInviterName = profile.prenom;
+        _friendInviterAvatar = profile.avatar;
+      });
+    } catch (_) {
+      // Best-effort — repli sur le nom générique déjà géré dans build().
+    }
+  }
+
+  /// Bloque l'expéditeur (voir demande utilisateur : plus jamais reçu ses
+  /// invitations ensuite) puis efface la pop-up comme un refus.
+  Future<void> _block() async {
+    if (_responding) return;
+    setState(() => _responding = true);
+    GameInviteNotifier.instance.dismissPendingInvite();
+    try {
+      await GameService.instance.blockUser(widget.invite.inviterId);
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
   Future<void> _respond(bool accept) async {
     if (_responding) return;
     setState(() => _responding = true);
@@ -85,10 +123,17 @@ class _GameInviteCardState extends State<_GameInviteCard> {
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
-    final box = BoxScope.of(context).currentBox;
-    final inviter = box?.creatorId == widget.invite.inviterId ? box?.creator : box?.partner;
-    final name = inviter?.prenom ?? LocaleScope.t(context, 'memory_board_partner_fallback');
-    final avatar = inviter?.avatar;
+    final String name;
+    final String? avatar;
+    if (widget.invite.isFriendInvite) {
+      name = _friendInviterName ?? LocaleScope.t(context, 'memory_board_partner_fallback');
+      avatar = _friendInviterAvatar;
+    } else {
+      final box = BoxScope.of(context).currentBox;
+      final inviter = box?.creatorId == widget.invite.inviterId ? box?.creator : box?.partner;
+      name = inviter?.prenom ?? LocaleScope.t(context, 'memory_board_partner_fallback');
+      avatar = inviter?.avatar;
+    }
 
     return Positioned(
       top: MediaQuery.of(context).padding.top + 12,
@@ -169,6 +214,16 @@ class _GameInviteCardState extends State<_GameInviteCard> {
                     ),
                   ],
                 ),
+                // Uniquement pour un défi d'ami de jeu — jamais pour son
+                // propre binôme (voir demande utilisateur).
+                if (widget.invite.isFriendInvite) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _responding ? null : _block,
+                    style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                    child: const Text('Bloquer cette personne'),
+                  ),
+                ],
               ],
             ),
           ),

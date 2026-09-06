@@ -41,7 +41,12 @@ class MemoryGameMatchedPair {
 /// alors la paire éphémère à afficher un instant avant de la recacher.
 class MemoryGameSession {
   final String id;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
+  // les deux joueurs à la place de box->creator_id/partner_id.
+  final String? boxId;
+  final String? playerOneId;
+  final String? playerTwoId;
   final String gameId;
   final String? createdBy;
   final int pairCount;
@@ -59,7 +64,9 @@ class MemoryGameSession {
 
   const MemoryGameSession({
     required this.id,
-    required this.boxId,
+    this.boxId,
+    this.playerOneId,
+    this.playerTwoId,
     required this.gameId,
     this.createdBy,
     required this.pairCount,
@@ -78,6 +85,7 @@ class MemoryGameSession {
 
   bool get isFinished => finishedAt != null;
   bool get isPaused => pausedAt != null;
+  bool get isFriendSession => boxId == null;
 
   Set<int> get matchedIndices => matched
       .expand((pair) => pair.indices ?? const <int>[])
@@ -85,7 +93,9 @@ class MemoryGameSession {
 
   factory MemoryGameSession.fromJson(Map<String, dynamic> json) => MemoryGameSession(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
+        playerOneId: json['player_one_id'] as String?,
+        playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
         pairCount: json['pair_count'] as int,

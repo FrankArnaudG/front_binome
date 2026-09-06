@@ -5,7 +5,10 @@
 /// [expiresAt]).
 class GameInvite {
   final String id;
-  final String boxId;
+  // `null` pour une invitation hors-Box (défi à un ami de jeu via son
+  // code, voir demande utilisateur) — [inviterId]/[inviteeId] suffisent
+  // alors à savoir qui joue avec qui.
+  final String? boxId;
   final String gameId;
   final String sessionType;
   final String inviterId;
@@ -17,7 +20,7 @@ class GameInvite {
 
   const GameInvite({
     required this.id,
-    required this.boxId,
+    this.boxId,
     required this.gameId,
     required this.sessionType,
     required this.inviterId,
@@ -33,9 +36,14 @@ class GameInvite {
   bool get isDeclined => status == 'declined';
   bool get isExpired => status == 'expired';
 
+  /// `true` pour une invitation à un ami de jeu (hors de sa propre Box) —
+  /// voir demande utilisateur : seul ce cas propose "Bloquer" dans la
+  /// pop-up d'invitation (jamais pour son propre binôme).
+  bool get isFriendInvite => boxId == null;
+
   factory GameInvite.fromJson(Map<String, dynamic> json) => GameInvite(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
         gameId: json['game_id'] as String,
         sessionType: json['session_type'] as String,
         inviterId: json['inviter_id'] as String,

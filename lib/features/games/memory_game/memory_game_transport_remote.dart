@@ -14,11 +14,17 @@ import 'memory_game_transport.dart';
 /// supplémentaire pour se sentir réactif.
 class RemoteMemoryGameTransport extends MemoryGameTransport {
   final String sessionId;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — le canal temps réel devient alors
+  // [_friendChannelName] (dédié à CETTE session) plutôt que le canal de la
+  // Box, voir le constructeur.
+  final String? boxId;
   final String myUserId;
   final String partnerUserId;
   final _controller = StreamController<MemoryGameBoardState>.broadcast();
   late MemoryGameBoardState _state;
+
+  String get _friendChannelName => 'memory-game-session.$sessionId';
 
   RemoteMemoryGameTransport({
     required MemoryGameSession session,
@@ -27,7 +33,12 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
     required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
-    RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.subscribeToBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.subscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
   }
 
   MemoryGameBoardState _stateFrom(MemoryGameSession session, {List<int>? mismatch}) => MemoryGameBoardState(
@@ -156,7 +167,12 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
 
   @override
   void dispose() {
-    RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onRealtimeEvent);
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.unsubscribeFromBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.unsubscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
     _controller.close();
   }
 }

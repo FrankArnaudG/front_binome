@@ -115,6 +115,37 @@ class _PushGameSessionOpenScreenState extends State<PushGameSessionOpenScreen> {
     final session = await GameService.instance.fetchMemoryGameState(widget.sessionId);
     final games = await GameService.instance.fetchGames();
     final game = games.firstWhere((g) => g.id == session.gameId);
+
+    // Défi d'ami de jeu (voir demande utilisateur) : aucune Box en commun,
+    // donc `_players()` (qui dérive tout de BoxScope) ne peut pas résoudre
+    // l'adversaire — on le retrouve via `player_one_id`/`player_two_id` de
+    // la session elle-même, puis son profil public (voir
+    // GameService.fetchPublicProfile, l'app n'a par ailleurs aucun profil
+    // en cache pour quelqu'un qui n'est pas le binôme).
+    if (session.isFriendSession) {
+      final myId = widget.user.id;
+      final opponentId = session.playerOneId == myId ? session.playerTwoId : session.playerOneId;
+      if (opponentId == null) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+      final opponent = await GameService.instance.fetchPublicProfile(opponentId);
+      if (!mounted) return;
+      final transport = RemoteMemoryGameTransport(session: session, boxId: null, myUserId: myId, partnerUserId: opponentId);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => MemoryGameBoardScreen(
+            game: game,
+            user: widget.user,
+            transport: transport,
+            playerNames: {myId: widget.user.prenom, opponentId: opponent.prenom},
+            playerAvatars: {myId: widget.user.avatar, opponentId: opponent.avatar},
+          ),
+        ),
+      );
+      return;
+    }
+
     final players = _players();
     if (!mounted || players == null) return;
 

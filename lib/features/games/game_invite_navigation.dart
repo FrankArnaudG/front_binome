@@ -37,13 +37,44 @@ Future<void> openGameSessionFromInvite(
   final sessionId = resolved.sessionId;
   if (sessionId == null) return;
 
-  final box = BoxScope.of(context).currentBox;
   final me = await _cachedUser();
-  final partner = box != null && me != null ? box.partnerOf(me.id) : null;
-  if (box == null || me == null || partner == null || !context.mounted) return;
+  if (me == null || !context.mounted) return;
 
-  final playerNames = {me.id: me.prenom, partner.id: partner.prenom};
-  final playerAvatars = {me.id: me.avatar, partner.id: partner.avatar};
+  // Invitation hors-Box (défi à un ami de jeu via son code, voir demande
+  // utilisateur) : l'adversaire n'est jamais le binôme (voir BoxScope),
+  // mais l'autre id porté par l'invite elle-même — son profil n'est par
+  // définition pas déjà connu de l'app, on le récupère à part.
+  final String opponentId;
+  final String opponentPrenom;
+  final String? opponentAvatar;
+  String? boxId;
+  String? boxCreatorId;
+  String? boxPartnerId;
+
+  if (resolved.isFriendInvite) {
+    opponentId = resolved.inviterId == me.id ? resolved.inviteeId : resolved.inviterId;
+    try {
+      final profile = await GameService.instance.fetchPublicProfile(opponentId);
+      opponentPrenom = profile.prenom;
+      opponentAvatar = profile.avatar;
+    } catch (_) {
+      return;
+    }
+    if (!context.mounted) return;
+  } else {
+    final box = BoxScope.of(context).currentBox;
+    final partner = box?.partnerOf(me.id);
+    if (box == null || partner == null) return;
+    opponentId = partner.id;
+    opponentPrenom = partner.prenom;
+    opponentAvatar = partner.avatar;
+    boxId = box.id;
+    boxCreatorId = box.creatorId;
+    boxPartnerId = box.partnerId;
+  }
+
+  final playerNames = {me.id: me.prenom, opponentId: opponentPrenom};
+  final playerAvatars = {me.id: me.avatar, opponentId: opponentAvatar};
 
   final games = await GameService.instance.fetchGames();
   final game = games.firstWhere((g) => g.id == resolved.gameId, orElse: () => games.first);
@@ -57,17 +88,23 @@ Future<void> openGameSessionFromInvite(
       screen = MemoryGameBoardScreen(
         game: game,
         user: me,
-        transport: RemoteMemoryGameTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
+        // boxId reste `null` pour une invitation hors-Box (voir plus haut)
+        // — RemoteMemoryGameTransport bascule alors sur le canal temps
+        // réel dédié à cette session plutôt que celui de la Box.
+        transport: RemoteMemoryGameTransport(session: session, boxId: boxId, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
+    // Les 7 jeux ci-dessous restent réservés au binôme (voir
+    // GameInviteController::FRIEND_SESSION_TYPES, Phase 1 du projet) —
+    // boxId/boxCreatorId/boxPartnerId sont donc garantis non-nuls ici.
     case 'tic_tac_toe':
       final session = await GameService.instance.fetchTicTacToeState(sessionId);
       if (!context.mounted) return;
       screen = TicTacToeBoardScreen(
         game: game,
         user: me,
-        transport: RemoteTicTacToeTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
+        transport: RemoteTicTacToeTransport(session: session, boxId: boxId!, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -77,7 +114,7 @@ Future<void> openGameSessionFromInvite(
       screen = DotSquaresBoardScreen(
         game: game,
         user: me,
-        transport: RemoteDotSquaresTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
+        transport: RemoteDotSquaresTransport(session: session, boxId: boxId!, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -87,7 +124,7 @@ Future<void> openGameSessionFromInvite(
       screen = NumberHuntBoardScreen(
         game: game,
         user: me,
-        transport: RemoteNumberHuntTransport(session: session, boxId: box.id, myUserId: me.id, partnerUserId: partner.id),
+        transport: RemoteNumberHuntTransport(session: session, boxId: boxId!, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -99,10 +136,10 @@ Future<void> openGameSessionFromInvite(
         user: me,
         transport: RemoteWarCardTransport(
           session: session,
-          boxId: box.id,
+          boxId: boxId!,
           myUserId: me.id,
-          creatorId: box.creatorId,
-          partnerId: box.partnerId!,
+          creatorId: boxCreatorId!,
+          partnerId: boxPartnerId!,
         ),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
@@ -113,7 +150,7 @@ Future<void> openGameSessionFromInvite(
       screen = ConnectFourBoardScreen(
         game: game,
         user: me,
-        transport: RemoteConnectFourTransport(session: session, boxId: box.id, myUserId: me.id),
+        transport: RemoteConnectFourTransport(session: session, boxId: boxId!, myUserId: me.id),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -126,7 +163,7 @@ Future<void> openGameSessionFromInvite(
       screen = BattleshipPlacementScreen(
         game: game,
         user: me,
-        transport: RemoteBattleshipTransport(session: session, boxId: box.id, myUserId: me.id, opponentUserId: partner.id),
+        transport: RemoteBattleshipTransport(session: session, boxId: boxId!, myUserId: me.id, opponentUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );
@@ -136,7 +173,7 @@ Future<void> openGameSessionFromInvite(
       screen = PictionaryBoardScreen(
         game: game,
         user: me,
-        transport: RemotePictionaryTransport(session: session, boxId: box.id, myUserId: me.id, opponentUserId: partner.id),
+        transport: RemotePictionaryTransport(session: session, boxId: boxId!, myUserId: me.id, opponentUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
       );

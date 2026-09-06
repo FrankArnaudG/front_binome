@@ -14,6 +14,7 @@ import '../../theme/themed_background.dart';
 import '../../widgets/empty_state.dart';
 import 'charades_categories_screen.dart';
 import 'emoji_story_history_screen.dart';
+import 'friend_challenge_screen.dart';
 import 'game_boxes_screen.dart';
 import 'game_service.dart';
 import 'game_session_screen.dart';
@@ -26,7 +27,6 @@ import 'pictionary/pictionary_mode_screen.dart';
 import 'war_card/war_card_mode_screen.dart';
 import 'tic_tac_toe/tic_tac_toe_mode_screen.dart';
 import 'timed_challenge_session_screen.dart';
-import 'widgets/couple_stats_card.dart';
 import 'widgets/game_rules_dialog.dart';
 
 bool _isNetworkPath(String? path) =>
@@ -108,6 +108,11 @@ class GamesMenuScreen extends StatefulWidget {
 
 class _GamesMenuScreenState extends State<GamesMenuScreen> {
   late Future<List<Game>> _future;
+
+  // Onglet actif (voir demande utilisateur : deux boutons façon navigation
+  // pour switcher entre les deux catégories, plutôt que deux sections
+  // empilées) — "interactive" en premier par défaut, voir _gameSection.
+  String _selectedCategory = 'interactive';
 
   static const _catalogChannel = 'games-catalog';
 
@@ -306,6 +311,17 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
             color: theme.textOnBackground,
           ),
         ),
+        // Défier quelqu'un hors de sa propre Box, via son code ami — voir
+        // demande utilisateur (principe "TikTok", jamais un forum public).
+        actions: [
+          IconButton(
+            tooltip: 'Défier un ami',
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FriendChallengeScreen(user: widget.user)),
+            ),
+          ),
+        ],
       ),
       body: ThemedBackground(
         child: SafeArea(
@@ -330,35 +346,59 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
                   );
                 }
                 final games = snapshot.data ?? [];
+                final filtered = games.where((g) => g.isInteractiveCategory == (_selectedCategory == 'interactive')).toList();
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                   children: [
-                    const CoupleStatsCard(),
-                    const SizedBox(height: 24),
-                    Text(
-                      t('games_menu_section_title'),
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: theme.textOnBackground,
-                      ),
+                    // Deux boutons façon navigation pour switcher entre les
+                    // catégories (voir demande utilisateur) — "Jeu
+                    // interactif" (les 8 mini-jeux temps réel, voir
+                    // Game.isInteractiveCategory) en premier, puisque c'est
+                    // le groupe qui demande une vraie présence simultanée
+                    // des deux partenaires ; "Jeu classique" ensuite (boîtes
+                    // à cartes/prompts, échange asynchrone).
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CategoryTab(
+                            label: t('games_menu_category_interactive'),
+                            selected: _selectedCategory == 'interactive',
+                            theme: theme,
+                            onTap: () => setState(() => _selectedCategory = 'interactive'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _CategoryTab(
+                            label: t('games_menu_category_classic'),
+                            selected: _selectedCategory == 'classic',
+                            theme: theme,
+                            onTap: () => setState(() => _selectedCategory = 'classic'),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
+                    // Sous-titre propre à la catégorie active (voir demande
+                    // utilisateur) — remplace l'ancien titre/sous-titre fixe
+                    // "Moments de Complicité".
                     Text(
-                      t('games_menu_section_subtitle'),
+                      _selectedCategory == 'interactive'
+                          ? t('games_menu_category_interactive_subtitle')
+                          : t('games_menu_category_classic_subtitle'),
                       style: GoogleFonts.nunito(
                         fontSize: 12,
                         color: theme.textOnBackgroundMuted,
                       ),
                     ),
                     const SizedBox(height: 14),
-                    if (games.isEmpty)
+                    if (filtered.isEmpty)
                       EmptyState(
                         icon: Icons.sports_esports_rounded,
                         message: t('games_menu_empty'),
                       )
                     else
-                      ...games.map(
+                      ...filtered.map(
                         (game) => Padding(
                           padding: const EdgeInsets.only(bottom: 14),
                           child: _GameFlipCard(
@@ -371,6 +411,57 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
                   ],
                 );
               },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton façon navigation pour switcher entre "Jeu interactif"/"Jeu
+/// classique" (voir GamesMenuScreen._selectedCategory) — pleine largeur,
+/// même esprit que _FilterChip (TimelineScreen) mais côte à côte plutôt
+/// qu'en Wrap, pour lire comme deux onglets plutôt qu'une liste de filtres.
+class _CategoryTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ThemePalette theme;
+  final VoidCallback onTap;
+
+  const _CategoryTab({
+    required this.label,
+    required this.selected,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? theme.primary : theme.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? Colors.transparent
+                  : (theme.isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : theme.textOnBackgroundMuted,
             ),
           ),
         ),

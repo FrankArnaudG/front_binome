@@ -171,7 +171,7 @@ class RealtimeClient {
     for (final channelName in channelNames) {
       if (_subscribedChannels.contains(channelName)) continue;
 
-      if (channelName.startsWith('presence-')) {
+      if (channelName.startsWith('presence-') || channelName.startsWith('private-')) {
         final auth = await _authorize(channelName, _socketId!);
         if (auth == null) continue;
         _subscribedChannels.add(channelName);
@@ -316,6 +316,56 @@ class RealtimeClient {
         'auth': auth['auth'],
         'channel_data': auth['channel_data'],
       },
+    });
+  }
+
+  /// S'abonne à un canal PRIVÉ authentifié (même handshake `/broadcasting/auth`
+  /// que [subscribeToBox], mais sans notion de présence/membres — voir
+  /// routes/channels.php côté backend, `Broadcast::channel` sans
+  /// `PresenceChannel`) : pour tout ce qui n'est pas scopé à une Box, par
+  /// exemple le canal personnel `App.Models.User.{id}` (défis d'amis de
+  /// jeu hors de sa propre Box, voir demande utilisateur) ou une session de
+  /// jeu hors-Box dédiée (`memory-game-session.{id}`). [channelName] est le
+  /// nom BRUT tel qu'enregistré côté backend, SANS le préfixe `private-`
+  /// (ajouté ici, comme [subscribeToBox] ajoute `presence-` lui-même).
+  Future<void> subscribePrivate(String channelName, {required void Function(RealtimeEvent event) onEvent}) async {
+    await connect();
+
+    final fullChannelName = 'private-$channelName';
+    _eventCallbacks.putIfAbsent(fullChannelName, () => {}).add(onEvent);
+
+    if (_subscribedChannels.contains(fullChannelName)) return;
+
+    for (var i = 0; i < 20 && _socketId == null; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    if (_socketId == null) {
+      debugPrint('Reverb: pas de socket_id, abandon de l\'abonnement à $fullChannelName');
+      return;
+    }
+
+    final auth = await _authorize(fullChannelName, _socketId!);
+    if (auth == null) return;
+
+    _subscribedChannels.add(fullChannelName);
+    _send({
+      'event': 'pusher:subscribe',
+      'data': {'channel': fullChannelName, 'auth': auth['auth']},
+    });
+  }
+
+  /// Retire UNIQUEMENT l'écouteur passé ici — voir [unsubscribeFromBox],
+  /// même principe pour un canal privé abonné via [subscribePrivate].
+  void unsubscribePrivate(String channelName, {required void Function(RealtimeEvent event) onEvent}) {
+    final fullChannelName = 'private-$channelName';
+    _eventCallbacks[fullChannelName]?.remove(onEvent);
+    if (_eventCallbacks[fullChannelName]?.isNotEmpty ?? false) return;
+
+    if (!_subscribedChannels.remove(fullChannelName)) return;
+    _eventCallbacks.remove(fullChannelName);
+    _send({
+      'event': 'pusher:unsubscribe',
+      'data': {'channel': fullChannelName},
     });
   }
 

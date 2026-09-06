@@ -19,6 +19,10 @@ class Game {
   // classic | truth_or_dare | emoji_story | charades | prompt_reveal |
   // timed_challenge | blind_poll
   final String sessionType;
+  // 'interactive' (les 8 mini-jeux à état partagé, joués en temps réel à
+  // deux) ou 'classic' (boîtes à cartes/prompts) — voir GamesMenuScreen,
+  // deux sections séparées dans le catalogue.
+  final String category;
   final int consecutiveChoiceLimit;
   final int challengeSeconds;
 
@@ -35,6 +39,7 @@ class Game {
     required this.mode,
     required this.status,
     this.sessionType = 'classic',
+    this.category = 'classic',
     this.consecutiveChoiceLimit = 3,
     this.challengeSeconds = 60,
   });
@@ -69,6 +74,8 @@ class Game {
   bool get isConnectFour => sessionType == 'connect_four';
   bool get isBattleship => sessionType == 'battleship';
   bool get isPictionary => sessionType == 'pictionary';
+
+  bool get isInteractiveCategory => category == 'interactive';
 
   /// Jeux dont la navigation dépend d'une liste de boîtes/catégories (voir
   /// GamesMenuScreen._playGame) — classic/truth_or_dare/charades/quiz/
@@ -116,6 +123,7 @@ class Game {
         mode: json['mode'] as String,
         status: json['status'] as String,
         sessionType: json['session_type'] as String? ?? 'classic',
+        category: json['category'] as String? ?? 'classic',
         consecutiveChoiceLimit: json['consecutive_choice_limit'] as int? ?? 3,
         challengeSeconds: json['challenge_seconds'] as int? ?? 60,
       );
