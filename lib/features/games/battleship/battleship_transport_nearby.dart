@@ -21,6 +21,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
   final Nearby nearby;
   final String endpointId;
   final bool isHost;
+  int _gridSize = BattleshipEngine.defaultGrid;
   final _controller = StreamController<BattleshipBoardState>.broadcast();
 
   // Uniquement renseigné côté hôte — l'invité ne connaît jamais l'état
@@ -42,10 +43,21 @@ class NearbyBattleshipTransport extends BattleshipTransport {
   // Côté invité uniquement : dernière vue reçue de l'hôte.
   BattleshipBoardState? _guestState;
 
-  NearbyBattleshipTransport.host({required this.nearby, required this.endpointId}) : isHost = true;
+  NearbyBattleshipTransport.host({required this.nearby, required this.endpointId, required int gridSize})
+      : isHost = true,
+        _gridSize = gridSize {
+    // Envoyé tout de suite (avant toute pose de flotte) — l'invité en a
+    // besoin pour construire SON écran de placement, qui dépend de la
+    // taille de grille choisie ici par l'hôte (voir doc du constructeur
+    // .guest, même principe que NearbyDotSquaresTransport.host/_sendInit).
+    _sendStateToGuest();
+  }
 
+  /// Aucun [gridSize] à fournir ici — appris du premier message `state`
+  /// envoyé par l'hôte (voir _stateFor), même principe que
+  /// NearbyDotSquaresTransport.guest pour `cols`.
   NearbyBattleshipTransport.guest({required this.nearby, required this.endpointId}) : isHost = false {
-    _guestState = const BattleshipBoardState(myUserId: kBattleshipGuestRole, opponentUserId: kBattleshipHostRole);
+    _guestState = BattleshipBoardState(myUserId: kBattleshipGuestRole, opponentUserId: kBattleshipHostRole);
   }
 
   void _send(Map<String, dynamic> message) {
@@ -59,6 +71,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     final opponentFleet = isHostRole ? _fleetGuest : _fleetHost;
 
     return BattleshipBoardState(
+      gridSize: _gridSize,
       myFleet: myFleet,
       myShots: myShots,
       opponentSunkShips: BattleshipEngine.sunkShipsOf(opponentFleet),
@@ -81,6 +94,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     final state = _stateFor(kBattleshipGuestRole);
     _send({
       'type': 'state',
+      'gridSize': state.gridSize,
       'myFleet': state.myFleet.map((s) => {'cells': s.cells, 'hits': s.hits}).toList(),
       'myShots': state.myShots.map((s) => {'cell': s.cell, 'hit': s.hit}).toList(),
       'opponentSunkShips': state.opponentSunkShips,
@@ -106,7 +120,12 @@ class NearbyBattleshipTransport extends BattleshipTransport {
         // Reçu côté invité uniquement — l'hôte fait autorité, cette vue
         // est déjà filtrée pour NOUS (voir _sendStateToGuest).
         final pausedByUserId = message['pausedByUserId'] as String?;
+        // Appris du premier message `state` reçu — voir doc du constructeur
+        // .guest, l'invité n'a aucune autre façon de connaître ce choix
+        // fait par l'hôte (pas de serveur en Nearby).
+        _gridSize = message['gridSize'] as int? ?? BattleshipEngine.defaultGrid;
         _guestState = BattleshipBoardState(
+          gridSize: _gridSize,
           myFleet: (message['myFleet'] as List)
               .map((e) => BattleshipShip.fromJson(e as Map<String, dynamic>))
               .toList(),
@@ -145,7 +164,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
 
   void _applyFleet(String role, List<BattleshipShip> ships) {
     try {
-      BattleshipEngine.validateFleet(ships);
+      BattleshipEngine.validateFleet(ships, _gridSize);
     } on ArgumentError {
       return;
     }
@@ -172,7 +191,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     final defenderFleet = role == kBattleshipHostRole ? _fleetGuest : _fleetHost;
     final BattleshipFireOutcome outcome;
     try {
-      outcome = BattleshipEngine.fire(defenderFleet: defenderFleet, cell: cell);
+      outcome = BattleshipEngine.fire(defenderFleet: defenderFleet, cell: cell, gridSize: _gridSize);
     } on ArgumentError {
       return;
     }
@@ -227,7 +246,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     if (isHost) {
       _applyFleet(kBattleshipHostRole, ships);
     } else {
-      BattleshipEngine.validateFleet(ships); // feedback immédiat côté invité avant l'aller-retour réseau
+      BattleshipEngine.validateFleet(ships, _gridSize); // feedback immédiat côté invité avant l'aller-retour réseau
       _send({'type': 'submit_fleet', 'ships': ships.map((s) => {'cells': s.cells}).toList()});
     }
   }

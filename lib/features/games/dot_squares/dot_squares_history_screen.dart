@@ -203,7 +203,7 @@ class _DotSquareHistoryTile extends StatelessWidget {
               Icon(Icons.category_outlined, size: 14, color: theme.textOnBackgroundMuted),
               const SizedBox(width: 4),
               Text(
-                '${session.rectangles.length}',
+                '${session.rectanglesCount}',
                 style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
               ),
               if (session.closedEarly) ...[

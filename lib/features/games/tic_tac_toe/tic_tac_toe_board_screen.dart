@@ -205,6 +205,11 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     );
     if (rematch == true && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
+    } else if (mounted) {
+      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
+      // taper à côté, peu importe le geste — doit refermer le jeu et
+      // revenir à la liste, comme un retour classique.
+      Navigator.of(context).pop();
     }
   }
 
@@ -483,7 +488,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                             Positioned.fill(
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: theme.background.withValues(alpha: 0.94),
+                                  color: theme.background,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 alignment: Alignment.center,
@@ -537,7 +542,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
       ],
       ),
     );

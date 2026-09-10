@@ -11,6 +11,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'api_client.dart';
 import 'app_router.dart';
+import 'doodle_notifier.dart';
 import 'game_invite_notifier.dart';
 import 'timeline_refresh_signal.dart';
 import 'token_storage.dart';
@@ -182,6 +183,17 @@ class PushNotificationService {
       return;
     }
 
+    // Doodle envoyé au binôme (voir DoodleController::send) — même
+    // raisonnement que l'invitation ci-dessus : app fermée/en arrière-plan,
+    // le canal temps réel n'a rien pu délivrer directement (voir
+    // DoodleNotifier/DoodleOverlay pour l'affichage plein écran).
+    final doodleId = message.data['doodle_id'] as String?;
+    if (message.data['type'] == 'doodle' && doodleId != null) {
+      TabNavigationController.instance.setIndex(1);
+      await DoodleNotifier.instance.showDoodleById(doodleId);
+      return;
+    }
+
     // Notification "partie lancée" par le binôme (voir MemoryGameController/
     // TicTacToeController/DotSquaresController::start) — ouvre directement
     // la partie EN COURS plutôt que de laisser l'utilisateur aller la
@@ -195,9 +207,8 @@ class PushNotificationService {
       'dot_square_session' => PushGameSessionType.dotSquares,
       'number_hunt_session' => PushGameSessionType.numberHunt,
       'war_card_session' => PushGameSessionType.warCard,
-      'connect_four_session' => PushGameSessionType.connectFour,
+      'suit_battle_session' => PushGameSessionType.suitBattle,
       'battleship_session' => PushGameSessionType.battleship,
-      'pictionary_session' => PushGameSessionType.pictionary,
       _ => null,
     };
     if (gameSessionType != null) {
@@ -207,9 +218,8 @@ class PushNotificationService {
         PushGameSessionType.dotSquares => message.data['dot_square_session_id'] as String?,
         PushGameSessionType.numberHunt => message.data['number_hunt_session_id'] as String?,
         PushGameSessionType.warCard => message.data['war_card_session_id'] as String?,
-        PushGameSessionType.connectFour => message.data['connect_four_session_id'] as String?,
+        PushGameSessionType.suitBattle => message.data['suit_battle_session_id'] as String?,
         PushGameSessionType.battleship => message.data['battleship_session_id'] as String?,
-        PushGameSessionType.pictionary => message.data['pictionary_session_id'] as String?,
       };
       if (sessionId == null) return;
       final user = await _cachedUser();

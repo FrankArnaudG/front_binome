@@ -47,6 +47,8 @@
 	<string>Le micro sert uniquement à la voix en direct pendant une partie à deux — jamais enregistré ni envoyé ailleurs qu'à votre binôme.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>La caméra sert à la photo dans le Jardin secret et à la vidéo optionnelle pendant un appel — jamais enregistrée ni envoyée ailleurs qu'à votre binôme.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Votre position sert uniquement quand vous appuyez sur "Partager ma position" pour calculer la distance avec votre binôme — jamais suivie en continu ni en arrière-plan.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>

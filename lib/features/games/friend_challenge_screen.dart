@@ -1,28 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/game.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
+import 'friend_challenge_support.dart';
+import 'friends_list_screen.dart';
 import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
-import 'memory_game/memory_emoji_pool.dart';
-
-/// Nombre de paires par défaut pour un défi d'ami (voir demande
-/// utilisateur : Phase 1 se limite au Jeu de Mémoire, sans sélecteur de
-/// difficulté — cette valeur reprend la difficulté "moyenne" déjà proposée
-/// dans MemoryGameDifficultyScreen).
-const _kFriendChallengePairCount = 8;
 
 /// Écran "Défier un ami" (voir demande utilisateur : permettre de jouer
 /// ponctuellement avec quelqu'un hors de sa propre Box, via un code
 /// personnel — principe "TikTok" : pas de liste d'amis à constituer avant,
 /// l'amitié se crée automatiquement si le défi est accepté, voir
-/// GameInviteController::accept côté backend). Phase 1 : uniquement le Jeu
-/// de Mémoire, pas de sélecteur de jeu.
+/// GameInviteController::accept côté backend). Les 7 jeux temps réel sont
+/// proposés au choix (voir demande utilisateur — la Phase 1 d'origine se
+/// limitait au Jeu de Mémoire, le backend supporte désormais les 7).
 class FriendChallengeScreen extends StatefulWidget {
   final AppUser user;
 
@@ -35,12 +33,23 @@ class FriendChallengeScreen extends StatefulWidget {
 class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
   final _codeController = TextEditingController();
   late Future<String> _myCodeFuture;
+  late Future<List<Game>> _gamesFuture;
+  Game? _selectedGame;
   bool _challenging = false;
 
   @override
   void initState() {
     super.initState();
     _myCodeFuture = GameService.instance.fetchMyFriendCode();
+    _gamesFuture = GameService.instance.fetchGames().then((games) {
+      final challengeable = friendChallengeableGames(games);
+      // Le Jeu de Mémoire reste sélectionné par défaut — comportement
+      // historique de cet écran, avant l'ajout du sélecteur.
+      if (challengeable.isNotEmpty && mounted) {
+        setState(() => _selectedGame ??= challengeable.firstWhere((g) => g.isMemoryGame, orElse: () => challengeable.first));
+      }
+      return challengeable;
+    });
   }
 
   @override
@@ -50,7 +59,13 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
   }
 
   void _shareCode(String code) {
-    Share.share('Défie-moi à un jeu sur Binome avec mon code ami : $code');
+    Share.share('Défie-moi à un jeu sur Binome Couple avec mon code ami : $code');
+  }
+
+  void _copyCode(String code) {
+    Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Code copié')));
   }
 
   void _showError(String message) {
@@ -64,27 +79,18 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
       _showError("Entre le code ami de la personne que tu veux défier.");
       return;
     }
+    final game = _selectedGame;
+    if (game == null) {
+      _showError('Choisis un jeu.');
+      return;
+    }
 
     setState(() => _challenging = true);
     try {
-      final games = await GameService.instance.fetchGames();
-      Game? memoryGame;
-      for (final g in games) {
-        if (g.isMemoryGame) {
-          memoryGame = g;
-          break;
-        }
-      }
-      if (memoryGame == null) {
-        _showError('Jeu de Mémoire indisponible pour le moment.');
-        return;
-      }
-
-      final board = generateShuffledMemoryBoard(_kFriendChallengePairCount);
       final invite = await GameService.instance.createGameInvite(
-        memoryGame.id,
-        sessionType: 'memory_game',
-        payload: {'pair_count': _kFriendChallengePairCount, 'board': board},
+        game.id,
+        sessionType: game.sessionType,
+        payload: friendChallengePayloadFor(game),
         friendCode: code,
       );
       if (!mounted) return;
@@ -115,6 +121,15 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
           'Défier un ami',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline_rounded),
+            tooltip: 'Mes amis de jeu',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FriendsListScreen(user: widget.user)),
+            ),
+          ),
+        ],
       ),
       body: ThemedBackground(
         child: SafeArea(
@@ -122,7 +137,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               Text(
-                'Joue une partie de Jeu de Mémoire avec quelqu\'un en dehors de ta Box, à l\'aide de son code ami.',
+                'Joue une partie avec quelqu\'un en dehors de ta Box, à l\'aide de son code ami.',
                 style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
               ),
               const SizedBox(height: 28),
@@ -142,21 +157,34 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(14)),
-                        alignment: Alignment.center,
                         child: code == null
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.5),
-                              )
-                            : Text(
-                                code,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 6,
-                                  color: theme.textOnBackground,
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(strokeWidth: 2.5),
                                 ),
+                              )
+                            : Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Text(
+                                    code,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 6,
+                                      color: theme.textOnBackground,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    right: 12,
+                                    child: GestureDetector(
+                                      onTap: () => _copyCode(code),
+                                      child: Icon(Icons.copy_rounded, size: 20, color: theme.textOnBackgroundMuted),
+                                    ),
+                                  ),
+                                ],
                               ),
                       ),
                       const SizedBox(height: 12),
@@ -179,6 +207,44 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                   ),
                   Expanded(child: Divider(color: theme.textOnBackgroundMuted.withValues(alpha: 0.4))),
                 ],
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Jeu :',
+                style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
+              ),
+              const SizedBox(height: 10),
+              FutureBuilder<List<Game>>(
+                future: _gamesFuture,
+                builder: (context, snapshot) {
+                  final games = snapshot.data;
+                  if (games == null) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5))),
+                    );
+                  }
+                  final localeCode = LocaleScope.of(context).current.code;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final game in games)
+                        ChoiceChip(
+                          label: Text(game.nameFor(localeCode)),
+                          selected: _selectedGame?.id == game.id,
+                          onSelected: (_) => setState(() => _selectedGame = game),
+                          labelStyle: GoogleFonts.nunito(
+                            fontWeight: FontWeight.w600,
+                            color: _selectedGame?.id == game.id ? Colors.white : theme.textOnBackground,
+                          ),
+                          selectedColor: theme.primary,
+                          backgroundColor: theme.surface,
+                          side: BorderSide.none,
+                        ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 28),
               Text(
@@ -210,7 +276,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                         height: 22,
                         child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                       )
-                    : const Text('Défier au Jeu de Mémoire'),
+                    : Text(_selectedGame != null ? 'Défier au ${_selectedGame!.nameFor(LocaleScope.of(context).current.code)}' : 'Défier'),
               ),
             ],
           ),

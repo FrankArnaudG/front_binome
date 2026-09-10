@@ -12,16 +12,19 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import 'battleship_difficulty_screen.dart';
 import 'battleship_placement_screen.dart';
 import 'battleship_transport_nearby.dart';
 
 const _kNearbyServiceId = 'app.binome.battleship';
 
 /// Mode "présentiel connecté" : établit la connexion Bluetooth/WiFi Direct
-/// (voir NearbyBattleshipTransport) puis pousse l'écran de PLACEMENT —
-/// jamais directement le plateau de combat, chacun place sa flotte sur
-/// SON PROPRE appareil (pas de "passe le téléphone" nécessaire ici,
-/// contrairement au pass-and-play : chaque joueur a le sien).
+/// (voir NearbyBattleshipTransport) puis, une fois connecté, l'hôte choisit
+/// la taille de grille (l'invité attend simplement — elle lui arrive dans
+/// le premier message `state`, voir NearbyBattleshipTransport.guest) avant
+/// de pousser l'écran de PLACEMENT — jamais directement le plateau de
+/// combat, chacun place sa flotte sur SON PROPRE appareil (pas de "passe le
+/// téléphone" nécessaire ici, contrairement au pass-and-play).
 class BattleshipNearbyConnectScreen extends StatefulWidget {
   final Game game;
   final AppUser user;
@@ -32,12 +35,13 @@ class BattleshipNearbyConnectScreen extends StatefulWidget {
   State<BattleshipNearbyConnectScreen> createState() => _BattleshipNearbyConnectScreenState();
 }
 
-enum _ConnectStep { choose, hosting, discovering, connected }
+enum _ConnectStep { choose, hosting, discovering, connected, choosingDifficulty }
 
 class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectScreen> {
   final _nearby = Nearby();
   _ConnectStep _step = _ConnectStep.choose;
   String? _error;
+  String? _connectedEndpointId;
   bool _isHost = false;
   NearbyBattleshipTransport? _transport;
 
@@ -132,13 +136,21 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
       } else {
         _nearby.stopDiscovery();
       }
-      setState(() => _step = _ConnectStep.connected);
+      setState(() {
+        _connectedEndpointId = endpointId;
+        _step = _isHost ? _ConnectStep.choosingDifficulty : _ConnectStep.connected;
+      });
 
-      final transport = _isHost
-          ? NearbyBattleshipTransport.host(nearby: _nearby, endpointId: endpointId)
-          : NearbyBattleshipTransport.guest(nearby: _nearby, endpointId: endpointId);
-      _transport = transport;
-      _openPlacement(transport);
+      if (!_isHost) {
+        // L'invité attend la taille de grille : construit tout de suite un
+        // transport en écoute, poussé dès la réception du premier message
+        // `state` (voir NearbyBattleshipTransport.guest).
+        final transport = NearbyBattleshipTransport.guest(nearby: _nearby, endpointId: endpointId);
+        _transport = transport;
+        transport.stateStream.first.then((_) {
+          if (mounted) _openPlacement(transport);
+        });
+      }
     } else {
       setState(() {
         _error = LocaleScope.t(context, 'memory_nearby_connection_failed');
@@ -153,7 +165,16 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
     setState(() {
       _error = LocaleScope.t(context, 'memory_nearby_disconnected');
       _step = _ConnectStep.choose;
+      _connectedEndpointId = null;
     });
+  }
+
+  void _startHostGame(int gridSize) {
+    final endpointId = _connectedEndpointId;
+    if (endpointId == null) return;
+    final transport = NearbyBattleshipTransport.host(nearby: _nearby, endpointId: endpointId, gridSize: gridSize);
+    _transport = transport;
+    _openPlacement(transport);
   }
 
   void _openPlacement(NearbyBattleshipTransport transport) {
@@ -224,7 +245,9 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
       ),
       body: ThemedBackground(
         child: SafeArea(
-          child: Padding(
+          child: _step == _ConnectStep.choosingDifficulty
+              ? BattleshipGridSizeList(theme: theme, onSelected: _startHostGame)
+              : Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

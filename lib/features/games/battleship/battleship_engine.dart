@@ -23,13 +23,25 @@ class BattleshipFireOutcome {
 /// question de logique de jeu mais aussi d'UI (les deux joueurs se
 /// partagent le même appareil).
 class BattleshipEngine {
-  static const grid = 10;
-  static const cellCount = grid * grid;
-  static const shipSizes = [5, 4, 3, 3, 2];
+  static const levels = [8, 10, 12, 14, 16, 18];
+  static const defaultGrid = 10;
+
+  /// Flotte dérivée de la taille de grille — copie Dart exacte de la
+  /// logique PHP (voir BattleshipEngine::shipSizesFor). 10 reproduit
+  /// EXACTEMENT le comportement historique, seule taille qui existait
+  /// avant les niveaux de difficulté.
+  static List<int> shipSizesFor(int gridSize) {
+    if (gridSize <= 8) return [4, 3, 2];
+    if (gridSize == 10) return [5, 4, 3, 3, 2];
+    return [6, 5, 4, 3, 3, 2];
+  }
 
   /// Lève une [ArgumentError] explicite pour chaque règle violée — voir
   /// le pendant PHP pour le détail des vérifications.
-  static void validateFleet(List<BattleshipShip> ships) {
+  static void validateFleet(List<BattleshipShip> ships, int gridSize) {
+    final shipSizes = shipSizesFor(gridSize);
+    final cellCount = gridSize * gridSize;
+
     if (ships.length != shipSizes.length) {
       throw ArgumentError('Il faut exactement ${shipSizes.length} bateaux.');
     }
@@ -47,20 +59,20 @@ class BattleshipEngine {
         if (occupied.contains(cell)) throw ArgumentError('Deux bateaux ne peuvent pas se chevaucher.');
         occupied.add(cell);
       }
-      _assertStraightLine(ship.cells);
+      _assertStraightLine(ship.cells, gridSize);
     }
   }
 
-  static void _assertStraightLine(List<int> cells) {
-    final rows = cells.map((c) => c ~/ grid).toSet();
-    final cols = cells.map((c) => c % grid).toSet();
+  static void _assertStraightLine(List<int> cells, int gridSize) {
+    final rows = cells.map((c) => c ~/ gridSize).toSet();
+    final cols = cells.map((c) => c % gridSize).toSet();
     final sameRow = rows.length == 1;
     final sameCol = cols.length == 1;
     if (!sameRow && !sameCol) {
       throw ArgumentError('Un bateau doit être aligné horizontalement ou verticalement.');
     }
 
-    final line = (sameRow ? cells.map((c) => c % grid) : cells.map((c) => c ~/ grid)).toList()..sort();
+    final line = (sameRow ? cells.map((c) => c % gridSize) : cells.map((c) => c ~/ gridSize)).toList()..sort();
     for (var i = 1; i < line.length; i++) {
       if (line[i] != line[i - 1] + 1) {
         throw ArgumentError('Un bateau doit occuper des cases contiguës, sans trou.');
@@ -83,7 +95,9 @@ class BattleshipEngine {
   static BattleshipFireOutcome fire({
     required List<BattleshipShip> defenderFleet,
     required int cell,
+    required int gridSize,
   }) {
+    final cellCount = gridSize * gridSize;
     if (cell < 0 || cell >= cellCount) {
       throw ArgumentError('Case invalide.');
     }

@@ -28,6 +28,11 @@ class BattleshipPlacementScreen extends StatefulWidget {
   final BattleshipTransport transport;
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
+  // Simple relais vers BattleshipBoardScreen.onRematch (voir demande
+  // utilisateur) — cet écran de placement n'en a lui-même pas besoin,
+  // mais doit le conserver le temps de construire le plateau de combat
+  // qui, lui, affiche le bouton "Rejouer".
+  final Future<void> Function(BuildContext context)? onRematch;
 
   const BattleshipPlacementScreen({
     super.key,
@@ -36,6 +41,7 @@ class BattleshipPlacementScreen extends StatefulWidget {
     required this.transport,
     required this.playerNames,
     required this.playerAvatars,
+    this.onRematch,
   });
 
   @override
@@ -56,22 +62,54 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
   bool _horizontal = true;
   bool _submitting = false;
 
+  // Voir demande utilisateur : "au lieu d'indiquer une seule case, indique
+  // les 4, là on sait vraiment où ça sera positionné" — l'ensemble des
+  // cases que le bateau occuperait s'il était déposé ICI (recalculé à
+  // chaque case survolée), et si cette position est valide (déposable en
+  // vert/bleu) ou non (hors grille/déjà occupée, en rouge).
+  Set<int>? _hoverPreviewCells;
+  bool _hoverPreviewValid = false;
+
+  // Sourcé depuis l'état vivant du transport — c'est lui qui porte la
+  // taille de grille choisie avant placement (voir BattleshipBoardState.gridSize).
+  int get _gridSize => _state.gridSize;
+  List<int> get _shipSizes => BattleshipEngine.shipSizesFor(_gridSize);
+
   List<int> get _remainingSizes {
     final placed = _placedShips.map((s) => s.cells.length).toList();
-    final remaining = List<int>.of(BattleshipEngine.shipSizes);
+    final remaining = List<int>.of(_shipSizes);
     for (final size in placed) {
       remaining.remove(size);
     }
     return remaining;
   }
 
+  // Voir demande utilisateur (capture : un téléphone restait bloqué sur
+  // "En attente..." alors que l'autre était déjà passé au combat) —
+  // évite un double push si _submit() a déjà basculé vers le plateau au
+  // moment même de la soumission (voir plus bas).
+  bool _navigatedToBoard = false;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
-    _subscription = widget.transport.stateStream.listen((s) {
-      if (mounted) setState(() => _state = s);
-    });
+    _subscription = widget.transport.stateStream.listen(_onState);
+  }
+
+  /// Contrairement à _submit() (qui ne vérifie l'état du binôme qu'À
+  /// L'INSTANT où JE viens de soumettre ma flotte), cet écran doit aussi
+  /// réagir si c'est le BINÔME qui devient prêt EN DERNIER, pendant que je
+  /// suis déjà sur l'écran d'attente — sans ça, rien ne fait jamais
+  /// avancer cet écran une fois qu'on y est entré (voir demande
+  /// utilisateur).
+  void _onState(BattleshipBoardState s) {
+    if (!mounted) return;
+    setState(() => _state = s);
+    if (!_isLocal && !_navigatedToBoard && s.myReady && s.opponentReady) {
+      _navigatedToBoard = true;
+      _pushBoard(replace: true);
+    }
   }
 
   @override
@@ -90,14 +128,14 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
   }
 
   List<int>? _shipCellsAt(int startCell, int size, bool horizontal) {
-    final row = startCell ~/ BattleshipEngine.grid;
-    final col = startCell % BattleshipEngine.grid;
+    final row = startCell ~/ _gridSize;
+    final col = startCell % _gridSize;
     final cells = <int>[];
     for (var i = 0; i < size; i++) {
       final r = horizontal ? row : row + i;
       final c = horizontal ? col + i : col;
-      if (r >= BattleshipEngine.grid || c >= BattleshipEngine.grid) return null;
-      cells.add(r * BattleshipEngine.grid + c);
+      if (r >= _gridSize || c >= _gridSize) return null;
+      cells.add(r * _gridSize + c);
     }
     return cells;
   }
@@ -113,8 +151,95 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
     setState(() => _placedShips.removeWhere((s) => s.cells.contains(cell)));
   }
 
+  /// Un bateau posé garde son orientation propre (pas le bouton pivoter
+  /// global, qui ne concerne que les prochains bateaux tirés du bac) tant
+  /// qu'on le déplace sans le retirer — voir demande utilisateur : "on
+  /// doit pouvoir les déplacer et repositionner tant qu'on n'a pas validé".
+  bool _isHorizontalShip(BattleshipShip ship) {
+    if (ship.cells.length < 2) return true;
+    final row0 = ship.cells.first ~/ _gridSize;
+    return ship.cells.every((c) => c ~/ _gridSize == row0);
+  }
+
+  /// Reconstitue le point de départ du bateau à partir de la case DÉPOSÉE
+  /// et du segment SAISI (voir demande utilisateur : "c'est le bout du
+  /// navire qui se déplace" — sans ça, déposer n'importe quel segment
+  /// faisait toujours de cette case le nouveau début, recalant tout le
+  /// bateau dans une direction inattendue). [grabIndex] est la position
+  /// (0 = première case) du segment saisi le long du bateau — la case
+  /// déposée doit rester exactement sous ce même segment.
+  int? _startCellForDrop(int droppedCell, bool horizontal, int grabIndex) {
+    final row = droppedCell ~/ _gridSize;
+    final col = droppedCell % _gridSize;
+    final startRow = horizontal ? row : row - grabIndex;
+    final startCol = horizontal ? col - grabIndex : col;
+    if (startRow < 0 || startCol < 0) return null;
+    return startRow * _gridSize + startCol;
+  }
+
+  /// Exclut [ship] lui-même de l'ensemble occupé, sinon il se bloquerait
+  /// sur ses propres anciennes cases.
+  bool _canMoveTo(int droppedCell, BattleshipShip ship, int grabIndex) {
+    final horizontal = _isHorizontalShip(ship);
+    final startCell = _startCellForDrop(droppedCell, horizontal, grabIndex);
+    if (startCell == null) return false;
+    final cells = _shipCellsAt(startCell, ship.cells.length, horizontal);
+    if (cells == null) return false;
+    final occupied = {for (final s in _placedShips) if (s != ship) ...s.cells};
+    return !cells.any(occupied.contains);
+  }
+
+  void _moveShip(BattleshipShip ship, int droppedCell, int grabIndex) {
+    if (!_canMoveTo(droppedCell, ship, grabIndex)) return;
+    final horizontal = _isHorizontalShip(ship);
+    final startCell = _startCellForDrop(droppedCell, horizontal, grabIndex);
+    if (startCell == null) return;
+    final cells = _shipCellsAt(startCell, ship.cells.length, horizontal);
+    if (cells == null) return;
+    setState(() {
+      _placedShips.remove(ship);
+      _placedShips.add(BattleshipShip(cells: cells));
+    });
+  }
+
+  /// Appelée à chaque case survolée pendant un glisser (nouveau bateau du
+  /// bac OU bateau déjà posé qu'on déplace) — voir demande utilisateur :
+  /// prévisualiser TOUTES les cases concernées, pas seulement celle sous
+  /// le doigt.
+  void _updateHoverPreview(int cell, Object? data) {
+    List<int>? cells;
+    bool valid = false;
+    if (data is int) {
+      cells = _shipCellsAt(cell, data, _horizontal);
+      if (cells != null) {
+        final occupied = {for (final s in _placedShips) ...s.cells};
+        valid = !cells.any(occupied.contains);
+      }
+    } else if (data is _ShipDrag) {
+      final horizontal = _isHorizontalShip(data.ship);
+      final startCell = _startCellForDrop(cell, horizontal, data.grabIndex);
+      if (startCell != null) {
+        cells = _shipCellsAt(startCell, data.ship.cells.length, horizontal);
+        if (cells != null) {
+          final occupied = {for (final s in _placedShips) if (s != data.ship) ...s.cells};
+          valid = !cells.any(occupied.contains);
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _hoverPreviewCells = cells?.toSet();
+      _hoverPreviewValid = valid;
+    });
+  }
+
+  void _clearHoverPreview() {
+    if (!mounted || _hoverPreviewCells == null) return;
+    setState(() => _hoverPreviewCells = null);
+  }
+
   Future<void> _submit() async {
-    if (_placedShips.length != BattleshipEngine.shipSizes.length || _submitting) return;
+    if (_placedShips.length != _shipSizes.length || _submitting) return;
     setState(() => _submitting = true);
     try {
       await widget.transport.submitFleet(_placedShips);
@@ -146,11 +271,13 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
               transport: widget.transport,
               playerNames: widget.playerNames,
               playerAvatars: widget.playerAvatars,
+              onRematch: widget.onRematch,
             ),
           ),
         );
       }
-    } else if (state.opponentReady) {
+    } else if (state.opponentReady && !_navigatedToBoard) {
+      _navigatedToBoard = true;
       _pushBoard(replace: true);
     }
     // Sinon (à distance/présentiel connecté, adversaire pas encore prêt) :
@@ -166,6 +293,7 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
         transport: widget.transport,
         playerNames: widget.playerNames,
         playerAvatars: widget.playerAvatars,
+        onRematch: widget.onRematch,
       ),
     );
     if (replace) {
@@ -265,13 +393,6 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
           LocaleScope.t(context, 'battleship_placement_title', {'name': viewerName}),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.rotate_90_degrees_ccw_rounded),
-            tooltip: LocaleScope.t(context, 'battleship_rotate_tooltip'),
-            onPressed: () => setState(() => _horizontal = !_horizontal),
-          ),
-        ],
       ),
       body: ThemedBackground(
         child: SafeArea(
@@ -300,27 +421,76 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
                         padding: const EdgeInsets.all(4),
                         child: GridView.builder(
                           physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: BattleshipEngine.grid),
-                          itemCount: BattleshipEngine.cellCount,
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: _gridSize),
+                          itemCount: _gridSize * _gridSize,
                           itemBuilder: (context, cell) {
                             final isOccupied = occupied.contains(cell);
-                            return DragTarget<int>(
-                              onWillAcceptWithDetails: (details) => _canPlaceAt(cell, details.data),
-                              onAcceptWithDetails: (details) => _placeShip(cell, details.data),
+                            final shipAtCell = isOccupied
+                                ? _placedShips.firstWhere((s) => s.cells.contains(cell))
+                                : null;
+                            return DragTarget<Object>(
+                              onWillAcceptWithDetails: (details) {
+                                final data = details.data;
+                                _updateHoverPreview(cell, data);
+                                if (data is int) return _canPlaceAt(cell, data);
+                                if (data is _ShipDrag) return _canMoveTo(cell, data.ship, data.grabIndex);
+                                return false;
+                              },
+                              onAcceptWithDetails: (details) {
+                                final data = details.data;
+                                if (data is int) _placeShip(cell, data);
+                                if (data is _ShipDrag) _moveShip(data.ship, cell, data.grabIndex);
+                              },
                               builder: (context, candidate, rejected) {
-                                final highlighting = candidate.isNotEmpty;
-                                return GestureDetector(
-                                  onTap: isOccupied ? () => _removeShipAt(cell) : null,
-                                  child: Container(
+                                // Voir demande utilisateur : "indique les 4,
+                                // là on sait vraiment où ça sera positionné"
+                                // — toutes les cases que le bateau
+                                // occuperait à CETTE position de survol,
+                                // pas seulement celle sous le doigt ; rouge
+                                // si ça déborderait de la grille ou
+                                // chevaucherait un bateau déjà posé.
+                                final previewing = _hoverPreviewCells?.contains(cell) ?? false;
+                                final previewColor = _hoverPreviewValid ? _kShipColor : Colors.redAccent;
+                                final cellVisual = Container(
+                                  margin: const EdgeInsets.all(1),
+                                  decoration: BoxDecoration(
+                                    color: isOccupied
+                                        ? _kShipColor
+                                        : previewing
+                                            ? previewColor.withValues(alpha: 0.4)
+                                            : theme.surface.withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                );
+                                if (shipAtCell == null) return cellVisual;
+
+                                // Voir demande utilisateur : "pas besoin
+                                // d'appuyer longtemps, il suffit de poser le
+                                // doigt et de le déplacer" — Draggable (pas
+                                // LongPressDraggable), même geste immédiat
+                                // que pour un bateau tiré du bac. Le tap
+                                // court (sans déplacement) continue de
+                                // retirer, les deux gestes coexistent sans
+                                // conflit tant qu'il n'y a pas de mouvement.
+                                return Draggable<_ShipDrag>(
+                                  data: _ShipDrag(ship: shipAtCell, grabIndex: shipAtCell.cells.indexOf(cell)),
+                                  onDragEnd: (_) => _clearHoverPreview(),
+                                  feedback: _ShipStrip(
+                                    size: shipAtCell.cells.length,
+                                    horizontal: _isHorizontalShip(shipAtCell),
+                                    color: _kShipColor,
+                                    cellSize: 22,
+                                  ),
+                                  childWhenDragging: Container(
                                     margin: const EdgeInsets.all(1),
                                     decoration: BoxDecoration(
-                                      color: isOccupied
-                                          ? _kShipColor
-                                          : highlighting
-                                              ? _kShipColor.withValues(alpha: 0.35)
-                                              : theme.surface.withValues(alpha: 0.5),
+                                      color: _kShipColor.withValues(alpha: 0.25),
                                       borderRadius: BorderRadius.circular(3),
                                     ),
+                                  ),
+                                  child: GestureDetector(
+                                    onTap: () => _removeShipAt(cell),
+                                    child: cellVisual,
                                   ),
                                 );
                               },
@@ -337,31 +507,62 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      LocaleScope.t(context, 'battleship_ships_to_place'),
-                      style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                    Row(
+                      children: [
+                        Text(
+                          LocaleScope.t(context, 'battleship_ships_to_place'),
+                          style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                        ),
+                        const Spacer(),
+                        // Voir demande utilisateur : déplacé depuis l'AppBar
+                        // (en haut à droite) jusqu'ici, juste au-dessus du
+                        // bac de navires à placer, toujours aligné à droite.
+                        IconButton(
+                          icon: const Icon(Icons.rotate_90_degrees_ccw_rounded),
+                          tooltip: LocaleScope.t(context, 'battleship_rotate_tooltip'),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => setState(() => _horizontal = !_horizontal),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
+                    // Voir demande utilisateur (capture : les bateaux
+                    // débordaient de l'écran, bande jaune/noire de Flutter
+                    // visible) — la flotte complète (5+4+3+3+2 cases) ne
+                    // tient pas toujours en largeur, notamment sur un écran
+                    // étroit ou en orientation portrait haute densité.
+                    //
+                    // Voir demande utilisateur (2e capture, après appui sur
+                    // le bouton pivoter en haut à droite) : une fois les
+                    // bateaux affichés à la verticale (_horizontal = false),
+                    // le plus long (5 cases × 20px) dépasse largement une
+                    // hauteur fixe de 56px — débordement vertical, même bande
+                    // jaune/noire de Flutter, cette fois en hauteur.
                     SizedBox(
-                      height: 56,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (final size in _remainingSizes) ...[
-                            Draggable<int>(
-                              data: size,
-                              feedback: _ShipStrip(size: size, horizontal: _horizontal, color: _kShipColor, cellSize: 22),
-                              childWhenDragging: _ShipStrip(size: size, horizontal: _horizontal, color: Colors.grey, cellSize: 18, faded: true),
-                              child: _ShipStrip(size: size, horizontal: _horizontal, color: _kShipColor, cellSize: 18),
-                            ),
-                            const SizedBox(width: 10),
+                      height: _horizontal ? 56 : _shipSizes.reduce((a, b) => a > b ? a : b) * 20.0 + 8,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final size in _remainingSizes) ...[
+                              Draggable<int>(
+                                data: size,
+                                onDragEnd: (_) => _clearHoverPreview(),
+                                feedback: _ShipStrip(size: size, horizontal: _horizontal, color: _kShipColor, cellSize: 22),
+                                childWhenDragging: _ShipStrip(size: size, horizontal: _horizontal, color: Colors.grey, cellSize: 18, faded: true),
+                                child: _ShipStrip(size: size, horizontal: _horizontal, color: _kShipColor, cellSize: 18),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton(
-                      onPressed: _placedShips.length == BattleshipEngine.shipSizes.length && !_submitting ? _submit : null,
+                      onPressed: _placedShips.length == _shipSizes.length && !_submitting ? _submit : null,
                       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                       child: _submitting
                           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -376,6 +577,17 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
       ),
     );
   }
+}
+
+/// Charge utile d'un glisser-déplacer sur un bateau DÉJÀ posé — [grabIndex]
+/// (0 = première case du bateau) retient quel segment a été saisi, pour
+/// que ce même segment reste sous le point déposé (voir
+/// _BattleshipPlacementScreenState._startCellForDrop).
+class _ShipDrag {
+  final BattleshipShip ship;
+  final int grabIndex;
+
+  const _ShipDrag({required this.ship, required this.grabIndex});
 }
 
 class _ShipStrip extends StatelessWidget {

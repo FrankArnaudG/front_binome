@@ -68,6 +68,16 @@ dependencies:
   # (VoiceSignal côté back), jamais de flux audio transitant par notre
   # backend.
   flutter_webrtc: ^0.12.9
+  # Ouvre la page de paiement LigdiCash dans le navigateur externe (LigdiCash
+  # bloque explicitement l'affichage en iframe/WebView, voir ShopScreen/
+  # SubscriptionScreen._openPurchase).
+  url_launcher: ^6.3.1
+  # "Notre distance" — position PONCTUELLE (jamais de suivi continu, voir
+  # demande utilisateur), un seul relevé GPS à la demande.
+  geolocator: ^13.0.2
+  # Sélecteur de couleur libre pour le doodle (voir DoodleComposeScreen),
+  # en plus des pastilles présets.
+  flutter_colorpicker: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -79,6 +89,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -121,3 +132,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Icône de l'app (voir demande utilisateur — préférée à binome_logo2.png,
+# qui a du texte illisible à cette taille et des bords bruités) — fond
+# blush (AppColors.blush) plutôt que transparent, iOS exige une icône
+# opaque (voir remove_alpha_ios).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo/binome_logo1.png"
+  adaptive_icon_background: "#FFF1EC"
+  adaptive_icon_foreground: "assets/logo/binome_logo1.png"
+  remove_alpha_ios: true
+  background_color_ios: "#FFF1EC"

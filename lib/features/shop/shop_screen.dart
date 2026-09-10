@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/locale_scope.dart';
 import '../../models/coin_pack.dart';
@@ -14,6 +15,7 @@ import 'currency_picker.dart';
 import 'currency_service.dart';
 import 'preferred_currency_notifier.dart';
 import 'shop_service.dart';
+import 'subscription_screen.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -152,6 +154,16 @@ class _ShopScreenState extends State<ShopScreen> {
     );
     if (provider == null || !mounted) return;
 
+    // "ligdicash" est un 3e choix distinct proposé par _ProviderSheet, en
+    // plus des deux tiles de test existants (Orange Money/Wave, inchangés
+    // ci-dessous) — voir la demande explicite de garder le flux manuel
+    // actuel comme chemin par défaut, LigdiCash n'étant qu'une option
+    // supplémentaire tant qu'il n'est pas éprouvé en conditions réelles.
+    if (provider == 'ligdicash') {
+      await _payViaLigdiCash(pack);
+      return;
+    }
+
     try {
       await ShopService.instance.createOrder(
         coinPackId: pack.id,
@@ -176,6 +188,42 @@ class _ShopScreenState extends State<ShopScreen> {
           ],
         ),
       );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('common_network_error'))),
+      );
+    }
+  }
+
+  /// Chemin séparé pour la vraie passerelle LigdiCash — ne remplace ni ne
+  /// dégrade vers le dialogue "commande créée, en attente" existant : si
+  /// `payment_url` est absent (clés pas encore configurées côté back), on
+  /// le dit clairement plutôt que de basculer silencieusement sur l'autre
+  /// flux, ce qui serait trompeur pour un bouton qui promet un vrai paiement.
+  Future<void> _payViaLigdiCash(CoinPack pack) async {
+    final t = LocaleScope.of(context).t;
+
+    try {
+      final order = await ShopService.instance.createOrder(
+        coinPackId: pack.id,
+        provider: 'manual',
+      );
+      if (!mounted) return;
+
+      final paymentUrl = order.paymentUrl;
+      if (paymentUrl == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('shop_ligdicash_not_configured'))),
+        );
+        return;
+      }
+
+      // LigdiCash bloque explicitement l'affichage en iframe/WebView —
+      // navigateur externe obligatoire. Le webhook back confirmera le
+      // paiement ; WalletBalanceNotifier se rafraîchit tout seul au retour
+      // dans l'app (voir AppShell.didChangeAppLifecycleState).
+      await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -230,24 +278,93 @@ class _ShopScreenState extends State<ShopScreen> {
                   message: t('shop_empty'),
                 );
               }
-              return GridView.builder(
-                padding: const EdgeInsets.all(20),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 0.76,
-                ),
-                itemCount: packs.length,
-                itemBuilder: (context, index) {
-                  final pack = packs[index];
-                  return _CoinPackTile(
-                    pack: pack,
-                    onTap: () => _openPurchase(pack),
-                  );
-                },
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: _SubscriptionBanner(theme: theme, t: t),
+                  ),
+                  Expanded(
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(20),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: 0.76,
+                      ),
+                      itemCount: packs.length,
+                      itemBuilder: (context, index) {
+                        final pack = packs[index];
+                        return _CoinPackTile(
+                          pack: pack,
+                          onTap: () => _openPurchase(pack),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Voir demande utilisateur : petite section faisant découvrir l'abonnement
+/// depuis la Boutique aux pièces elle-même, plutôt qu'un simple bouton
+/// discret dans la barre du haut.
+class _SubscriptionBanner extends StatelessWidget {
+  final ThemePalette theme;
+  final String Function(String, [Map<String, String>?]) t;
+
+  const _SubscriptionBanner({required this.theme, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: theme.primary.withValues(alpha: theme.isDark ? 0.22 : 0.1),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t('shop_subscription_banner_title'),
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      t('shop_subscription_banner_body'),
+                      style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: theme.textOnBackgroundMuted, size: 22),
+            ],
           ),
         ),
       ),
@@ -319,6 +436,15 @@ class _ProviderSheet extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _ProviderTile(label: 'Wave', value: 'wave', theme: theme),
+            const SizedBox(height: 16),
+            Divider(color: (theme.isDark ? Colors.white : Colors.black).withValues(alpha: 0.08)),
+            const SizedBox(height: 4),
+            _ProviderTile(
+              label: t('shop_pay_ligdicash'),
+              value: 'ligdicash',
+              theme: theme,
+              icon: Icons.bolt_rounded,
+            ),
           ],
         ),
       ),
@@ -330,11 +456,13 @@ class _ProviderTile extends StatelessWidget {
   final String label;
   final String value;
   final ThemePalette theme;
+  final IconData icon;
 
   const _ProviderTile({
     required this.label,
     required this.value,
     required this.theme,
+    this.icon = Icons.account_balance_wallet_rounded,
   });
 
   @override
@@ -357,14 +485,16 @@ class _ProviderTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.account_balance_wallet_rounded, color: theme.primary),
+              Icon(icon, color: theme.primary),
               const SizedBox(width: 12),
-              Text(
-                label,
-                style: GoogleFonts.nunito(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: theme.textOnBackground,
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.nunito(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: theme.textOnBackground,
+                  ),
                 ),
               ),
             ],

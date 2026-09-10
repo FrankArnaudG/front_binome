@@ -14,11 +14,17 @@ import 'number_hunt_transport.dart';
 /// structurelle conforme des 3 autres jeux à distance.
 class RemoteNumberHuntTransport extends NumberHuntTransport {
   final String sessionId;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — le canal temps réel devient alors
+  // [_friendChannelName] (dédié à CETTE session) plutôt que le canal de la
+  // Box, voir le constructeur.
+  final String? boxId;
   final String myUserId;
   final String partnerUserId;
   final _controller = StreamController<NumberHuntBoardState>.broadcast();
   late NumberHuntBoardState _state;
+
+  String get _friendChannelName => 'number-hunt-session.$sessionId';
 
   RemoteNumberHuntTransport({
     required NumberHuntSession session,
@@ -27,7 +33,12 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
     required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
-    RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.subscribeToBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.subscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
   }
 
   NumberHuntBoardState _stateFrom(NumberHuntSession session) => NumberHuntBoardState(
@@ -125,6 +136,12 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
 
   @override
   Future<void> pause() async {
+    // Application immédiate côté local (voir demande utilisateur) — le
+    // binôme le verra dès que le broadcast lui parvient, pas la peine
+    // d'attendre la réponse serveur pour geler l'écran ici.
+    _state = _state.copyWith(pausedByUserId: myUserId, pausedAt: DateTime.now());
+    _controller.add(_state);
+
     final session = await GameService.instance.pauseNumberHunt(sessionId);
     _state = _stateFrom(session);
     _controller.add(_state);
@@ -140,7 +157,12 @@ class RemoteNumberHuntTransport extends NumberHuntTransport {
 
   @override
   void dispose() {
-    RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onRealtimeEvent);
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.unsubscribeFromBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.unsubscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
     _controller.close();
   }
 }

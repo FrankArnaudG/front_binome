@@ -15,7 +15,6 @@ import '../widgets/battleship_match_scoreboard.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
-import 'battleship_engine.dart';
 import 'battleship_transport.dart';
 import 'battleship_transport_local.dart';
 import 'battleship_transport_remote.dart';
@@ -156,6 +155,11 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     );
     if (rematch == true && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
+    } else if (mounted) {
+      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
+      // taper à côté, peu importe le geste — doit refermer le jeu et
+      // revenir à la liste, comme un retour classique.
+      Navigator.of(context).pop();
     }
   }
 
@@ -368,7 +372,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
               if (_state.isPaused)
                 Positioned.fill(
                   child: Container(
-                    color: theme.background.withValues(alpha: 0.94),
+                    color: theme.background,
                     alignment: Alignment.center,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -414,7 +418,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
       ],
       ),
     );
@@ -444,8 +448,8 @@ class _OpponentGrid extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         child: GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: BattleshipEngine.grid),
-          itemCount: BattleshipEngine.cellCount,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: state.gridSize),
+          itemCount: state.gridSize * state.gridSize,
           itemBuilder: (context, cell) {
             final shotHit = shotByCell[cell];
             final sunk = sunkCells.contains(cell);
@@ -498,8 +502,8 @@ class _MyGrid extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         child: GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: BattleshipEngine.grid),
-          itemCount: BattleshipEngine.cellCount,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: state.gridSize),
+          itemCount: state.gridSize * state.gridSize,
           itemBuilder: (context, cell) {
             final hasShip = shipCells.contains(cell);
             final isHit = hitCells.contains(cell);

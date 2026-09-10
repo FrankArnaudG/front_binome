@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ affiche son propre écran système au tout début du
+         lancement (icône seule, avant que Flutter ne dessine quoi que ce
+         soit) — voir demande utilisateur. `windowSplashScreenBackground`
+         n'existe qu'à partir de l'API 31, d'où ce dossier -v31 séparé
+         plutôt qu'un ajout dans values/styles.xml (qui reste le repli pour
+         les versions plus anciennes, où ce système n'existe pas). Blush
+         (AppColors.blush) au lieu du blanc par défaut, pour amorcer la
+         transition vers notre propre écran de démarrage.-->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">#FFF1EC</item>
+    </style>
+</resources>

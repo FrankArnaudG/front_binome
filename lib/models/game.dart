@@ -71,9 +71,8 @@ class Game {
   bool get isDotSquares => sessionType == 'dot_squares';
   bool get isNumberHunt => sessionType == 'number_hunt';
   bool get isWarCard => sessionType == 'war_card';
-  bool get isConnectFour => sessionType == 'connect_four';
+  bool get isSuitBattle => sessionType == 'suit_battle';
   bool get isBattleship => sessionType == 'battleship';
-  bool get isPictionary => sessionType == 'pictionary';
 
   bool get isInteractiveCategory => category == 'interactive';
 
@@ -96,9 +95,8 @@ class Game {
       !isDotSquares &&
       !isNumberHunt &&
       !isWarCard &&
-      !isConnectFour &&
-      !isBattleship &&
-      !isPictionary;
+      !isSuitBattle &&
+      !isBattleship;
 
   String nameFor(String localeCode) {
     if (name.containsKey(localeCode)) return name[localeCode]!;

@@ -16,6 +16,7 @@ import 'battleship_transport.dart';
 class LocalBattleshipTransport extends BattleshipTransport {
   final String creatorUserId;
   final String partnerUserId;
+  final int gridSize;
   final _controller = StreamController<BattleshipBoardState>.broadcast();
 
   List<BattleshipShip> _fleetCreator = [];
@@ -34,7 +35,7 @@ class LocalBattleshipTransport extends BattleshipTransport {
 
   String _activeViewerId;
 
-  LocalBattleshipTransport({required this.creatorUserId, required this.partnerUserId})
+  LocalBattleshipTransport({required this.creatorUserId, required this.partnerUserId, required this.gridSize})
       : _activeViewerId = creatorUserId;
 
   /// Change QUI regarde l'écran maintenant — voir doc de classe. À
@@ -59,6 +60,7 @@ class LocalBattleshipTransport extends BattleshipTransport {
     final opponentReady = _viewerIsCreator ? _partnerReady : _creatorReady;
 
     return BattleshipBoardState(
+      gridSize: gridSize,
       myFleet: myFleet,
       myShots: myShots,
       opponentSunkShips: BattleshipEngine.sunkShipsOf(opponentFleet),
@@ -79,7 +81,7 @@ class LocalBattleshipTransport extends BattleshipTransport {
 
   @override
   Future<void> submitFleet(List<BattleshipShip> ships) async {
-    BattleshipEngine.validateFleet(ships);
+    BattleshipEngine.validateFleet(ships, gridSize);
 
     if (_viewerIsCreator) {
       _fleetCreator = ships;
@@ -102,7 +104,7 @@ class LocalBattleshipTransport extends BattleshipTransport {
     if (_currentTurnUserId != _activeViewerId) return;
 
     final defenderFleet = _viewerIsCreator ? _fleetPartner : _fleetCreator;
-    final outcome = BattleshipEngine.fire(defenderFleet: defenderFleet, cell: cell);
+    final outcome = BattleshipEngine.fire(defenderFleet: defenderFleet, cell: cell, gridSize: gridSize);
 
     if (_viewerIsCreator) {
       _fleetPartner = outcome.defenderFleet;

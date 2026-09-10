@@ -51,6 +51,13 @@ class _TicTacToeScoreboardSheet extends StatelessWidget {
     final minutes = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
     final seconds = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds % 60 : 0;
 
+    // Un abandon ne déclare jamais de gagnant — `winnerUserId` reste `null`
+    // sans que `isDraw` soit posé pour autant (voir TicTacToeController::abandon).
+    // Si les deux scores sont malgré tout à égalité à ce moment-là, l'écran
+    // doit lire "Nul" plutôt que "Perdu" pour les deux à la fois.
+    final effectiveTie = state.isDraw ||
+        (state.winnerUserId == null && state.scoreFor(players[0]) == state.scoreFor(players[1]));
+
     return SafeArea(
       top: false,
       child: Container(
@@ -63,6 +70,17 @@ class _TicTacToeScoreboardSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(false),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, color: theme.textOnBackgroundMuted, size: 22),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             Center(
               child: Container(
                 width: 36,
@@ -74,12 +92,14 @@ class _TicTacToeScoreboardSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            Icon(Icons.emoji_events_rounded, size: 40, color: theme.primary),
+            Icon(effectiveTie ? Icons.handshake_rounded : Icons.emoji_events_rounded, size: 40, color: theme.primary),
             const SizedBox(height: 10),
             Text(
-              LocaleScope.t(context, 'ttt_score_winner', {
-                'name': playerNames[state.winnerUserId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
-              }),
+              effectiveTie
+                  ? LocaleScope.t(context, 'dot_squares_score_tie')
+                  : LocaleScope.t(context, 'ttt_score_winner', {
+                      'name': playerNames[state.winnerUserId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+                    }),
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w800, color: theme.textOnBackground),
             ),
@@ -102,6 +122,7 @@ class _TicTacToeScoreboardSheet extends StatelessWidget {
                         name: playerNames[players[i]] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
                         avatar: playerAvatars[players[i]],
                         isWinner: players[i] == state.winnerUserId,
+                        isTie: effectiveTie,
                         score: state.scoreFor(players[i]),
                         targetScore: state.targetScore,
                       ),
@@ -131,6 +152,7 @@ class _PlayerResultCard extends StatelessWidget {
   final String name;
   final String? avatar;
   final bool isWinner;
+  final bool isTie;
   final int score;
   final int targetScore;
 
@@ -139,13 +161,14 @@ class _PlayerResultCard extends StatelessWidget {
     required this.name,
     required this.avatar,
     required this.isWinner,
+    required this.isTie,
     required this.score,
     required this.targetScore,
   });
 
   @override
   Widget build(BuildContext context) {
-    final highlighted = isWinner;
+    final highlighted = isWinner || isTie;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       decoration: BoxDecoration(
@@ -197,7 +220,9 @@ class _PlayerResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            isWinner ? LocaleScope.t(context, 'ttt_score_won') : LocaleScope.t(context, 'ttt_score_lost'),
+            isTie
+                ? LocaleScope.t(context, 'dot_squares_score_tie_short')
+                : (isWinner ? LocaleScope.t(context, 'ttt_score_won') : LocaleScope.t(context, 'ttt_score_lost')),
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w800, color: theme.primary),
           ),

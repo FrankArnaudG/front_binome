@@ -55,6 +55,12 @@ class _NumberHuntScoreboardSheet extends StatelessWidget {
     final minutes = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
     final seconds = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds % 60 : 0;
 
+    // Un abandon (voir demande utilisateur) ne déclare jamais de gagnant —
+    // `winnerUserId` reste `null` sans que `isTie` soit posé pour autant.
+    // Si les deux scores sont malgré tout à égalité à ce moment-là, l'écran
+    // doit lire "Nul" plutôt que "Perdu" pour les deux à la fois.
+    final effectiveTie = state.isTie || (state.winnerUserId == null && state.scoreFor(players[0]) == state.scoreFor(players[1]));
+
     return SafeArea(
       top: false,
       child: Container(
@@ -67,6 +73,17 @@ class _NumberHuntScoreboardSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(false),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, color: theme.textOnBackgroundMuted, size: 22),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             Center(
               child: Container(
                 width: 36,
@@ -78,10 +95,10 @@ class _NumberHuntScoreboardSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            Icon(state.isTie ? Icons.handshake_rounded : Icons.emoji_events_rounded, size: 40, color: theme.primary),
+            Icon(effectiveTie ? Icons.handshake_rounded : Icons.emoji_events_rounded, size: 40, color: theme.primary),
             const SizedBox(height: 10),
             Text(
-              state.isTie
+              effectiveTie
                   ? LocaleScope.t(context, 'number_hunt_score_tie')
                   : LocaleScope.t(context, 'number_hunt_score_winner', {
                       'name': playerNames[state.winnerUserId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
@@ -110,7 +127,7 @@ class _NumberHuntScoreboardSheet extends StatelessWidget {
                         color: colorFor(players[i]),
                         score: state.scoreFor(players[i]),
                         isWinner: players[i] == state.winnerUserId,
-                        isTie: state.isTie,
+                        isTie: effectiveTie,
                       ),
                     ),
                   ],

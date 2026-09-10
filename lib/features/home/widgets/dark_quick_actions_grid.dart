@@ -14,7 +14,9 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../widgets/coin_icon.dart';
 import '../../box/box_scope.dart';
+import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
+import '../../doodle/doodle_history_screen.dart';
 import '../../content/gifts_screen.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
@@ -366,6 +368,24 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
           MaterialPageRoute(builder: (_) => const RomanPhotoLibraryScreen()),
         ),
         'roman_photo',
+      ),
+      // Doodle envoyé au binôme (voir demande utilisateur) — s'affiche en
+      // plein écran chez l'autre (voir DoodleViewScreen/DoodleOverlay).
+      DarkActionItem(
+        tr('action_doodle'),
+        Icons.brush_rounded,
+        (t) => t.secondary,
+        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => DoodleHistoryScreen(user: widget.user))),
+        'doodle',
+      ),
+      // "Notre distance" (voir demande utilisateur) — partage PONCTUEL de
+      // position, jamais un suivi continu (voir DistanceScreen).
+      DarkActionItem(
+        tr('action_distance'),
+        Icons.flight_rounded,
+        (t) => t.primary,
+        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => DistanceScreen(user: widget.user))),
+        'distance',
       ),
     ];
 

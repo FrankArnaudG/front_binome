@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
@@ -11,7 +13,9 @@ import '../models/app_user.dart';
 import '../models/box.dart';
 import '../widgets/notification_opt_in_prompt.dart';
 import 'delivery_ack_service.dart';
+import 'doodle_notifier.dart';
 import 'game_invite_notifier.dart';
+import 'live_location_service.dart';
 import 'push_notification_service.dart';
 
 /// Centralise les transitions entre écrans plutôt que de répéter
@@ -58,6 +62,16 @@ class AppRouter {
     // pouvoir apparaître "peu importe où" dans l'app, pas seulement depuis
     // un écran de jeu particulier.
     GameInviteNotifier.instance.init(user.id);
+    // Doodle envoyé au binôme (voir demande utilisateur) — même besoin
+    // d'écoute app-wide dès la connexion, voir DoodleOverlay (monté dans
+    // AppShell) qui pousse l'écran plein écran dès qu'un doodle arrive.
+    DoodleNotifier.instance.init(user.id);
+    // "Notre distance" en direct (voir demande utilisateur : "dès que
+    // l'application est ouverte") — désactivé par défaut, voir
+    // LiveLocationService.enabled piloté par l'interrupteur de
+    // DistanceScreen ; ce seul appel lit le réglage précédent et arme le
+    // cycle de vie de l'app pour toute la session.
+    unawaited(LiveLocationService.instance.init());
 
     if (box == null || box.isDissolved) {
       toBoxChoice(context, user, replace: true);

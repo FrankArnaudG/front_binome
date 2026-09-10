@@ -6,7 +6,10 @@ import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
 import '../content/unread_timeline_service.dart';
+import '../shop/subscription_status_notifier.dart';
+import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
+import 'widgets/doodle_overlay.dart';
 import 'widgets/game_card_bubble.dart';
 import 'widgets/game_invite_overlay.dart';
 
@@ -45,7 +48,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) DeliveryAckService.instance.onAppResumed();
+    if (state == AppLifecycleState.resumed) {
+      DeliveryAckService.instance.onAppResumed();
+      // Un paiement LigdiCash se termine dans le navigateur externe, hors
+      // de l'app — au retour (résumé), le solde de pièces/l'abonnement
+      // peuvent avoir changé sans qu'aucun écran n'ait rien demandé. On
+      // rafraîchit ici, au niveau global, plutôt que dans ShopScreen/
+      // SubscriptionScreen uniquement, pour couvrir aussi le cas où
+      // l'utilisateur revient sur un tout autre écran de l'app.
+      WalletBalanceNotifier.instance.refresh();
+      SubscriptionStatusNotifier.instance.refresh();
+    }
   }
 
   @override
@@ -53,7 +66,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return ValueListenableBuilder<bool>(
       valueListenable: AppRouter.showGlobalNavBar,
       builder: (context, show, _) {
-        if (!show) return widget.child;
+        if (!show) {
+          // Voir demande utilisateur : le pop-up d'invitation à une partie
+          // doit apparaître même par-dessus un écran qui masque la barre de
+          // nav (tous les écrans de jeu, voir *BoardScreen.initState) — un
+          // simple Stack ici, PAS un second Scaffold, pour ne rien changer
+          // au comportement (resizeToAvoidBottomInset, etc.) de l'écran
+          // qu'il recouvre.
+          return Stack(
+            children: [
+              widget.child,
+              const GameInviteOverlay(),
+            ],
+          );
+        }
 
         final t = LocaleScope.of(context).t;
 
@@ -79,6 +105,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   widget.child,
                   const GameCardBubble(),
                   const GameInviteOverlay(),
+                  const DoodleOverlay(),
                 ],
               ),
               bottomNavigationBar: ClassicNavBar(

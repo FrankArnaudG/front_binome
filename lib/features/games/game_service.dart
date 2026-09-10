@@ -4,8 +4,6 @@ import '../../models/dot_square_session.dart';
 import '../../models/emoji_story_session.dart';
 import '../../models/game_invite.dart';
 import '../../models/battleship_session.dart';
-import '../../models/connect_four_session.dart';
-import '../../models/pictionary_session.dart';
 import '../../models/number_hunt_session.dart';
 import '../../models/war_card_session.dart';
 import '../../models/emoji_story_stats.dart';
@@ -17,6 +15,7 @@ import '../../models/memory_game_stats.dart';
 import '../../models/public_profile.dart';
 import '../../models/replies_page.dart';
 import '../../models/send.dart';
+import '../../models/suit_battle_session.dart';
 import '../../models/tic_tac_toe_session.dart';
 
 class GameService {
@@ -755,6 +754,10 @@ class GameService {
     required String sessionType,
     Map<String, dynamic>? payload,
     String? friendCode,
+    // Voir demande utilisateur : défier directement depuis "Mes amis de
+    // jeu" (FriendsListScreen) — l'amitié est déjà établie, l'id suffit,
+    // jamais les deux à la fois avec friendCode.
+    String? friendUserId,
   }) async {
     final data = await ApiClient.instance.post(
       '/games/$gameId/invites',
@@ -762,6 +765,7 @@ class GameService {
         'session_type': sessionType,
         if (payload != null) 'payload': payload,
         if (friendCode != null) 'friend_code': friendCode,
+        if (friendUserId != null) 'friend_user_id': friendUserId,
       },
     ) as Map<String, dynamic>;
     return GameInvite.fromJson(data);
@@ -815,6 +819,17 @@ class GameService {
   /// jamais le/la prévenir (voir demande utilisateur).
   Future<void> blockUser(String blockedUserId) {
     return ApiClient.instance.post('/friends/block', body: {'blocked_user_id': blockedUserId});
+  }
+
+  /// Voir demande utilisateur : "voir la liste des personnes qu'on a
+  /// bloqué et débloquer si on veut".
+  Future<List<PublicProfile>> fetchBlockedUsers() async {
+    final data = await ApiClient.instance.get('/friends/blocked') as List;
+    return data.map((e) => PublicProfile.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> unblockUser(String blockedUserId) {
+    return ApiClient.instance.delete('/friends/block/$blockedUserId');
   }
 
   Future<PublicProfile> fetchPublicProfile(String userId) async {
@@ -1022,86 +1037,121 @@ class GameService {
     return WarCardSession.fromJson(data);
   }
 
-  // "Puissance 4" — copie structurelle conforme des méthodes des autres
-  // jeux, tour par tour classique.
+  // "Jeu de Carte Classique" — copie structurelle conforme des méthodes de
+  // "Bataille", mais tour par tour avec sous-état lead/response plutôt que
+  // "les deux doivent taper" (voir SuitBattleEngine).
 
-  Future<ConnectFourSession> startConnectFour(String gameId) async {
-    final data = await ApiClient.instance.post('/games/$gameId/connect-four-sessions/start') as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+  Future<SuitBattleSession> startSuitBattle(String gameId) async {
+    final data = await ApiClient.instance.post('/games/$gameId/suit-battle-sessions/start') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
   }
 
-  /// [pipe] : voir demande utilisateur — position d'affichage (0..COLS-1)
-  /// SANS rapport apparent avec la colonne réelle, jamais révélée au
-  /// client (traduite côté serveur via `column_mapping`, voir
-  /// ConnectFourController::drop). [winningLine] porte les indices de
-  /// l'alignement gagnant si CE coup a terminé la partie.
-  Future<ConnectFourDropResult> dropConnectFour(String sessionId, int pipe) async {
+  /// "Battre" les cartes — n'importe lequel des deux joueurs peut le
+  /// déclencher, autant de fois qu'il veut, avant que le partage n'ait
+  /// commencé.
+  Future<SuitBattleSession> shuffleSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/shuffle') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
+  /// Partage automatique et instantané — coupe le paquet en deux éventails.
+  Future<SuitBattleSession> dealAutoSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/deal-auto') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
+  /// "Commencer" — LES DEUX joueurs doivent l'appeler avant que la partie
+  /// ne démarre réellement (voir SuitBattleEngine::readyUp).
+  Future<SuitBattleSession> readyUpSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/ready') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
+  /// Le meneur pose [card] — devient la carte sur table, phase → réponse.
+  Future<SuitBattleSession> playLeadSuitBattle(String sessionId, String card) async {
     final data = await ApiClient.instance.put(
-      '/connect-four-sessions/$sessionId/drop',
-      body: {'pipe': pipe},
+      '/suit-battle-sessions/$sessionId/play-lead',
+      body: {'card': card},
     ) as Map<String, dynamic>;
-    return ConnectFourDropResult.fromJson(data);
+    return SuitBattleSession.fromJson(data);
   }
 
-  Future<ConnectFourSession> fetchConnectFourState(String sessionId) async {
-    final data = await ApiClient.instance.get('/connect-four-sessions/$sessionId') as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+  /// Le répondant joue [card] (même couleur que la carte sur table, ou un
+  /// Joker) — résout l'échange immédiatement.
+  Future<SuitBattleSession> respondSuitBattle(String sessionId, String card) async {
+    final data = await ApiClient.instance.put(
+      '/suit-battle-sessions/$sessionId/respond',
+      body: {'card': card},
+    ) as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
   }
 
-  Future<ConnectFourSession> abandonConnectFour(String sessionId) async {
-    final data = await ApiClient.instance.put('/connect-four-sessions/$sessionId/abandon') as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+  /// Le répondant capture la carte sur table sans jouer — le meneur
+  /// original reprend la main.
+  Future<SuitBattleSession> captureLeadSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/capture-lead') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
   }
 
-  Future<ConnectFourSession> pauseConnectFour(String sessionId) async {
-    final data = await ApiClient.instance.put('/connect-four-sessions/$sessionId/pause') as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+  Future<SuitBattleSession> fetchSuitBattleState(String sessionId) async {
+    final data = await ApiClient.instance.get('/suit-battle-sessions/$sessionId') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
   }
 
-  Future<ConnectFourSession> resumeConnectFour(String sessionId) async {
-    final data = await ApiClient.instance.put('/connect-four-sessions/$sessionId/resume') as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+  Future<SuitBattleSession> abandonSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/abandon') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
   }
 
-  Future<ConnectFourMatchStats?> cachedConnectFourStats(String sessionId) async {
-    final cached = await LocalCache.instance.readJson<Map<String, dynamic>>('cache_connect_four_stats_$sessionId');
+  Future<SuitBattleSession> pauseSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/pause') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
+  Future<SuitBattleSession> resumeSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/resume') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
+  Future<SuitBattleMatchStats?> cachedSuitBattleStats(String sessionId) async {
+    final cached = await LocalCache.instance.readJson<Map<String, dynamic>>('cache_suit_battle_stats_$sessionId');
     if (cached == null) return null;
-    return ConnectFourMatchStats.fromJson(cached);
+    return SuitBattleMatchStats.fromJson(cached);
   }
 
-  Future<ConnectFourMatchStats> fetchConnectFourStats(String sessionId) async {
-    final cacheKey = 'cache_connect_four_stats_$sessionId';
+  Future<SuitBattleMatchStats> fetchSuitBattleStats(String sessionId) async {
+    final cacheKey = 'cache_suit_battle_stats_$sessionId';
     try {
-      final data = await ApiClient.instance.get('/connect-four-sessions/$sessionId/stats') as Map<String, dynamic>;
+      final data = await ApiClient.instance.get('/suit-battle-sessions/$sessionId/stats') as Map<String, dynamic>;
       await LocalCache.instance.writeJson(cacheKey, data);
-      return ConnectFourMatchStats.fromJson(data);
+      return SuitBattleMatchStats.fromJson(data);
     } catch (e) {
       final cached = await LocalCache.instance.readJson<Map<String, dynamic>>(cacheKey);
-      if (cached != null) return ConnectFourMatchStats.fromJson(cached);
+      if (cached != null) return SuitBattleMatchStats.fromJson(cached);
       rethrow;
     }
   }
 
   /// Enregistre le résultat final d'une partie jouée entièrement hors de ce
-  /// service (présentiel connecté ou pass-and-play) — best-effort, même
-  /// principe que recordWarCardResult.
-  Future<ConnectFourSession> recordConnectFourResult(
+  /// service (présentiel connecté) — best-effort, même principe que
+  /// recordWarCardResult.
+  Future<SuitBattleSession> recordSuitBattleResult(
     String gameId, {
-    required int movesCount,
+    required int roundsCount,
     required int durationSeconds,
     String? winnerUserId,
     required bool isTie,
   }) async {
     final data = await ApiClient.instance.post(
-      '/games/$gameId/connect-four-results',
+      '/games/$gameId/suit-battle-results',
       body: {
-        'moves_count': movesCount,
+        'rounds_count': roundsCount,
         'duration_seconds': durationSeconds,
         if (winnerUserId != null) 'winner_user_id': winnerUserId,
         'is_tie': isTie,
       },
     ) as Map<String, dynamic>;
-    return ConnectFourSession.fromJson(data);
+    return SuitBattleSession.fromJson(data);
   }
 
   // "Bataille Navale" — PREMIER jeu à état partiellement caché de ce
@@ -1187,93 +1237,6 @@ class GameService {
       },
     ) as Map<String, dynamic>;
     return BattleshipSession.fromJson(data);
-  }
-
-  // "Pictionary à deux" — DEUXIÈME jeu à état partiellement caché de ce
-  // projet (voir PictionaryEngine::toPublicArrayFor), même principe que
-  // Bataille Navale : chaque réponse est déjà filtrée côté serveur.
-
-  Future<PictionarySession> startPictionary(String gameId, {String? locale}) async {
-    final data = await ApiClient.instance.post(
-      '/games/$gameId/pictionary-sessions/start',
-      body: {if (locale != null) 'locale': locale},
-    ) as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionarySession> fetchPictionaryState(String sessionId) async {
-    final data = await ApiClient.instance.get('/pictionary-sessions/$sessionId') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<void> sendPictionaryStroke(String sessionId, PictionaryStroke stroke) async {
-    await ApiClient.instance.put('/pictionary-sessions/$sessionId/stroke', body: stroke.toJson());
-  }
-
-  Future<PictionarySession> markPictionaryFound(String sessionId) async {
-    final data = await ApiClient.instance.put('/pictionary-sessions/$sessionId/found') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionarySession> skipPictionaryRound(String sessionId) async {
-    final data = await ApiClient.instance.put('/pictionary-sessions/$sessionId/skip') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionarySession> abandonPictionary(String sessionId) async {
-    final data = await ApiClient.instance.put('/pictionary-sessions/$sessionId/abandon') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionarySession> pausePictionary(String sessionId) async {
-    final data = await ApiClient.instance.put('/pictionary-sessions/$sessionId/pause') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionarySession> resumePictionary(String sessionId) async {
-    final data = await ApiClient.instance.put('/pictionary-sessions/$sessionId/resume') as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
-  }
-
-  Future<PictionaryMatchStats?> cachedPictionaryStats(String sessionId) async {
-    final cached = await LocalCache.instance.readJson<Map<String, dynamic>>('cache_pictionary_stats_$sessionId');
-    if (cached == null) return null;
-    return PictionaryMatchStats.fromJson(cached);
-  }
-
-  Future<PictionaryMatchStats> fetchPictionaryStats(String sessionId) async {
-    final cacheKey = 'cache_pictionary_stats_$sessionId';
-    try {
-      final data = await ApiClient.instance.get('/pictionary-sessions/$sessionId/stats') as Map<String, dynamic>;
-      await LocalCache.instance.writeJson(cacheKey, data);
-      return PictionaryMatchStats.fromJson(data);
-    } catch (e) {
-      final cached = await LocalCache.instance.readJson<Map<String, dynamic>>(cacheKey);
-      if (cached != null) return PictionaryMatchStats.fromJson(cached);
-      rethrow;
-    }
-  }
-
-  /// Enregistre le résultat final d'une partie jouée entièrement hors de ce
-  /// service (présentiel connecté ou pass-and-play) — best-effort, même
-  /// principe que recordBattleshipResult.
-  Future<PictionarySession> recordPictionaryResult(
-    String gameId, {
-    required int movesCount,
-    required int durationSeconds,
-    required Map<String, int> scoresByUser,
-    String? winnerUserId,
-  }) async {
-    final data = await ApiClient.instance.post(
-      '/games/$gameId/pictionary-results',
-      body: {
-        'moves_count': movesCount,
-        'duration_seconds': durationSeconds,
-        'scores_by_user': scoresByUser,
-        if (winnerUserId != null) 'winner_user_id': winnerUserId,
-      },
-    ) as Map<String, dynamic>;
-    return PictionarySession.fromJson(data);
   }
 
   /// Réaction en direct pendant une partie à deux téléphones (voir

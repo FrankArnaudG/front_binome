@@ -64,7 +64,7 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
   Future<void> _shareSlide(Pack pack, Slide slide) {
     final localeCode = LocaleScope.of(context).current.code;
     return Share.share(
-      '${slide.textFor(localeCode) ?? ''}\n\n— via B❤️nome',
+      '${slide.textFor(localeCode) ?? ''}\n\n— via B❤️nome Couple',
       subject: pack.titleFor(localeCode),
     );
   }

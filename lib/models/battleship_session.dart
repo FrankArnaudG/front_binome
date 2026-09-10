@@ -43,11 +43,19 @@ class BattleshipShot {
 /// au démarrage puis à chaque signal temps réel `BattleshipUpdated`
 /// (lui-même sans contenu, voir RemoteBattleshipTransport — il ne fait
 /// que déclencher un nouvel appel à `state()`).
+///
+/// [boxId] `null` pour une partie hors-Box (défi à un ami de jeu via son
+/// code, voir demande utilisateur) — [playerOneId]/[playerTwoId] portent
+/// alors les deux joueurs à la place de box->creator_id/partner_id (même
+/// principe que TicTacToeSession).
 class BattleshipSession {
   final String id;
-  final String boxId;
+  final String? boxId;
+  final String? playerOneId;
+  final String? playerTwoId;
   final String gameId;
   final String? createdBy;
+  final int gridSize;
   final List<BattleshipShip> myFleet;
   final List<BattleshipShot> myShots;
   final List<List<int>> opponentSunkShips;
@@ -65,9 +73,12 @@ class BattleshipSession {
 
   const BattleshipSession({
     required this.id,
-    required this.boxId,
+    this.boxId,
+    this.playerOneId,
+    this.playerTwoId,
     required this.gameId,
     this.createdBy,
+    this.gridSize = 10,
     this.myFleet = const [],
     this.myShots = const [],
     this.opponentSunkShips = const [],
@@ -86,12 +97,18 @@ class BattleshipSession {
 
   bool get isFinished => finishedAt != null;
   bool get isPaused => pausedAt != null;
+  bool get isFriendSession => boxId == null;
 
   factory BattleshipSession.fromJson(Map<String, dynamic> json) => BattleshipSession(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
+        playerOneId: json['player_one_id'] as String?,
+        playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
+        // Défaut 10 pour compatibilité avec un payload en cache ne portant
+        // pas encore cette clé (voir migration back-end).
+        gridSize: (json['grid_size'] as num?)?.toInt() ?? 10,
         myFleet: (json['my_fleet'] as List?)?.map((e) => BattleshipShip.fromJson(e as Map<String, dynamic>)).toList() ?? const [],
         myShots: (json['my_shots'] as List?)?.map((e) => BattleshipShot.fromJson(e as Map<String, dynamic>)).toList() ?? const [],
         opponentSunkShips:

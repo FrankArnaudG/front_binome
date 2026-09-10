@@ -10,6 +10,12 @@ class CoinPurchaseOrder {
   final DateTime? paidAt;
   final DateTime createdAt;
   final CoinPack? coinPack;
+  // URL de paiement LigdiCash retournée par le back au moment de la
+  // création de la commande (absente/null si l'appel à LigdiCash a échoué
+  // ou si les identifiants ne sont pas encore configurés côté back — voir
+  // ShopScreen._openPurchase qui retombe alors sur l'ancien dialogue
+  // "commande créée, en attente").
+  final String? paymentUrl;
 
   const CoinPurchaseOrder({
     required this.id,
@@ -21,6 +27,7 @@ class CoinPurchaseOrder {
     this.paidAt,
     required this.createdAt,
     this.coinPack,
+    this.paymentUrl,
   });
 
   factory CoinPurchaseOrder.fromJson(Map<String, dynamic> json) => CoinPurchaseOrder(
@@ -33,5 +40,6 @@ class CoinPurchaseOrder {
         paidAt: json['paid_at'] != null ? DateTime.parse(json['paid_at'] as String) : null,
         createdAt: DateTime.parse(json['created_at'] as String),
         coinPack: json['coin_pack'] != null ? CoinPack.fromJson(json['coin_pack'] as Map<String, dynamic>) : null,
+        paymentUrl: json['payment_url'] as String?,
       );
 }

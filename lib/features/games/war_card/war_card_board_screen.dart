@@ -260,6 +260,11 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     );
     if (rematch == true && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
+    } else if (mounted) {
+      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
+      // taper à côté, peu importe le geste — doit refermer le jeu et
+      // revenir à la liste, comme un retour classique.
+      Navigator.of(context).pop();
     }
   }
 
@@ -492,7 +497,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
               if (_state.isPaused)
                 Positioned.fill(
                   child: Container(
-                    color: theme.background.withValues(alpha: 0.94),
+                    color: theme.background,
                     alignment: Alignment.center,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -538,7 +543,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerId(), enabled: true),
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerId(), enabled: true, paused: _state.isPaused),
       ],
       ),
     );

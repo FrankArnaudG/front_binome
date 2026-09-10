@@ -58,6 +58,13 @@ class _WarCardScoreboardSheet extends StatelessWidget {
     final minutes = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
     final seconds = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds % 60 : 0;
 
+    // Un abandon (voir demande utilisateur) ne déclare jamais de
+    // gagnant — `winnerUserId` reste `null` sans que `isTie` soit posé
+    // pour autant (voir WarCardController::abandon). Si les deux piles
+    // sont malgré tout à égalité à ce moment-là, l'écran doit lire "Nul"
+    // plutôt que "Perdu" pour les deux à la fois.
+    final effectiveTie = state.isTie || (state.winnerUserId == null && _cardsFor(state.creatorId) == _cardsFor(state.partnerId));
+
     return SafeArea(
       top: false,
       child: Container(
@@ -70,6 +77,20 @@ class _WarCardScoreboardSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Voir demande utilisateur : croix seule, sans cercle de fond
+            // (plus discrète, au-dessus de la barre de tirage plutôt que
+            // superposée dessus).
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(false),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, color: theme.textOnBackgroundMuted, size: 22),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             Center(
               child: Container(
                 width: 36,
@@ -81,10 +102,10 @@ class _WarCardScoreboardSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            Icon(state.isTie ? Icons.handshake_rounded : Icons.emoji_events_rounded, size: 40, color: theme.primary),
+            Icon(effectiveTie ? Icons.handshake_rounded : Icons.emoji_events_rounded, size: 40, color: theme.primary),
             const SizedBox(height: 10),
             Text(
-              state.isTie
+              effectiveTie
                   ? LocaleScope.t(context, 'war_card_score_tie')
                   : LocaleScope.t(context, 'war_card_score_winner', {
                       'name': playerNames[state.winnerUserId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
@@ -113,7 +134,7 @@ class _WarCardScoreboardSheet extends StatelessWidget {
                         color: colorFor(players[i]),
                         cardCount: _cardsFor(players[i]),
                         isWinner: players[i] == state.winnerUserId,
-                        isTie: state.isTie,
+                        isTie: effectiveTie,
                       ),
                     ),
                   ],

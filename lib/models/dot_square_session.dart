@@ -63,13 +63,27 @@ class DotSquareRectangle {
 /// possible en fin de partie (pas de gagnant net).
 class DotSquareSession {
   final String id;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
+  // les deux joueurs à la place de box->creator_id/partner_id (même
+  // principe que TicTacToeSession).
+  final String? boxId;
+  final String? playerOneId;
+  final String? playerTwoId;
   final String gameId;
   final String? createdBy;
   final int gridRows;
   final int gridCols;
   final List<String?>? points;
   final List<DotSquareRectangle> rectangles;
+  // Décompte final, conservé même une fois `rectangles` vidé côté serveur
+  // en fin de partie (voir demande utilisateur : le détail du tracé n'a
+  // aucun intérêt à être conservé, mais le nombre de rectangles si — voir
+  // DotSquaresController::clearDetailIfFinished). Source de vérité pour
+  // l'historique (dot_squares_history_screen.dart) ; pendant une partie EN
+  // COURS, `rectangles.length` reste équivalent puisque rien n'a encore
+  // été vidé.
+  final int rectanglesCount;
   final Map<String, int> scoresByUser;
   final String? currentTurnUserId;
   final String? winnerUserId;
@@ -85,13 +99,16 @@ class DotSquareSession {
 
   const DotSquareSession({
     required this.id,
-    required this.boxId,
+    this.boxId,
+    this.playerOneId,
+    this.playerTwoId,
     required this.gameId,
     this.createdBy,
     this.gridRows = 20,
     this.gridCols = 15,
     this.points,
     this.rectangles = const [],
+    this.rectanglesCount = 0,
     this.scoresByUser = const {},
     this.currentTurnUserId,
     this.winnerUserId,
@@ -108,18 +125,27 @@ class DotSquareSession {
 
   bool get isFinished => finishedAt != null;
   bool get isPaused => pausedAt != null;
+  bool get isFriendSession => boxId == null;
 
-  factory DotSquareSession.fromJson(Map<String, dynamic> json) => DotSquareSession(
+  factory DotSquareSession.fromJson(Map<String, dynamic> json) {
+    final rectangles = (json['rectangles'] as List? ?? [])
+        .map((e) => DotSquareRectangle.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    return DotSquareSession(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
+        playerOneId: json['player_one_id'] as String?,
+        playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
         gridRows: json['grid_rows'] as int? ?? 20,
         gridCols: json['grid_cols'] as int? ?? 15,
         points: (json['points'] as List?)?.map((e) => e as String?).toList(),
-        rectangles: (json['rectangles'] as List? ?? [])
-            .map((e) => DotSquareRectangle.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        rectangles: rectangles,
+        // Absent (anciennes réponses en cache) → retombe sur la taille de
+        // `rectangles` reçue, correcte tant que le backend ne l'a pas vidé.
+        rectanglesCount: json['rectangles_count'] as int? ?? rectangles.length,
         scoresByUser: _parseIntMap(json['scores_by_user']),
         currentTurnUserId: json['current_turn_user_id'] as String?,
         winnerUserId: json['winner_user_id'] as String?,
@@ -133,6 +159,7 @@ class DotSquareSession {
         pausedAt: json['paused_at'] != null ? DateTime.parse(json['paused_at'] as String) : null,
         pausedByUserId: json['paused_by_user_id'] as String?,
       );
+  }
 }
 
 /// Résultat de fin de partie pour une session donnée (voir

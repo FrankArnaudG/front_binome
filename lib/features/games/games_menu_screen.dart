@@ -22,9 +22,8 @@ import 'memory_game/memory_game_mode_screen.dart';
 import 'dot_squares/dot_squares_mode_screen.dart';
 import 'number_hunt/number_hunt_mode_screen.dart';
 import 'battleship/battleship_mode_screen.dart';
-import 'connect_four/connect_four_mode_screen.dart';
-import 'pictionary/pictionary_mode_screen.dart';
 import 'war_card/war_card_mode_screen.dart';
+import 'suit_battle/suit_battle_mode_screen.dart';
 import 'tic_tac_toe/tic_tac_toe_mode_screen.dart';
 import 'timed_challenge_session_screen.dart';
 import 'widgets/game_rules_dialog.dart';
@@ -195,23 +194,17 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
       return;
     }
 
-    if (game.isConnectFour) {
+    if (game.isSuitBattle) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ConnectFourModeScreen(game: game, user: widget.user)),
+        MaterialPageRoute(builder: (_) => SuitBattleModeScreen(game: game, user: widget.user)),
       );
       return;
     }
+
 
     if (game.isBattleship) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => BattleshipModeScreen(game: game, user: widget.user)),
-      );
-      return;
-    }
-
-    if (game.isPictionary) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => PictionaryModeScreen(game: game, user: widget.user)),
       );
       return;
     }

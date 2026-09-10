@@ -99,6 +99,17 @@ class BoxService extends ChangeNotifier {
     return (await _apply(data))!;
   }
 
+  /// Partage PONCTUEL de la position courante (voir demande utilisateur :
+  /// jamais de suivi continu — un bouton "Partager ma position", appelé une
+  /// fois par tap, jamais en tâche de fond).
+  Future<Box> shareLocation({required double latitude, required double longitude}) async {
+    final data = await ApiClient.instance.post('/boxes/location', body: {
+      'latitude': latitude,
+      'longitude': longitude,
+    }) as Map<String, dynamic>;
+    return (await _apply(data))!;
+  }
+
   /// Photo de couple (voir DarkDayCounterCard) — remplace l'ancienne s'il y
   /// en avait une (voir BoxController::uploadPhoto côté backend).
   Future<Box> uploadPhoto(File file) async {

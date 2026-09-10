@@ -148,6 +148,12 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
 
   @override
   Future<void> pause() async {
+    // Application immédiate côté local (voir demande utilisateur) — le
+    // binôme le verra dès que le broadcast lui parvient, pas la peine
+    // d'attendre la réponse serveur pour geler l'écran ici.
+    _state = _state.copyWith(pausedByUserId: myUserId, pausedAt: DateTime.now());
+    _controller.add(_state);
+
     final session = await GameService.instance.pauseMemoryGame(sessionId);
     _state = _stateFrom(session);
     _controller.add(_state);

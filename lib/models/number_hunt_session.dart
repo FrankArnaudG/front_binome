@@ -23,7 +23,13 @@ Map<String, int> _parseIntMap(dynamic value) {
 /// lequel des deux peut tenter à tout moment.
 class NumberHuntSession {
   final String id;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
+  // les deux joueurs à la place de box->creator_id/partner_id (même
+  // principe que TicTacToeSession).
+  final String? boxId;
+  final String? playerOneId;
+  final String? playerTwoId;
   final String gameId;
   final String? createdBy;
   final List<int>? board;
@@ -42,7 +48,9 @@ class NumberHuntSession {
 
   const NumberHuntSession({
     required this.id,
-    required this.boxId,
+    this.boxId,
+    this.playerOneId,
+    this.playerTwoId,
     required this.gameId,
     this.createdBy,
     this.board,
@@ -62,10 +70,13 @@ class NumberHuntSession {
 
   bool get isFinished => finishedAt != null;
   bool get isPaused => pausedAt != null;
+  bool get isFriendSession => boxId == null;
 
   factory NumberHuntSession.fromJson(Map<String, dynamic> json) => NumberHuntSession(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
+        playerOneId: json['player_one_id'] as String?,
+        playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
         board: (json['board'] as List?)?.map((e) => e as int).toList(),

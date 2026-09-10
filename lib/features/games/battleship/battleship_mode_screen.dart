@@ -15,6 +15,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
+import 'battleship_difficulty_screen.dart';
 import 'battleship_nearby_connect_screen.dart';
 import 'battleship_placement_screen.dart';
 import 'battleship_transport.dart';
@@ -34,6 +35,7 @@ Future<void> startBattleshipAndPush(
   required Game game,
   required AppUser user,
   required BattleshipMode mode,
+  required int gridSize,
   bool replaceCurrent = false,
 }) async {
   final box = BoxScope.of(context).currentBox;
@@ -49,7 +51,11 @@ Future<void> startBattleshipAndPush(
 
   try {
     if (mode == BattleshipMode.remote) {
-      final invite = await GameService.instance.createGameInvite(game.id, sessionType: 'battleship');
+      final invite = await GameService.instance.createGameInvite(
+        game.id,
+        sessionType: 'battleship',
+        payload: {'grid_size': gridSize},
+      );
       if (!context.mounted) return;
       final route = MaterialPageRoute<void>(builder: (_) => GameInviteWaitingScreen(invite: invite, user: user));
       if (replaceCurrent) {
@@ -64,7 +70,7 @@ Future<void> startBattleshipAndPush(
     // LocalBattleshipTransport — chaque joueur place sa flotte à son
     // tour, un écran "passe le téléphone" entre les deux (voir
     // BattleshipPlacementScreen).
-    final transport = LocalBattleshipTransport(creatorUserId: user.id, partnerUserId: partner.id);
+    final transport = LocalBattleshipTransport(creatorUserId: user.id, partnerUserId: partner.id, gridSize: gridSize);
     unawaited(_postLocalResultWhenFinished(game, transport));
     if (!context.mounted) return;
 
@@ -75,6 +81,7 @@ Future<void> startBattleshipAndPush(
         transport: transport,
         playerNames: {user.id: user.prenom, partner.id: partner.prenom},
         playerAvatars: {user.id: user.avatar, partner.id: partner.avatar},
+        onRematch: (ctx) => startBattleshipAndPush(ctx, game: game, user: user, mode: mode, gridSize: gridSize, replaceCurrent: true),
       ),
     );
     if (replaceCurrent) {
@@ -121,15 +128,14 @@ class BattleshipModeScreen extends StatefulWidget {
 }
 
 class _BattleshipModeScreenState extends State<BattleshipModeScreen> {
-  bool _starting = false;
-
   bool get _nearbySupported => !kIsWeb && Platform.isAndroid;
 
-  Future<void> _start(BattleshipMode mode) async {
-    if (_starting) return;
-    setState(() => _starting = true);
-    await startBattleshipAndPush(context, game: widget.game, user: widget.user, mode: mode);
-    if (mounted) setState(() => _starting = false);
+  void _goToDifficulty(BattleshipMode mode) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BattleshipDifficultyScreen(game: widget.game, user: widget.user, mode: mode),
+      ),
+    );
   }
 
   @override
@@ -151,9 +157,7 @@ class _BattleshipModeScreenState extends State<BattleshipModeScreen> {
       ),
       body: ThemedBackground(
         child: SafeArea(
-          child: _starting
-              ? Center(child: CircularProgressIndicator(color: theme.primary))
-              : ListView(
+          child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
                     Text(
@@ -171,7 +175,7 @@ class _BattleshipModeScreenState extends State<BattleshipModeScreen> {
                       icon: Icons.wifi_rounded,
                       title: LocaleScope.t(context, 'memory_mode_remote_title'),
                       subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
-                      onTap: () => _start(BattleshipMode.remote),
+                      onTap: () => _goToDifficulty(BattleshipMode.remote),
                     ),
                     const SizedBox(height: 14),
                     _ModeTile(
@@ -196,7 +200,7 @@ class _BattleshipModeScreenState extends State<BattleshipModeScreen> {
                       icon: Icons.phone_android_rounded,
                       title: LocaleScope.t(context, 'memory_mode_local_title'),
                       subtitle: LocaleScope.t(context, 'memory_mode_local_subtitle'),
-                      onTap: () => _start(BattleshipMode.local),
+                      onTap: () => _goToDifficulty(BattleshipMode.local),
                     ),
                   ],
                 ),

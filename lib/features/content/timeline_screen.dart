@@ -11,16 +11,24 @@ import '../../core/realtime_client.dart';
 import '../../core/timeline_refresh_signal.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
+import '../../models/doodle.dart';
 import '../../models/send.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
+import '../../widgets/binome_wordmark.dart';
+import '../../widgets/coin_balance_badge.dart';
 import '../../widgets/coin_icon.dart';
 import '../../widgets/composer_actions.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/send_status_tick.dart';
 import '../box/box_scope.dart';
+import '../box/couple_profile_screen.dart';
+import '../doodle/doodle_history_screen.dart';
+import '../doodle/doodle_service.dart';
 import '../home/tab_navigation_controller.dart';
+import '../home/widgets/couple_avatars_badge.dart';
+import '../shop/shop_screen.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'content_service.dart';
 import 'packs_screen.dart';
@@ -48,6 +56,12 @@ class _TimelineScreenState extends State<TimelineScreen> {
   List<Send>? _sends;
   bool _initialLoading = true;
   bool _loadError = false;
+  // "Petits mots" (voir demande utilisateur) — une seule discussion pour
+  // tous les doodles échangés, fusionnée dans ce fil et repositionnée
+  // selon le DERNIER envoi (voir _groupByDate) plutôt que d'être une
+  // capsule à part par doodle.
+  List<Doodle>? _doodles;
+  Doodle? get _lastDoodle => (_doodles == null || _doodles!.isEmpty) ? null : _doodles!.last;
   _GalleryFilter _filter = _GalleryFilter.all;
   // Pagination : seule la première page est mise en cache (voir
   // ContentService.fetchSends) et affichée d'entrée — le reste de
@@ -81,6 +95,12 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // abonnaient déjà ; seul le Carnet de bord ne le faisait pas.
   String? _subscribedBoxId;
 
+  // Voir demande utilisateur : même en-tête que l'onglet Duo, avatars +
+  // pastille de présence comprises (voir DashboardTab, copié à l'identique
+  // sur cet abonnement déjà existant plutôt que d'en ouvrir un second).
+  String? _partnerId;
+  bool _partnerPresent = false;
+
   @override
   void initState() {
     super.initState();
@@ -109,17 +129,27 @@ class _TimelineScreenState extends State<TimelineScreen> {
     // BoxScope a besoin du context, donc ici plutôt que initState — ne
     // réagit qu'à un VRAI changement de box (jumelage/séparation), pas à
     // chaque appel (voir la garde sur _subscribedBoxId).
-    final boxId = BoxScope.of(context).currentBox?.id;
+    final box = BoxScope.of(context).currentBox;
+    final boxId = box?.id;
     if (boxId != null && boxId != _subscribedBoxId) {
       if (_subscribedBoxId != null) {
-        RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
+        RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent, onPresenceChange: _onPresenceChange);
       }
       _subscribedBoxId = boxId;
-      RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent).catchError((_) {
+      _partnerId = box?.partnerOf(widget.user.id)?.id;
+      RealtimeClient.instance
+          .subscribeToBox(boxId, onEvent: _onRealtimeEvent, onPresenceChange: _onPresenceChange)
+          .catchError((_) {
         // Best effort : sans temps réel, la liste reste utilisable, juste
         // sans mise à jour immédiate des coches "reçu"/"lu".
       });
     }
+  }
+
+  void _onPresenceChange(Set<String> memberIds) {
+    if (!mounted) return;
+    final present = _partnerId != null && memberIds.contains(_partnerId);
+    if (present != _partnerPresent) setState(() => _partnerPresent = present);
   }
 
   /// Met à jour en direct les coches "reçu"/"lu" (voir SendTickIcon) des
@@ -138,7 +168,41 @@ class _TimelineScreenState extends State<TimelineScreen> {
       if (sendIds == null || sendIds.isEmpty) return;
       final deliveredAtStr = event.data?['delivered_at'] as String?;
       _applyDelivered(sendIds, deliveredAtStr != null ? DateTime.parse(deliveredAtStr) : DateTime.now());
+      return;
     }
+    if (event.event == 'DoodleSent') {
+      final data = event.data;
+      if (data == null || !mounted) return;
+      final doodle = Doodle.fromJson(data['doodle'] as Map<String, dynamic>);
+      setState(() {
+        final existing = _doodles ?? [];
+        if (!existing.any((d) => d.id == doodle.id)) {
+          _doodles = [...existing, doodle];
+        }
+      });
+    }
+  }
+
+  /// Best-effort, indépendant du fetch des Sends ci-dessus — un échec ne
+  /// doit jamais empêcher le reste du Carnet de bord de s'afficher (voir
+  /// demande utilisateur, la discussion "petits mots" est un ajout, pas une
+  /// dépendance dure du fil principal).
+  Future<void> _refreshDoodles() async {
+    try {
+      final doodles = await DoodleService.instance.fetchDoodles();
+      if (mounted) setState(() => _doodles = doodles);
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
+  Future<void> _openDoodleThread() async {
+    AppRouter.showGlobalNavBar.value = false;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DoodleHistoryScreen(user: widget.user)),
+    );
+    AppRouter.showGlobalNavBar.value = true;
+    if (mounted) _refreshDoodles();
   }
 
   void _applySeen(String sendId, DateTime seenAt) {
@@ -162,7 +226,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   @override
   void dispose() {
     if (_subscribedBoxId != null) {
-      RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
+      RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent, onPresenceChange: _onPresenceChange);
     }
     TimelineRefreshSignal.instance.removeListener(_refresh);
     FeatureFlagsService.instance.removeListener(_onFeatureFlagsChanged);
@@ -194,6 +258,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _sends = cached;
           _initialLoading = false;
         });
+      }
+      // Même principe pour "Petits mots" (voir DoodleService.cachedDoodles)
+      // — sans ça, l'entrée du fil de doodles n'apparaissait qu'après le
+      // fetch réseau, un temps après les Sends déjà affichés depuis le
+      // cache (voir demande utilisateur : "ça n'apparaît pas immédiatement
+      // comme les autres").
+      final cachedDoodles = await DoodleService.instance.cachedDoodles();
+      if (cachedDoodles != null && mounted) {
+        setState(() => _doodles = cachedDoodles);
       }
     }
     await _refresh();
@@ -237,6 +310,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       // sans filtre ni favori que cette page 1).
       if (_filter == _GalleryFilter.all) {
         UnreadTimelineService.instance.refresh(widget.user.id);
+        _refreshDoodles();
       }
     } catch (_) {
       // Rien de nouveau à montrer : on garde silencieusement ce qui est
@@ -656,25 +730,31 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   /// Aplatit la liste en une seule séquence d'en-têtes de date + envois,
   /// avec des marqueurs de première/dernière position dans leur groupe pour
-  /// que le fil vertical ne dépasse jamais d'un jour à l'autre.
-  List<_TimelineEntry> _groupByDate(List<Send> sends) {
+  /// que le fil vertical ne dépasse jamais d'un jour à l'autre. Fusionne
+  /// aussi le fil "petits mots" (voir demande utilisateur) — [lastDoodle]
+  /// (le doodle le plus récent, toute la discussion vit derrière une seule
+  /// entrée) est trié par date exactement comme un Send, pour qu'il se
+  /// repositionne dans le Carnet de bord selon le dernier envoi plutôt que
+  /// de rester figé à un endroit fixe.
+  List<_TimelineEntry> _groupByDate(List<Send> sends, Doodle? lastDoodle) {
+    final rows = <(DateTime sortTime, Send? send, Doodle? doodle)>[
+      for (final send in sends) (send.createdAt, send, null),
+      if (lastDoodle != null) (lastDoodle.createdAt, null, lastDoodle),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+
     final entries = <_TimelineEntry>[];
-    for (var i = 0; i < sends.length; i++) {
-      final send = sends[i];
-      final header = _dateHeaderFor(send.createdAt);
-      final prevHeader = i == 0 ? null : _dateHeaderFor(sends[i - 1].createdAt);
-      final nextHeader = i == sends.length - 1
-          ? null
-          : _dateHeaderFor(sends[i + 1].createdAt);
+    for (var i = 0; i < rows.length; i++) {
+      final (sortTime, send, doodle) = rows[i];
+      final header = _dateHeaderFor(sortTime);
+      final prevHeader = i == 0 ? null : _dateHeaderFor(rows[i - 1].$1);
+      final nextHeader = i == rows.length - 1 ? null : _dateHeaderFor(rows[i + 1].$1);
       final isFirstInGroup = header != prevHeader;
       final isLastInGroup = header != nextHeader;
       if (isFirstInGroup) entries.add(_TimelineEntry.header(header));
       entries.add(
-        _TimelineEntry.send(
-          send,
-          isFirstInGroup: isFirstInGroup,
-          isLastInGroup: isLastInGroup,
-        ),
+        send != null
+            ? _TimelineEntry.send(send, isFirstInGroup: isFirstInGroup, isLastInGroup: isLastInGroup)
+            : _TimelineEntry.doodleThread(doodle!, isFirstInGroup: isFirstInGroup, isLastInGroup: isLastInGroup),
       );
     }
     return entries;
@@ -683,26 +763,51 @@ class _TimelineScreenState extends State<TimelineScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
+    final box = BoxScope.of(context).currentBox;
+    final partner = box?.partnerOf(widget.user.id);
 
     return Scaffold(
       backgroundColor: theme.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        systemOverlayStyle: theme.statusBarOverlayStyle,
-        foregroundColor: theme.textOnBackground,
-        title: Text(
-          'Carnet de bord',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w700,
-            color: theme.textOnBackground,
-          ),
-        ),
-      ),
       body: ThemedBackground(
         child: SafeArea(
           child: Column(
             children: [
+              // Voir demande utilisateur : même en-tête que l'onglet Duo,
+              // avatars + solde de pièces compris (même wordmark, même
+              // taille, même étendue/padding) plutôt qu'une AppBar avec le
+              // titre "Carnet de bord" — voir DashboardTab pour la
+              // structure copiée à l'identique.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                child: Row(
+                  children: [
+                    BinomeWordmark(
+                      fontSize: 26,
+                      color: theme.textOnBackground,
+                      heartColor: theme.primary,
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: GestureDetector(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => CoupleProfileScreen(user: widget.user)),
+                          ),
+                          child: CoupleAvatarsBadge(
+                            user: widget.user,
+                            partner: partner,
+                            partnerPresent: _partnerPresent,
+                          ),
+                        ),
+                      ),
+                    ),
+                    CoinBalanceBadge(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ShopScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               // Écoute FeatureFlagsService pour masquer/réafficher "Cadeaux"
               // et "Battements" en direct si un admin coupe la fonctionnalité
               // pendant que l'écran est ouvert (voir _onFeatureFlagsChanged
@@ -753,16 +858,31 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   ];
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        children: [
-                          for (var i = 0; i < chips.length; i++) ...[
-                            if (i > 0) const SizedBox(width: 8),
-                            chips[i],
+                    // Voir demande utilisateur (capture : le dernier filtre
+                    // coupé net au bord de l'écran donnait l'impression d'un
+                    // débordement) — un simple SingleChildScrollView reste
+                    // scrollable, mais le bord franc masquait cette
+                    // affordance ; ce fondu signale "il y a plus à faire
+                    // défiler" au lieu de couper brutalement.
+                    child: ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
+                        stops: [0, 0.04, 0.92, 1],
+                      ).createShader(bounds),
+                      blendMode: BlendMode.dstIn,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            for (var i = 0; i < chips.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 8),
+                              chips[i],
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   );
@@ -805,7 +925,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           ],
                         );
                       }
-                      final entries = _groupByDate(sends);
+                      final entries = _groupByDate(sends, _filter == _GalleryFilter.all ? _lastDoodle : null);
                       return ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
@@ -822,6 +942,22 @@ class _TimelineScreenState extends State<TimelineScreen> {
                             return _DateHeaderLabel(
                               label: entry.header!,
                               theme: theme,
+                            );
+                          }
+                          if (entry.isDoodleThread) {
+                            final doodle = entry.doodleThread!;
+                            final partner = BoxScope.of(context).currentBox?.partnerOf(widget.user.id);
+                            final isMineLast = doodle.fromUserId == widget.user.id;
+                            return _DoodleThreadRow(
+                              isFirstInGroup: entry.isFirstInGroup,
+                              isLastInGroup: entry.isLastInGroup,
+                              theme: theme,
+                              partnerName: partner?.prenom,
+                              partnerAvatar: partner?.avatar,
+                              preview: isMineLast ? 'Toi : un petit mot 💌' : 'Un petit mot pour toi 💌',
+                              time: _relativeTime(doodle.createdAt),
+                              unseen: !isMineLast && doodle.viewedAt == null,
+                              onTap: _openDoodleThread,
                             );
                           }
                           final send = entry.send!;
@@ -930,11 +1066,13 @@ class _FilterChip extends StatelessWidget {
 class _TimelineEntry {
   final String? header;
   final Send? send;
+  final Doodle? doodleThread;
   final bool isFirstInGroup;
   final bool isLastInGroup;
 
   const _TimelineEntry.header(this.header)
     : send = null,
+      doodleThread = null,
       isFirstInGroup = false,
       isLastInGroup = false;
 
@@ -942,9 +1080,18 @@ class _TimelineEntry {
     this.send, {
     required this.isFirstInGroup,
     required this.isLastInGroup,
-  }) : header = null;
+  }) : header = null,
+       doodleThread = null;
+
+  const _TimelineEntry.doodleThread(
+    this.doodleThread, {
+    required this.isFirstInGroup,
+    required this.isLastInGroup,
+  }) : header = null,
+       send = null;
 
   bool get isHeader => header != null;
+  bool get isDoodleThread => doodleThread != null;
 }
 
 class _DateHeaderLabel extends StatelessWidget {
@@ -1100,6 +1247,139 @@ class _TimelineRow extends StatelessWidget {
                                   color: theme.primary,
                                   shape: BoxShape.circle,
                                 ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ligne "petits mots" (voir demande utilisateur) — une seule entrée pour
+/// TOUTE la discussion de doodles, positionnée dans le fil comme un Send
+/// normal (voir _groupByDate) mais dont l'aperçu/l'horodatage reflètent
+/// toujours le DERNIER doodle envoyé, jamais une capsule par envoi. Même
+/// structure visuelle que _TimelineRow (fil vertical + carte) pour rester
+/// cohérent avec le reste du Carnet de bord.
+class _DoodleThreadRow extends StatelessWidget {
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
+  final ThemePalette theme;
+  final String? partnerName;
+  final String? partnerAvatar;
+  final String preview;
+  final String time;
+  final bool unseen;
+  final VoidCallback onTap;
+
+  const _DoodleThreadRow({
+    required this.isFirstInGroup,
+    required this.isLastInGroup,
+    required this.theme,
+    this.partnerName,
+    this.partnerAvatar,
+    required this.preview,
+    required this.time,
+    required this.unseen,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final lineColor = (theme.isDark ? Colors.white : Colors.black).withValues(alpha: 0.14);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 40,
+            child: Column(
+              children: [
+                Expanded(child: isFirstInGroup ? const SizedBox() : Container(width: 2, color: lineColor)),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: theme.primary.withValues(alpha: 0.15),
+                      backgroundImage: partnerAvatar != null ? NetworkImage(partnerAvatar!) : null,
+                      child: partnerAvatar == null
+                          ? Text(partnerName != null && partnerName!.isNotEmpty ? partnerName![0] : '?')
+                          : null,
+                    ),
+                    Positioned(right: -3, bottom: -3, child: _BadgeIcon(icon: Icons.brush_rounded, color: theme.secondary)),
+                  ],
+                ),
+                Expanded(child: isLastInGroup ? const SizedBox() : Container(width: 2, color: lineColor)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Material(
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Mots & dessins avec ${partnerName ?? "ton binôme"}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.nunito(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  height: 1.25,
+                                  color: theme.textOnBackground,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                preview,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 13,
+                                  fontStyle: FontStyle.italic,
+                                  letterSpacing: 0.2,
+                                  color: theme.textOnBackgroundMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(time, style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted)),
+                            if (unseen) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(color: theme.primary, shape: BoxShape.circle),
                               ),
                             ],
                           ],

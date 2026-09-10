@@ -11,6 +11,7 @@ import '../../../models/battleship_session.dart';
 /// bateau adverse encore vivant — c'est LA règle de sécurité de ce jeu
 /// (voir BattleshipEngine côté PHP, doc de classe).
 class BattleshipBoardState {
+  final int gridSize;
   final List<BattleshipShip> myFleet;
   final List<BattleshipShot> myShots;
   final List<List<int>> opponentSunkShips;
@@ -34,6 +35,7 @@ class BattleshipBoardState {
   final DateTime? pausedAt;
 
   const BattleshipBoardState({
+    this.gridSize = 10,
     this.myFleet = const [],
     this.myShots = const [],
     this.opponentSunkShips = const [],
@@ -63,6 +65,7 @@ class BattleshipBoardState {
   Set<int> get myHitCells => {for (final ship in myFleet) ...ship.hits};
 
   BattleshipBoardState copyWith({
+    int? gridSize,
     List<BattleshipShip>? myFleet,
     List<BattleshipShot>? myShots,
     List<List<int>>? opponentSunkShips,
@@ -80,6 +83,7 @@ class BattleshipBoardState {
     bool clearPause = false,
   }) =>
       BattleshipBoardState(
+        gridSize: gridSize ?? this.gridSize,
         myFleet: myFleet ?? this.myFleet,
         myShots: myShots ?? this.myShots,
         opponentSunkShips: opponentSunkShips ?? this.opponentSunkShips,

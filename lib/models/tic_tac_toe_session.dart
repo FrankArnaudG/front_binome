@@ -26,7 +26,13 @@ Map<String, int> _parseIntMap(dynamic value) {
 /// plus jamais valoir `true` avec ces règles (aucun match nul possible).
 class TicTacToeSession {
   final String id;
-  final String boxId;
+  // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
+  // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
+  // les deux joueurs à la place de box->creator_id/partner_id (même
+  // principe que MemoryGameSession).
+  final String? boxId;
+  final String? playerOneId;
+  final String? playerTwoId;
   final String gameId;
   final String? createdBy;
   final List<String?> board;
@@ -45,7 +51,9 @@ class TicTacToeSession {
 
   const TicTacToeSession({
     required this.id,
-    required this.boxId,
+    this.boxId,
+    this.playerOneId,
+    this.playerTwoId,
     required this.gameId,
     this.createdBy,
     this.board = const [
@@ -71,10 +79,13 @@ class TicTacToeSession {
 
   bool get isFinished => finishedAt != null;
   bool get isPaused => pausedAt != null;
+  bool get isFriendSession => boxId == null;
 
   factory TicTacToeSession.fromJson(Map<String, dynamic> json) => TicTacToeSession(
         id: json['id'] as String,
-        boxId: json['box_id'] as String,
+        boxId: json['box_id'] as String?,
+        playerOneId: json['player_one_id'] as String?,
+        playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
         board: (json['board'] as List? ?? List.filled(25, null)).map((e) => e as String?).toList(),

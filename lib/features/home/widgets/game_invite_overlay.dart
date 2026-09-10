@@ -19,9 +19,7 @@ String _gameLabel(String sessionType) => switch (sessionType) {
       'dot_squares' => 'Le Jeu des Carrés',
       'number_hunt' => 'Chasse aux Chiffres',
       'war_card' => 'Bataille',
-      'connect_four' => 'Puissance 4',
       'battleship' => 'Bataille Navale',
-      'pictionary' => 'Pictionary à Deux',
       _ => 'un jeu',
     };
 

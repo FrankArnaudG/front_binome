@@ -482,7 +482,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                       Positioned.fill(
                         child: Container(
                           decoration: BoxDecoration(
-                            color: theme.background.withValues(alpha: 0.94),
+                            color: theme.background,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           alignment: Alignment.center,
@@ -533,7 +533,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
       ],
       ),
     );

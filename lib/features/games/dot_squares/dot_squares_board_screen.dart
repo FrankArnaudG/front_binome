@@ -242,6 +242,11 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     );
     if (rematch == true && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
+    } else if (mounted) {
+      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
+      // taper à côté, peu importe le geste — doit refermer le jeu et
+      // revenir à la liste, comme un retour classique.
+      Navigator.of(context).pop();
     }
   }
 
@@ -260,34 +265,6 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     }
 
     await widget.transport.place(position);
-  }
-
-  Future<void> _onTapCloseAction() async {
-    if (_state.closeRequested && _state.closeRequestedByMe) {
-      await widget.transport.cancelCloseRequest();
-      return;
-    }
-    if (_state.closeRequested && !_state.closeRequestedByMe) {
-      await widget.transport.requestClose();
-      return;
-    }
-
-    final immediate = !widget.transport.requiresTurnToPlay;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(LocaleScope.t(ctx, 'dot_squares_close_title')),
-        content: Text(LocaleScope.t(ctx, immediate ? 'dot_squares_close_content_immediate' : 'dot_squares_close_content_propose')),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(LocaleScope.t(ctx, immediate ? 'dot_squares_close_confirm_immediate' : 'dot_squares_close_confirm_propose')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await widget.transport.requestClose();
   }
 
   /// Même dialogue pour le bouton drapeau ET la flèche retour (voir
@@ -418,17 +395,6 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
               ),
           if (!_state.finished)
             IconButton(
-              icon: Icon(_state.closeRequested ? Icons.done_all_rounded : Icons.flag_outlined),
-              tooltip: LocaleScope.t(
-                context,
-                _state.closeRequested
-                    ? (_state.closeRequestedByMe ? 'dot_squares_close_cancel_tooltip' : 'dot_squares_close_accept_tooltip')
-                    : 'dot_squares_close_tooltip',
-              ),
-              onPressed: _onTapCloseAction,
-            ),
-          if (!_state.finished)
-            IconButton(
               icon: const Icon(Icons.outlined_flag_rounded),
               tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
               onPressed: () async {
@@ -503,36 +469,6 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                   ],
                 ),
               ),
-              if (!_state.finished && _state.closeRequested && !_state.closeRequestedByMe)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: theme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline_rounded, size: 18, color: theme.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            LocaleScope.t(context, 'dot_squares_close_requested_banner', {
-                              'name': widget.playerNames[_state.closeRequestedByUserId] ??
-                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
-                            }),
-                            style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackground),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => widget.transport.requestClose(),
-                          child: Text(LocaleScope.t(context, 'dot_squares_close_accept_action')),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               if (_notifyPosition != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -565,15 +501,27 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                   ),
                 ),
               Expanded(
-                child: SingleChildScrollView(
-                  controller: _verticalController,
-                  child: Center(
-                    child: SingleChildScrollView(
-                      controller: _horizontalController,
-                      scrollDirection: Axis.horizontal,
-                      child: Stack(
-                        children: [
-                          GestureDetector(
+                // Voir demande utilisateur (capture : l'overlay de pause
+                // n'apparaissait qu'en partie, comme une simple barre rose,
+                // selon où la feuille était scrollée) — l'overlay était
+                // imbriqué DANS le Stack qui enveloppe le CustomPaint,
+                // lui-même bien plus grand que l'écran (jusqu'à des
+                // milliers de pixels de large selon le palier) : un
+                // `Positioned.fill` s'y étend sur la TOTALITÉ de cette
+                // immense zone scrollable, pas sur ce qui est
+                // effectivement visible — son contenu centré tombait donc
+                // n'importe où selon la position du défilement. Sorti ici
+                // dans un Stack englobant tout le viewport (Expanded), pour
+                // que `Positioned.fill` corresponde enfin à l'écran visible.
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      controller: _verticalController,
+                      child: Center(
+                        child: SingleChildScrollView(
+                          controller: _horizontalController,
+                          scrollDirection: Axis.horizontal,
+                          child: GestureDetector(
                             onTapUp: (details) => _handleTap(details.localPosition),
                             child: CustomPaint(
                               size: Size(gridWidth, gridHeight),
@@ -590,54 +538,51 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                               ),
                             ),
                           ),
-                          if (_state.isPaused)
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: theme.background.withValues(alpha: 0.94),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                alignment: Alignment.center,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.pause_circle_filled_rounded, size: 48, color: theme.primary),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        LocaleScope.t(context, 'memory_board_paused_title'),
-                                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        _state.pausedByMe
-                                            ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
-                                            : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
-                                                'name': widget.playerNames[_state.pausedByUserId] ??
-                                                    LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                              }),
-                                        textAlign: TextAlign.center,
-                                        style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
-                                      ),
-                                      if (_state.pausedByMe) ...[
-                                        const SizedBox(height: 20),
-                                        ElevatedButton.icon(
-                                          onPressed: () => widget.transport.resume(),
-                                          icon: const Icon(Icons.play_arrow_rounded),
-                                          label: Text(LocaleScope.t(context, 'memory_board_resume_button')),
-                                          style: ElevatedButton.styleFrom(backgroundColor: theme.primary, foregroundColor: Colors.white),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    if (_state.isPaused)
+                      Positioned.fill(
+                        child: Container(
+                          color: theme.background,
+                          alignment: Alignment.center,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.pause_circle_filled_rounded, size: 48, color: theme.primary),
+                                const SizedBox(height: 12),
+                                Text(
+                                  LocaleScope.t(context, 'memory_board_paused_title'),
+                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _state.pausedByMe
+                                      ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
+                                      : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
+                                          'name': widget.playerNames[_state.pausedByUserId] ??
+                                              LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                        }),
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+                                ),
+                                if (_state.pausedByMe) ...[
+                                  const SizedBox(height: 20),
+                                  ElevatedButton.icon(
+                                    onPressed: () => widget.transport.resume(),
+                                    icon: const Icon(Icons.play_arrow_rounded),
+                                    label: Text(LocaleScope.t(context, 'memory_board_resume_button')),
+                                    style: ElevatedButton.styleFrom(backgroundColor: theme.primary, foregroundColor: Colors.white),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -648,7 +593,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true),
+          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
       ],
       ),
     );

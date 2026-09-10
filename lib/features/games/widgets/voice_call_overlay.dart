@@ -21,6 +21,11 @@ class VoiceCallOverlay extends StatefulWidget {
   final String myUserId;
   final String partnerUserId;
   final bool enabled;
+  // Partie en pause (voir demande utilisateur) — le micro reste visible
+  // mais grisé et inactif, plutôt que de disparaître : ça évite de faire
+  // croire que le bouton a bougé/disparu, tout en rendant clair qu'il faut
+  // reprendre la partie pour l'utiliser.
+  final bool paused;
 
   const VoiceCallOverlay({
     super.key,
@@ -28,6 +33,7 @@ class VoiceCallOverlay extends StatefulWidget {
     required this.myUserId,
     required this.partnerUserId,
     required this.enabled,
+    this.paused = false,
   });
 
   @override
@@ -81,6 +87,12 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   }
 
   Future<void> _onTapMic() async {
+    if (widget.paused) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reprends la partie pour utiliser le micro.')),
+      );
+      return;
+    }
     final service = _service;
     if (service == null) return;
     if (_status == VoiceCallStatus.idle || _status == VoiceCallStatus.failed) {
@@ -89,7 +101,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   }
 
   void _onTalkStart() {
-    if (_status != VoiceCallStatus.connected) return;
+    if (widget.paused || _status != VoiceCallStatus.connected) return;
     setState(() => _talking = true);
     _service?.setTalking(true);
   }
@@ -153,10 +165,10 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: _colorFor(_status, _talking),
+                        color: widget.paused ? Colors.grey.withValues(alpha: 0.5) : _colorFor(_status, _talking),
                         shape: BoxShape.circle,
                       ),
-                      child: _iconFor(_status),
+                      child: widget.paused ? const Icon(Icons.mic_off_rounded, color: Colors.white70, size: 20) : _iconFor(_status),
                     ),
                   ),
                   if (active)
