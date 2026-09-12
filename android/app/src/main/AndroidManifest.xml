@@ -4,6 +4,11 @@
          elle aucune permission déclarée ici, image_picker s'en charge.
          Réutilisée aussi par la caméra optionnelle de la voix en direct
          (voir VoiceCallService.toggleVideo). -->
+    <!-- Requis pour TOUT appel réseau (API, images, tuiles de carte pour
+         "Notre distance"...) — absent par erreur du manifeste principal
+         jusqu'ici (présent seulement en debug/profile), ce qui aurait
+         bloqué tout accès réseau dans un build de production/release. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Voix en direct pendant une partie à deux téléphones (voir
          VoiceCallService, WebRTC) — micro toujours actif, caméra en plus

@@ -36,6 +36,11 @@ class Box {
   final double? partnerLatitude;
   final double? partnerLongitude;
   final DateTime? partnerLocationAt;
+  // Repère "maison" PARTAGÉ par la Box (voir demande utilisateur : "si je
+  // prends la voie de la maison, mon binôme sait que je suis en route") —
+  // pas propre à chaque personne, modifiable par n'importe lequel des deux.
+  final double? homeLatitude;
+  final double? homeLongitude;
 
   const Box({
     required this.id,
@@ -60,7 +65,16 @@ class Box {
     this.partnerLatitude,
     this.partnerLongitude,
     this.partnerLocationAt,
+    this.homeLatitude,
+    this.homeLongitude,
   });
+
+  /// Repère "maison" (voir champ ci-dessus), `null` tant qu'il n'a jamais
+  /// été défini.
+  ({double lat, double lon})? get homeLocation {
+    if (homeLatitude == null || homeLongitude == null) return null;
+    return (lat: homeLatitude!, lon: homeLongitude!);
+  }
 
   /// Ce qu'il faut réellement afficher/utiliser pour le calcul des jours
   /// ensemble — la correction si elle existe, sinon le jumelage.
@@ -113,6 +127,8 @@ class Box {
         partnerLatitude: _parseDecimal(json['partner_latitude']),
         partnerLongitude: _parseDecimal(json['partner_longitude']),
         partnerLocationAt: json['partner_location_at'] != null ? DateTime.parse(json['partner_location_at'] as String) : null,
+        homeLatitude: _parseDecimal(json['home_latitude']),
+        homeLongitude: _parseDecimal(json['home_longitude']),
       );
 
   bool get isWaiting => status == 'waiting';

@@ -18,6 +18,7 @@ import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
 import '../../doodle/doodle_history_screen.dart';
 import '../../content/gifts_screen.dart';
+import '../../mood/mood_screen.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import '../../roman_photo/roman_photo_library_screen.dart';
@@ -312,12 +313,22 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
     // second exemplaire — sinon ce doublon sort de la portée de ThemeScope
     // et plante (ces deux écrans en dépendent).
     final items = [
+      // "Notre Humeur du Jour" (voir demande utilisateur) — remplace ici la
+      // tuile "Carnet de bord", redondante avec le premier onglet du bas
+      // (toujours accessible), au profit d'un écran dédié (voir MoodScreen).
       DarkActionItem(
-        tr('action_gallery'),
-        Icons.auto_awesome_rounded,
+        tr('action_mood'),
+        Icons.emoji_emotions_rounded,
         (t) => t.secondary,
-        (ctx) => widget.onNavigateToTab?.call(0),
-        'timeline',
+        (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute(
+            builder: (_) {
+              final partner = BoxScope.of(ctx).currentBox?.partnerOf(widget.user.id);
+              return MoodScreen(user: widget.user, partnerName: partner?.prenom, partnerGender: partner?.gender);
+            },
+          ),
+        ),
+        'mood',
       ),
       DarkActionItem(
         tr('action_gifts'),

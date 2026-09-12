@@ -47,3 +47,10 @@ app.*.map.json
 # Logs de session flutter run (debug local, jamais a versionner)
 .last_run_log.txt
 flutter_run_*.log.err
+
+# Images sources brutes des illustrations "Notre Humeur du Jour" (planches
+# ChatGPT haute résolution + scripts de découpe/compression, ~128 Mo) —
+# jamais utilisées par l'app elle-même (voir assets/humeur, assets/besoin,
+# assets/envi, qui contiennent les versions compressées réellement
+# embarquées), juste du matériel de travail.
+assets/mood_sources/

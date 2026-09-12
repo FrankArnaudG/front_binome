@@ -5,6 +5,7 @@ import '../../core/feature_flags_service.dart';
 import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
+import '../../models/mood.dart';
 import '../../models/send.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
@@ -17,6 +18,9 @@ import '../content/content_service.dart';
 import '../content/packs_screen.dart';
 import '../content/unread_timeline_service.dart';
 import '../games/game_card_inbox_service.dart';
+import '../mood/mood_screen.dart';
+import '../mood/mood_service.dart';
+import '../mood/mood_suggestion_modal.dart';
 import '../shop/shop_screen.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'widgets/couple_avatars_badge.dart';
@@ -24,6 +28,7 @@ import 'widgets/dark_day_counter_card.dart';
 import 'widgets/dark_nightly_poem_banner.dart';
 import 'widgets/dark_quick_actions_grid.dart';
 import 'widgets/inbox_toast.dart';
+import 'widgets/mood_of_day_card.dart';
 import 'widgets/received_poem_card.dart';
 import 'widgets/send_thought_cta.dart';
 
@@ -46,6 +51,9 @@ class _DashboardTabState extends State<DashboardTab> {
   String? _partnerId;
   bool _partnerPresent = false;
   Send? _receivedPoemToday;
+  Mood? _myMood;
+  Mood? _partnerMood;
+  MoodSuggestion? _partnerSuggestion;
 
   @override
   void initState() {
@@ -56,6 +64,7 @@ class _DashboardTabState extends State<DashboardTab> {
     GameCardInboxService.instance.refresh();
     UnreadTimelineService.instance.refresh(widget.user.id);
     _checkTodayActivity();
+    _fetchTodayMood();
   }
 
   @override
@@ -103,6 +112,14 @@ class _DashboardTabState extends State<DashboardTab> {
       if (sendId != null) GameCardInboxService.instance.removePending(sendId);
       return;
     }
+    if (event.event == 'MoodShared') {
+      final moodJson = event.data?['mood'] as Map<String, dynamic>?;
+      if (moodJson == null) return;
+      final mood = Mood.fromJson(moodJson);
+      if (mood.userId == widget.user.id) return;
+      if (mounted) setState(() => _partnerMood = mood);
+      return;
+    }
     if (event.event != 'SendCreated') return;
     final sendJson = event.data?['send'] as Map<String, dynamic>?;
     if (sendJson == null) return;
@@ -127,6 +144,46 @@ class _DashboardTabState extends State<DashboardTab> {
       GameCardInboxService.instance.addPending(send);
       if (mounted) InboxToast.show(context, send);
     }
+  }
+
+  Future<void> _fetchTodayMood() async {
+    try {
+      final (mine, partner, _, partnerSuggestion) = await MoodService.instance.fetchToday();
+      if (mounted) {
+        setState(() {
+          _myMood = mine;
+          _partnerMood = partner;
+          _partnerSuggestion = partnerSuggestion;
+        });
+      }
+    } catch (_) {
+      // best effort — la carte reste simplement en état "à remplir"
+    }
+  }
+
+  Future<void> _openMoodScreen() async {
+    final partner = BoxScope.of(context).currentBox?.partnerOf(widget.user.id);
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => MoodScreen(user: widget.user, partnerName: partner?.prenom, partnerGender: partner?.gender),
+      ),
+    );
+    if (changed == true) _fetchTodayMood();
+  }
+
+  /// Ouvre la modale de conseil/défi pour l'humeur du binôme (voir demande
+  /// utilisateur) — rien à faire tant qu'aucune suggestion n'est disponible
+  /// pour sa combinaison (ex. avant qu'elle ait rempli besoin+envie).
+  void _openPartnerMoodSuggestion() {
+    if (_partnerMood == null || _partnerSuggestion == null) return;
+    final partner = BoxScope.of(context).currentBox?.partnerOf(widget.user.id);
+    showMoodSuggestionModal(
+      context,
+      moodKey: _partnerMood!.moodKey,
+      gender: partner?.gender,
+      name: partner?.prenom,
+      suggestion: _partnerSuggestion!,
+    );
   }
 
   Future<void> _checkTodayActivity() async {
@@ -245,6 +302,7 @@ class _DashboardTabState extends State<DashboardTab> {
                     await FeatureFlagsService.instance.refresh();
                     await UnreadTimelineService.instance.refresh(widget.user.id);
                     await _checkTodayActivity();
+                    await _fetchTodayMood();
                   },
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
@@ -264,6 +322,17 @@ class _DashboardTabState extends State<DashboardTab> {
                         onOpenProfile: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => CoupleProfileScreen(user: widget.user)),
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      MoodOfDayCard(
+                        mine: _myMood,
+                        partner: _partnerMood,
+                        myName: widget.user.prenom,
+                        myGender: widget.user.gender,
+                        partnerGender: partner?.gender,
+                        partnerName: partner?.prenom,
+                        onTap: _openMoodScreen,
+                        onTapPartner: _openPartnerMoodSuggestion,
                       ),
                       const SizedBox(height: 16),
                       SendThoughtCta(onTap: _openPacks),

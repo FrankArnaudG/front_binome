@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/api_client.dart';
 import '../../core/local_cache.dart';
+import '../../core/realtime_client.dart';
 import '../../models/box.dart';
 import '../../models/box_stats.dart';
 
@@ -33,6 +34,7 @@ class BoxService extends ChangeNotifier {
     final box = json != null ? Box.fromJson(json) : null;
     _currentBox = box;
     notifyListeners();
+    _subscribeRealtimeLocation();
 
     if (json != null) {
       await _storage.write(key: _cacheKey, value: jsonEncode(json));
@@ -41,6 +43,30 @@ class BoxService extends ChangeNotifier {
     }
 
     return box;
+  }
+
+  String? _locationSubBoxId;
+
+  /// Écoute globale (voir demande utilisateur : la position devait déjà
+  /// être à jour même si on n'est pas sur l'écran "Notre distance" au
+  /// moment où le binôme la partage) — même principe que DoodleNotifier :
+  /// une seule souscription vivant tant que l'app tourne, jamais limitée à
+  /// la durée de vie d'un écran en particulier.
+  void _subscribeRealtimeLocation() {
+    final boxId = _currentBox?.id;
+    if (boxId == _locationSubBoxId) return;
+    if (_locationSubBoxId != null) {
+      RealtimeClient.instance.unsubscribeFromBox(_locationSubBoxId!, onEvent: _onRealtimeLocationEvent);
+    }
+    _locationSubBoxId = boxId;
+    if (boxId != null) {
+      RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeLocationEvent);
+    }
+  }
+
+  void _onRealtimeLocationEvent(RealtimeEvent event) {
+    if (event.event != 'BoxLocationShared') return;
+    fetchCurrent();
   }
 
   Future<Box> createBox() async {
@@ -104,6 +130,17 @@ class BoxService extends ChangeNotifier {
   /// fois par tap, jamais en tâche de fond).
   Future<Box> shareLocation({required double latitude, required double longitude}) async {
     final data = await ApiClient.instance.post('/boxes/location', body: {
+      'latitude': latitude,
+      'longitude': longitude,
+    }) as Map<String, dynamic>;
+    return (await _apply(data))!;
+  }
+
+  /// Définit/déplace le repère "maison" partagé de la Box (voir demande
+  /// utilisateur) — même esprit que [shareLocation], modifiable par
+  /// n'importe lequel des deux membres.
+  Future<Box> setHomeLocation({required double latitude, required double longitude}) async {
+    final data = await ApiClient.instance.put('/boxes/home', body: {
       'latitude': latitude,
       'longitude': longitude,
     }) as Map<String, dynamic>;

@@ -123,10 +123,11 @@ class _DoodleViewScreenState extends State<DoodleViewScreen> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             child: Container(
               decoration: BoxDecoration(
-                // Transparent (voir demande utilisateur) — le cadre du
-                // dessin lui-même reste toujours "vide", que le fond de
-                // l'écran soit peint ou pas.
-                color: Colors.transparent,
+                // Léger fond clair (voir demande utilisateur) — même
+                // couleur que les bulles d'aperçu de DoodleHistoryScreen,
+                // pour que le trait reste bien lisible même par-dessus un
+                // écran chargé, au lieu de laisser tout transparaître.
+                color: Colors.white.withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: borderColor),
               ),

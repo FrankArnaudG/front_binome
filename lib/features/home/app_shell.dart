@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_router.dart';
 import '../../core/delivery_ack_service.dart';
+import '../../core/doodle_notifier.dart';
 import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
@@ -50,6 +51,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       DeliveryAckService.instance.onAppResumed();
+      // Voir demande utilisateur : si un dessin est arrivé pendant que
+      // l'app n'était pas au premier plan, il doit s'afficher tout de
+      // suite au retour, sans attendre le prochain tick du poll de secours
+      // (jusqu'à 10s, voir DoodleNotifier).
+      DoodleNotifier.instance.pollNow();
       // Un paiement LigdiCash se termine dans le navigateur externe, hors
       // de l'app — au retour (résumé), le solde de pièces/l'abonnement
       // peuvent avoir changé sans qu'aucun écran n'ait rien demandé. On

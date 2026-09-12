@@ -46,14 +46,27 @@ class _DoodleOverlayState extends State<DoodleOverlay> {
   void _onChanged() {
     final doodle = DoodleNotifier.instance.pendingDoodle;
     if (doodle == null) return;
-    // Efface tout de suite : le plein écran qu'on pousse ci-dessous EST
-    // l'affichage, pas besoin de le garder en mémoire une fois la
-    // navigation lancée (sinon un rebuild ultérieur le repousserait).
-    DoodleNotifier.instance.dismissPendingDoodle();
 
+    // Vérifié AVANT d'effacer/marquer quoi que ce soit (voir bug rapporté
+    // par l'utilisateur : l'ancien ordre effaçait le dessin en attente même
+    // quand le Navigator n'était pas encore prêt — ex. juste après un tap
+    // sur la notification, app tout juste relancée — le perdant pour de
+    // bon). Si le Navigator n'est pas encore attaché, on retente au frame
+    // suivant plutôt que d'abandonner : le dessin reste en attente entre
+    // temps, donc rien n'est perdu.
     final navContext = AppRouter.navigatorKey.currentContext;
-    if (navContext == null) return;
+    if (navContext == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onChanged());
+      return;
+    }
     final navigator = Navigator.of(navContext);
+
+    // Efface seulement maintenant qu'on est sûr de pouvoir l'afficher : le
+    // plein écran qu'on pousse ci-dessous EST l'affichage, pas besoin de le
+    // garder en mémoire une fois la navigation lancée (sinon un rebuild
+    // ultérieur le repousserait).
+    DoodleNotifier.instance.dismissPendingDoodle();
+    DoodleNotifier.instance.markShown(doodle.id);
 
     // Route NON opaque (voir doodleViewRoute) — l'écran déjà affiché
     // derrière (Carnet de bord, Duo...) continue d'être peint, on voit
