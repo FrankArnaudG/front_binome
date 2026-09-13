@@ -172,7 +172,8 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
     final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
     return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
         "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost pièces par jour de jeu, quelle que soit la durée jouée ce jour là.$trial";
+        "Il est facturé $cost pièces par jour, un montant unique qui couvre tous les jeux interactifs joués ce jour là, "
+        "quel que soit leur nombre ou leur durée.$trial";
   }
 
   static const String _localInfoText =
