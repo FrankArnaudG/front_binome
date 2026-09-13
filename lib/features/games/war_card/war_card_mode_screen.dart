@@ -69,11 +69,12 @@ Future<void> startWarCardAndPush(
       return;
     }
 
-    // Pass-and-play : aucun appel réseau pour jouer, voir
-    // LocalWarCardTransport — chaque joueur a son propre bouton
+    // Pass-and-play : aucun appel réseau, ni pour jouer ni pour le
+    // résultat final (voir demande utilisateur : ce mode ne doit envoyer
+    // aucune donnée de jeu au serveur/à la base de données) — voir
+    // LocalWarCardTransport, chaque joueur a son propre bouton
     // "Retourner" à l'écran, pas besoin de deviner qui a tapé.
     final transport = LocalWarCardTransport(creatorUserId: user.id, partnerUserId: partner.id, deckSize: deckSize);
-    unawaited(_postLocalResultWhenFinished(game, transport, deckSize));
     if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
@@ -94,29 +95,6 @@ Future<void> startWarCardAndPush(
     }
   } on ApiException catch (e) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-  }
-}
-
-/// Poste le résultat en fin de partie pass-and-play, en tâche de fond —
-/// best-effort, même principe que les autres jeux.
-Future<void> _postLocalResultWhenFinished(Game game, LocalWarCardTransport transport, int deckSize) async {
-  await for (final state in transport.stateStream) {
-    if (state.finished) {
-      final duration = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds : 0;
-      try {
-        await GameService.instance.recordWarCardResult(
-          game.id,
-          roundsCount: state.roundsCount,
-          durationSeconds: duration,
-          winnerUserId: state.winnerUserId,
-          isTie: state.isTie,
-          deckSize: deckSize,
-        );
-      } catch (_) {
-        // Best-effort.
-      }
-      break;
-    }
   }
 }
 

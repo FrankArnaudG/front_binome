@@ -16,7 +16,6 @@ import '../game_service.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_board_screen.dart';
 import 'memory_game_mode_screen.dart';
-import 'memory_game_transport.dart';
 import 'memory_game_transport_local.dart';
 
 /// Démarre une partie (à distance ou pass-and-play) et pousse l'écran
@@ -70,10 +69,11 @@ Future<void> startMemoryGameAndPush(
       return;
     }
 
-    // Pass-and-play : aucun appel réseau pour jouer, voir
+    // Pass-and-play : aucun appel réseau, ni pour jouer ni pour le
+    // résultat final (voir demande utilisateur : ce mode ne doit envoyer
+    // aucune donnée de jeu au serveur/à la base de données) — voir
     // LocalMemoryGameTransport.
     final transport = LocalMemoryGameTransport(pairCount: pairCount, myUserId: user.id, partnerUserId: partner.id);
-    unawaited(_postLocalResultWhenFinished(game, transport));
     if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
@@ -100,33 +100,6 @@ Future<void> startMemoryGameAndPush(
     }
   } on ApiException catch (e) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-  }
-}
-
-/// Poste le résultat en fin de partie pass-and-play, en tâche de fond —
-/// best-effort, aucun mécanisme de retry hors-ligne ailleurs dans l'app à
-/// réutiliser ici (voir le plan).
-Future<void> _postLocalResultWhenFinished(Game game, MemoryGameTransport transport) async {
-  await for (final state in transport.stateStream) {
-    if (state.finished) {
-      final pairsByUser = <String, int>{};
-      for (final pair in state.matched) {
-        pairsByUser[pair.userId] = (pairsByUser[pair.userId] ?? 0) + 1;
-      }
-      final duration = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds : 0;
-      try {
-        await GameService.instance.recordMemoryGameResult(
-          game.id,
-          pairCount: state.board.length ~/ 2,
-          movesCount: state.movesCount,
-          durationSeconds: duration,
-          pairsByUser: pairsByUser,
-        );
-      } catch (_) {
-        // Best-effort.
-      }
-      break;
-    }
   }
 }
 

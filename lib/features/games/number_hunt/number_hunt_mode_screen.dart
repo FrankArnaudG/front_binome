@@ -68,7 +68,9 @@ Future<void> startNumberHuntAndPush(
       return;
     }
 
-    // Pass-and-play : aucun appel réseau pour jouer, voir
+    // Pass-and-play : aucun appel réseau, ni pour jouer ni pour le
+    // résultat final (voir demande utilisateur : ce mode ne doit envoyer
+    // aucune donnée de jeu au serveur/à la base de données) — voir
     // LocalNumberHuntTransport. `askWhoFound` capture le CONTEXTE DE
     // L'ÉCRAN DE PLATEAU (passé plus bas via un callback indirect) — voir
     // NumberHuntBoardScreen, qui fournit le vrai pop-up une fois monté.
@@ -79,7 +81,6 @@ Future<void> startNumberHuntAndPush(
       askWhoFound: () => NumberHuntBoardScreen.askWhoFoundFor(user.id, partner.id),
       cellCount: cellCount,
     );
-    unawaited(_postLocalResultWhenFinished(game, transport));
     if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
@@ -109,29 +110,6 @@ Future<void> startNumberHuntAndPush(
   }
 }
 
-/// Poste le résultat en fin de partie pass-and-play, en tâche de fond —
-/// best-effort, même principe que les 3 autres jeux.
-Future<void> _postLocalResultWhenFinished(Game game, LocalNumberHuntTransport transport) async {
-  await for (final state in transport.stateStream) {
-    if (state.finished) {
-      final duration = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds : 0;
-      try {
-        await GameService.instance.recordNumberHuntResult(
-          game.id,
-          movesCount: state.movesCount,
-          durationSeconds: duration,
-          scoresByUser: state.scoresByUser,
-          winnerUserId: state.winnerUserId,
-          isTie: state.isTie,
-          cellCount: state.board.length,
-        );
-      } catch (_) {
-        // Best-effort.
-      }
-      break;
-    }
-  }
-}
 
 /// Premier écran de "Chasse aux Chiffres" — choix du mode, même style que
 /// les 3 autres jeux (copie structurelle conforme).

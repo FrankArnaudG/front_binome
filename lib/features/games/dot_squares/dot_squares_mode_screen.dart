@@ -18,10 +18,8 @@ import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
 import 'dot_squares_board_screen.dart';
 import 'dot_squares_difficulty_screen.dart';
-import 'dot_squares_engine.dart';
 import 'dot_squares_history_screen.dart';
 import 'dot_squares_nearby_connect_screen.dart';
-import 'dot_squares_transport.dart';
 import 'dot_squares_transport_local.dart';
 
 enum DotSquaresMode { remote, nearby, local }
@@ -71,10 +69,11 @@ Future<void> startDotSquaresAndPush(
       return;
     }
 
-    // Pass-and-play : aucun appel réseau pour jouer, voir
+    // Pass-and-play : aucun appel réseau, ni pour jouer ni pour le
+    // résultat final (voir demande utilisateur : ce mode ne doit envoyer
+    // aucune donnée de jeu au serveur/à la base de données) — voir
     // LocalDotSquaresTransport.
     final transport = LocalDotSquaresTransport(myUserId: user.id, partnerUserId: partner.id, cols: cols);
-    unawaited(_postLocalResultWhenFinished(game, transport));
     if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
@@ -97,31 +96,6 @@ Future<void> startDotSquaresAndPush(
   }
 }
 
-/// Poste le résultat en fin de partie pass-and-play, en tâche de fond —
-/// best-effort, même principe que _postLocalResultWhenFinished côté
-/// Morpion.
-Future<void> _postLocalResultWhenFinished(Game game, DotSquaresTransport transport) async {
-  await for (final state in transport.stateStream) {
-    if (state.finished) {
-      final duration = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds : 0;
-      try {
-        await GameService.instance.recordDotSquaresResult(
-          game.id,
-          movesCount: state.movesCount,
-          durationSeconds: duration,
-          scoresByUser: state.scoresByUser,
-          winnerUserId: state.winnerUserId,
-          isTie: state.isTie,
-          closedEarly: state.movesCount < DotSquaresEngine.gridRows * state.gridCols, // grille pas pleine => forcément clôturée (voir doc de classe)
-          cols: state.gridCols,
-        );
-      } catch (_) {
-        // Best-effort.
-      }
-      break;
-    }
-  }
-}
 
 /// Premier écran de "Le Jeu des Carrés" — choix du mode, même style que
 /// TicTacToeModeScreen/MemoryGameModeScreen (copie structurelle conforme).

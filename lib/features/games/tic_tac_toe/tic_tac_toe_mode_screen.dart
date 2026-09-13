@@ -18,7 +18,6 @@ import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
 import 'tic_tac_toe_board_screen.dart';
 import 'tic_tac_toe_nearby_connect_screen.dart';
-import 'tic_tac_toe_transport.dart';
 import 'tic_tac_toe_transport_local.dart';
 
 enum TicTacToeMode { remote, nearby, local }
@@ -64,10 +63,11 @@ Future<void> startTicTacToeAndPush(
       return;
     }
 
-    // Pass-and-play : aucun appel réseau pour jouer, voir
+    // Pass-and-play : aucun appel réseau, ni pour jouer ni pour le
+    // résultat final (voir demande utilisateur : ce mode ne doit envoyer
+    // aucune donnée de jeu au serveur/à la base de données) — voir
     // LocalTicTacToeTransport.
     final transport = LocalTicTacToeTransport(myUserId: user.id, partnerUserId: partner.id);
-    unawaited(_postLocalResultWhenFinished(game, transport));
     if (!context.mounted) return;
 
     final route = MaterialPageRoute<void>(
@@ -87,29 +87,6 @@ Future<void> startTicTacToeAndPush(
     }
   } on ApiException catch (e) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-  }
-}
-
-/// Poste le résultat en fin de partie pass-and-play, en tâche de fond —
-/// best-effort, même principe que _postLocalResultWhenFinished côté Jeu de
-/// Mémoire.
-Future<void> _postLocalResultWhenFinished(Game game, TicTacToeTransport transport) async {
-  await for (final state in transport.stateStream) {
-    if (state.finished) {
-      final duration = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds : 0;
-      try {
-        await GameService.instance.recordTicTacToeResult(
-          game.id,
-          movesCount: state.movesCount,
-          durationSeconds: duration,
-          winnerUserId: state.winnerUserId,
-          isDraw: state.isDraw,
-        );
-      } catch (_) {
-        // Best-effort.
-      }
-      break;
-    }
   }
 }
 
