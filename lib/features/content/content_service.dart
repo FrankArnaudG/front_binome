@@ -197,18 +197,6 @@ class ContentService {
     }
   }
 
-  /// Une entrée par jeu à cartes-questions (voir demande utilisateur : les
-  /// jeux classiques doivent apparaître dans le Carnet de bord, une seule
-  /// fois chacun, plutôt que chaque carte individuellement) — le dernier
-  /// envoi racine de chaque jeu, qui ouvre directement le même fil que
-  /// "Continuer" depuis le menu Jeux (voir SendController::gameConversations
-  /// côté backend).
-  Future<List<Send>> fetchGameConversations() async {
-    final data = await ApiClient.instance.get('/sends/game-conversations') as Map<String, dynamic>;
-    final items = data['data'] as List;
-    return items.map((e) => Send.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
   Future<Send> markSeen(String sendId) async {
     final data = await ApiClient.instance.put('/sends/$sendId/seen') as Map<String, dynamic>;
     return Send.fromJson(data);
