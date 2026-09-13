@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby/nearby_comms.dart';
 import '../nearby_billing_tracker.dart';
 import 'battleship_difficulty_screen.dart';
 import 'battleship_placement_screen.dart';
@@ -45,6 +46,7 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
   String? _connectedEndpointId;
   bool _isHost = false;
   NearbyBattleshipTransport? _transport;
+  NearbyComms? _comms;
 
   Future<bool> _ensurePermissions() async {
     final statuses = await [
@@ -121,9 +123,11 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
     // Confiance de couple : acceptation automatique, pas de code PIN à
     // saisir (même principe que les autres jeux).
+    _comms = NearbyComms(nearby: _nearby, endpointId: endpointId);
     _nearby.acceptConnection(
       endpointId,
       onPayLoadRecieved: (fromEndpointId, payload) {
+        if (_comms?.handleIncoming(payload) == true) return;
         _transport?.onPayloadReceived(fromEndpointId, payload);
       },
     );
@@ -195,6 +199,9 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
           transport: transport,
           playerNames: {myRole: widget.user.prenom, partnerRole: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback')},
           playerAvatars: {myRole: widget.user.avatar, partnerRole: partner?.avatar},
+          nearbyComms: _comms,
+          nearbyMyName: widget.user.prenom,
+          nearbyPartnerName: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback'),
         ),
       ),
     );

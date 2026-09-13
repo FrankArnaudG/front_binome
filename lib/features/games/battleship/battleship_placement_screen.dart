@@ -9,6 +9,7 @@ import '../../../models/battleship_session.dart';
 import '../../../models/game.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../nearby/nearby_comms.dart';
 import 'battleship_board_screen.dart';
 import 'battleship_engine.dart';
 import 'battleship_transport.dart';
@@ -33,6 +34,12 @@ class BattleshipPlacementScreen extends StatefulWidget {
   // mais doit le conserver le temps de construire le plateau de combat
   // qui, lui, affiche le bouton "Rejouer".
   final Future<void> Function(BuildContext context)? onRematch;
+  // Simple relais vers BattleshipBoardScreen (voir NearbyComms) — cet écran
+  // de placement n'affiche pas de chat lui-même, il transmet juste le
+  // canal jusqu'au plateau de combat.
+  final NearbyComms? nearbyComms;
+  final String? nearbyMyName;
+  final String? nearbyPartnerName;
 
   const BattleshipPlacementScreen({
     super.key,
@@ -42,6 +49,9 @@ class BattleshipPlacementScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.nearbyComms,
+    this.nearbyMyName,
+    this.nearbyPartnerName,
   });
 
   @override
@@ -294,6 +304,9 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
         playerNames: widget.playerNames,
         playerAvatars: widget.playerAvatars,
         onRematch: widget.onRematch,
+        nearbyComms: widget.nearbyComms,
+        nearbyMyName: widget.nearbyMyName,
+        nearbyPartnerName: widget.nearbyPartnerName,
       ),
     );
     if (replace) {

@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby/nearby_comms.dart';
 import '../nearby_billing_tracker.dart';
 import 'memory_game_board_screen.dart';
 import 'memory_game_difficulty_screen.dart';
@@ -117,15 +118,21 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
     // Confiance de couple : acceptation automatique, pas de code PIN à
     // saisir (voir le plan).
+    _comms = NearbyComms(nearby: _nearby, endpointId: endpointId);
     _nearby.acceptConnection(
       endpointId,
       onPayLoadRecieved: (fromEndpointId, payload) {
+        // Le canal de chat (voir NearbyComms) consomme d'abord ses propres
+        // messages ('text_message') — tout le reste continue vers le
+        // transport du jeu inchangé.
+        if (_comms?.handleIncoming(payload) == true) return;
         _transport?.onPayloadReceived(fromEndpointId, payload);
       },
     );
   }
 
   NearbyMemoryGameTransport? _transport;
+  NearbyComms? _comms;
 
   void _onConnectionResult(String endpointId, Status status) {
     if (!mounted) return;
@@ -190,6 +197,9 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
           transport: transport,
           playerNames: {myRole: widget.user.prenom, partnerRole: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback')},
           playerAvatars: {myRole: widget.user.avatar, partnerRole: partner?.avatar},
+          nearbyComms: _comms,
+          nearbyMyName: widget.user.prenom,
+          nearbyPartnerName: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback'),
         ),
       ),
     );
@@ -224,6 +234,9 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
 
   @override
   void dispose() {
+    // Ne ferme PAS _comms ici : l'écran de plateau (MemoryGameBoardScreen)
+    // en a besoin après le remplacement de route (pushReplacement) — c'est
+    // lui qui possède le cycle de vie du canal de chat désormais.
     _nearby.stopAdvertising();
     _nearby.stopDiscovery();
     super.dispose();

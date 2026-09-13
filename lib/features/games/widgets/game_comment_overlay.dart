@@ -6,13 +6,20 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/realtime_client.dart';
 import '../../../l10n/locale_scope.dart';
 import '../game_service.dart';
+import '../nearby/nearby_comms.dart';
 
 /// Réactions en direct pendant une partie à deux téléphones (voir demande
 /// utilisateur : "à tout moment les deux binômes peuvent écrire un
 /// commentaire... uniquement quand on utilise 2 téléphones") — bulle
-/// flottante façon TikTok, éphémère côté SERVEUR (jamais persistée, voir
-/// GameCommentSent), mais gardée en mémoire côté client tant que l'écran
-/// de jeu reste ouvert (voir demande utilisateur : "il remonte mais ne
+/// flottante façon TikTok. Deux transports possibles :
+/// - mode à distance ([boxId] renseigné) : éphémère côté SERVEUR (jamais
+///   persistée, voir GameCommentSent) ;
+/// - mode présentiel connecté ([nearbyComms] renseigné) : transite
+///   uniquement par la connexion Bluetooth/Wifi Direct du jeu (voir
+///   NearbyComms), jamais par le serveur ni la base de données (voir
+///   demande utilisateur).
+/// Dans les deux cas, gardée en mémoire côté client tant que l'écran de
+/// jeu reste ouvert (voir demande utilisateur : "il remonte mais ne
 /// disparaît pas automatiquement... si y'a trop de commentaires ils
 /// seront progressivement cachés" — pas de suppression après un délai, les
 /// plus anciens sortent juste du cadre visible en défilant, toujours en
@@ -20,10 +27,20 @@ import '../game_service.dart';
 /// rien tant que [enabled] est faux (pass-and-play sur un seul appareil :
 /// les deux joueurs regardent déjà le même écran).
 class GameCommentOverlay extends StatefulWidget {
-  final String boxId;
+  final String? boxId;
   final bool enabled;
+  final NearbyComms? nearbyComms;
+  final String myName;
+  final String partnerName;
 
-  const GameCommentOverlay({super.key, required this.boxId, required this.enabled});
+  const GameCommentOverlay({
+    super.key,
+    this.boxId,
+    required this.enabled,
+    this.nearbyComms,
+    this.myName = '',
+    this.partnerName = '',
+  });
 
   @override
   State<GameCommentOverlay> createState() => _GameCommentOverlayState();
@@ -44,19 +61,28 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
+  StreamSubscription<NearbyChatMessage>? _nearbySubscription;
 
   @override
   void initState() {
     super.initState();
-    if (widget.enabled) {
-      RealtimeClient.instance.subscribeToBox(widget.boxId, onEvent: _onRealtimeEvent);
+    if (!widget.enabled) return;
+    final nearbyComms = widget.nearbyComms;
+    if (nearbyComms != null) {
+      _nearbySubscription = nearbyComms.messages.listen(_onNearbyMessage);
+    } else if (widget.boxId != null) {
+      RealtimeClient.instance.subscribeToBox(widget.boxId!, onEvent: _onRealtimeEvent);
     }
   }
 
   @override
   void dispose() {
     if (widget.enabled) {
-      RealtimeClient.instance.unsubscribeFromBox(widget.boxId, onEvent: _onRealtimeEvent);
+      if (widget.nearbyComms != null) {
+        _nearbySubscription?.cancel();
+      } else if (widget.boxId != null) {
+        RealtimeClient.instance.unsubscribeFromBox(widget.boxId!, onEvent: _onRealtimeEvent);
+      }
     }
     _controller.dispose();
     _focusNode.dispose();
@@ -72,6 +98,14 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
     final text = data['text'] as String?;
     if (text == null || text.trim().isEmpty) return;
     _appendComment(prenom, text);
+  }
+
+  void _onNearbyMessage(NearbyChatMessage message) {
+    // Mes propres messages sont déjà affichés immédiatement à l'envoi
+    // (voir _send) — pas d'écho serveur à attendre ici, contrairement au
+    // mode à distance.
+    if (message.fromMe) return;
+    _appendComment(widget.partnerName, message.text);
   }
 
   void _appendComment(String prenom, String text) {
@@ -103,11 +137,19 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     _controller.clear();
-    try {
-      await GameService.instance.sendGameComment(text);
-    } catch (_) {
-      // Éphémère et non critique : un envoi raté n'affecte pas la partie,
-      // on se contente de ne pas relancer l'utilisateur avec une erreur.
+    final nearbyComms = widget.nearbyComms;
+    if (nearbyComms != null) {
+      // Aucun aller-retour serveur en présentiel connecté — envoi direct
+      // sur la connexion Nearby et affichage immédiat (voir doc de classe).
+      nearbyComms.sendText(text);
+      _appendComment(widget.myName, text);
+    } else {
+      try {
+        await GameService.instance.sendGameComment(text);
+      } catch (_) {
+        // Éphémère et non critique : un envoi raté n'affecte pas la partie,
+        // on se contente de ne pas relancer l'utilisateur avec une erreur.
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -206,7 +248,7 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
 
   Widget _buildFab(BuildContext context) {
     return FloatingActionButton.small(
-      heroTag: 'game_comment_fab_${widget.boxId}',
+      heroTag: 'game_comment_fab_${widget.boxId ?? widget.nearbyComms?.endpointId ?? 'local'}',
       backgroundColor: Colors.black.withValues(alpha: 0.55),
       elevation: 0,
       onPressed: () {

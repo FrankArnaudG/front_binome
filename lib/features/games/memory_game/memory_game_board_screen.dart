@@ -14,6 +14,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
+import '../nearby/nearby_comms.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/memory_game_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
@@ -44,6 +45,12 @@ class MemoryGameBoardScreen extends StatefulWidget {
   // contrairement à celui de l'écran de difficulté d'origine qui a pu être
   // retiré de la pile entre-temps). `null` masque le bouton "Rejouer".
   final Future<void> Function(BuildContext context)? onRematch;
+  // Canal de chat texte en présentiel connecté (voir NearbyComms) — non-null
+  // uniquement pour ce mode (voir demande utilisateur : communiquer sans
+  // serveur ni internet). `null` pour à distance/pass-and-play.
+  final NearbyComms? nearbyComms;
+  final String? nearbyMyName;
+  final String? nearbyPartnerName;
 
   const MemoryGameBoardScreen({
     super.key,
@@ -53,6 +60,9 @@ class MemoryGameBoardScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.nearbyComms,
+    this.nearbyMyName,
+    this.nearbyPartnerName,
   });
 
   @override
@@ -243,6 +253,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     _mismatchTimer?.cancel();
     _clockTimer?.cancel();
     widget.transport.dispose();
+    widget.nearbyComms?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Différé au frame suivant — assigné en direct, cette mise à jour
     // pouvait planter silencieusement pendant le démontage (arbre de
@@ -549,7 +560,15 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
       ),
     ),
         ),
-        if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
+        if (commentsBoxId != null)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+        else if (widget.nearbyComms != null)
+          GameCommentOverlay(
+            nearbyComms: widget.nearbyComms,
+            enabled: true,
+            myName: widget.nearbyMyName ?? '',
+            partnerName: widget.nearbyPartnerName ?? '',
+          ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
             boxId: commentsBoxId,

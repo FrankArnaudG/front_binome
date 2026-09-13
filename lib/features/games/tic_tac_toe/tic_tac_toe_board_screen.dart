@@ -13,6 +13,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../nearby/nearby_comms.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/tic_tac_toe_match_scoreboard.dart';
@@ -40,6 +41,9 @@ class TicTacToeBoardScreen extends StatefulWidget {
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
   final Future<void> Function(BuildContext context)? onRematch;
+  final NearbyComms? nearbyComms;
+  final String? nearbyMyName;
+  final String? nearbyPartnerName;
 
   const TicTacToeBoardScreen({
     super.key,
@@ -49,6 +53,9 @@ class TicTacToeBoardScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.nearbyComms,
+    this.nearbyMyName,
+    this.nearbyPartnerName,
   });
 
   @override
@@ -282,6 +289,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     _clockTimer?.cancel();
     _highlightTimer?.cancel();
     widget.transport.dispose();
+    widget.nearbyComms?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Différé au frame suivant (voir memory_game_board_screen.dart).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -558,7 +566,15 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
       ),
     ),
         ),
-        if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
+        if (commentsBoxId != null)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+        else if (widget.nearbyComms != null)
+          GameCommentOverlay(
+            nearbyComms: widget.nearbyComms,
+            enabled: true,
+            myName: widget.nearbyMyName ?? '',
+            partnerName: widget.nearbyPartnerName ?? '',
+          ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
             boxId: commentsBoxId,

@@ -12,6 +12,7 @@ import '../../../models/game.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../nearby/nearby_comms.dart';
 import '../widgets/battleship_match_scoreboard.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
@@ -41,6 +42,9 @@ class BattleshipBoardScreen extends StatefulWidget {
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
   final Future<void> Function(BuildContext context)? onRematch;
+  final NearbyComms? nearbyComms;
+  final String? nearbyMyName;
+  final String? nearbyPartnerName;
 
   const BattleshipBoardScreen({
     super.key,
@@ -49,6 +53,9 @@ class BattleshipBoardScreen extends StatefulWidget {
     required this.transport,
     required this.playerNames,
     required this.playerAvatars,
+    this.nearbyComms,
+    this.nearbyMyName,
+    this.nearbyPartnerName,
     this.onRematch,
   });
 
@@ -189,6 +196,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     _subscription.cancel();
     _clockTimer?.cancel();
     widget.transport.dispose();
+    widget.nearbyComms?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Différé au frame suivant (voir memory_game_board_screen.dart).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -434,7 +442,15 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
       ),
     ),
         ),
-        if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
+        if (commentsBoxId != null)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+        else if (widget.nearbyComms != null)
+          GameCommentOverlay(
+            nearbyComms: widget.nearbyComms,
+            enabled: true,
+            myName: widget.nearbyMyName ?? '',
+            partnerName: widget.nearbyPartnerName ?? '',
+          ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
             boxId: commentsBoxId,
