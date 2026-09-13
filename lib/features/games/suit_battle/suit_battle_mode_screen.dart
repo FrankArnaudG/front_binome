@@ -265,7 +265,7 @@ class _ModeTile extends StatelessWidget {
             ),
           ),
         ),
-        if (infoText != null) GameModeInfoIcon(theme: theme, text: infoText!),
+        if (infoText != null) GameModeInfoIcon(theme: theme, title: 'Mode $title', text: infoText!),
       ],
     );
   }

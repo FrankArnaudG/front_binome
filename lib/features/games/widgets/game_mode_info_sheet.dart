@@ -6,8 +6,9 @@ import '../../../theme/theme_palette.dart';
 /// Ouvre un modale qui sort du bas de l'écran pour afficher le texte
 /// informatif d'un mode de jeu (voir demande utilisateur : remplace
 /// l'ancien encart toujours visible sous "À distance" par une icône
-/// discrète + une modale, appliquée aux 3 modes).
-Future<void> showGameModeInfoSheet(BuildContext context, ThemePalette theme, String text) {
+/// discrète + une modale, appliquée aux 3 modes). [title] est affiché en
+/// en-tête, sous la forme "Mode X" (voir demande utilisateur).
+Future<void> showGameModeInfoSheet(BuildContext context, ThemePalette theme, String title, String text) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: theme.surface,
@@ -30,6 +31,11 @@ Future<void> showGameModeInfoSheet(BuildContext context, ThemePalette theme, Str
             ),
           ),
           Text(
+            title,
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16, color: theme.textOnBackground),
+          ),
+          const SizedBox(height: 10),
+          Text(
             text,
             style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackground, height: 1.5),
           ),
@@ -40,12 +46,14 @@ Future<void> showGameModeInfoSheet(BuildContext context, ThemePalette theme, Str
 }
 
 /// Petite icône d'information positionnée en haut à droite d'une tuile de
-/// mode de jeu — au tap, ouvre [showGameModeInfoSheet] avec [text].
+/// mode de jeu — au tap, ouvre [showGameModeInfoSheet] avec [title] et
+/// [text].
 class GameModeInfoIcon extends StatelessWidget {
   final ThemePalette theme;
+  final String title;
   final String text;
 
-  const GameModeInfoIcon({super.key, required this.theme, required this.text});
+  const GameModeInfoIcon({super.key, required this.theme, required this.title, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +65,7 @@ class GameModeInfoIcon extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () => showGameModeInfoSheet(context, theme, text),
+          onTap: () => showGameModeInfoSheet(context, theme, title, text),
           child: Padding(
             padding: const EdgeInsets.all(5),
             child: Icon(Icons.info_outline_rounded, size: 16, color: theme.primary),

@@ -83,7 +83,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
   }
 
   static const String _localInfoText =
-      "Ce mode se joue à tour de rôle sur un seul téléphone, sans connexion internet. Il est actuellement gratuit.";
+      "Ce mode se joue à tour de rôle sur un seul téléphone, sans connexion internet. Il est gratuit.";
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +237,7 @@ class _ModeTile extends StatelessWidget {
             ),
           ),
         ),
-        if (infoText != null) GameModeInfoIcon(theme: theme, text: infoText!),
+        if (infoText != null) GameModeInfoIcon(theme: theme, title: 'Mode $title', text: infoText!),
       ],
     );
   }

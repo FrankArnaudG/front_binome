@@ -183,7 +183,7 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
   }
 
   static const String _localInfoText =
-      "Ce mode se joue à tour de rôle sur un seul téléphone, sans connexion internet. Il est actuellement gratuit.";
+      "Ce mode se joue à tour de rôle sur un seul téléphone, sans connexion internet. Il est gratuit.";
 
   void _goToDifficulty(WarCardMode mode) {
     Navigator.of(context).push(
@@ -337,7 +337,7 @@ class _ModeTile extends StatelessWidget {
             ),
           ),
         ),
-        if (infoText != null) GameModeInfoIcon(theme: theme, text: infoText!),
+        if (infoText != null) GameModeInfoIcon(theme: theme, title: 'Mode $title', text: infoText!),
       ],
     );
   }
