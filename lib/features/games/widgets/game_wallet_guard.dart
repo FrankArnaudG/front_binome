@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/realtime_client.dart';
 import '../../../theme/theme_scope.dart';
 import '../../shop/shop_screen.dart';
+import '../../shop/wallet_balance_notifier.dart';
 
 /// Surveille le solde de pièces PARTAGÉ du couple pendant une partie de jeu
 /// interactif en cours (voir BillGameSessions/GameEconomySetting côté
@@ -68,7 +69,14 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
   }
 
   void _onEvent(RealtimeEvent event) {
+    if (event.event == 'GameWalletTicked') {
+      final balance = event.data?['balance'] as int?;
+      if (balance != null) WalletBalanceNotifier.instance.set(balance);
+      return;
+    }
     if (event.event == 'GameWalletLow') {
+      final balance = event.data?['balance'] as int?;
+      if (balance != null) WalletBalanceNotifier.instance.set(balance);
       if (_warningShown || !mounted) return;
       _warningShown = true;
       final minutes = event.data?['minutes_remaining'] as int? ?? 0;
