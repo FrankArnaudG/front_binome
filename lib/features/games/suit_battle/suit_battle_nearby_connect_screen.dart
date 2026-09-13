@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'suit_battle_board_screen.dart';
 import 'suit_battle_transport_nearby.dart';
 
@@ -160,6 +161,7 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
 
   void _openBoard(NearbySuitBattleTransport transport) {
     final box = BoxScope.of(context).currentBox;
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kSuitBattleHostRole : kSuitBattleGuestRole;
     final partnerRole = _isHost ? kSuitBattleGuestRole : kSuitBattleHostRole;

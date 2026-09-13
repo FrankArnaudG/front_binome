@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'dot_squares_board_screen.dart';
 import 'dot_squares_difficulty_screen.dart';
 import 'dot_squares_engine.dart';
@@ -177,6 +178,7 @@ class _DotSquaresNearbyConnectScreenState extends State<DotSquaresNearbyConnectS
 
   void _openBoard(NearbyDotSquaresTransport transport) {
     final box = BoxScope.of(context).currentBox;
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kDotSquaresHostRole : kDotSquaresGuestRole;
     final partnerRole = _isHost ? kDotSquaresGuestRole : kDotSquaresHostRole;

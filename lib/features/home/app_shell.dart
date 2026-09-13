@@ -6,7 +6,9 @@ import '../../core/doodle_notifier.dart';
 import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
+import '../box/box_scope.dart';
 import '../content/unread_timeline_service.dart';
+import '../games/nearby_billing_tracker.dart';
 import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
@@ -63,6 +65,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // l'utilisateur revient sur un tout autre écran de l'app.
       WalletBalanceNotifier.instance.refresh();
       SubscriptionStatusNotifier.instance.refresh();
+      // Jours de jeu "présentiel connecté" en attente (voir
+      // NearbyBillingTracker) — tente une déclaration à chaque retour au
+      // premier plan, moment naturel où une connexion vient probablement
+      // de revenir.
+      final boxId = BoxScope.of(context).currentBox?.id;
+      if (boxId != null) NearbyBillingTracker.instance.reportAndClear(boxId);
     }
   }
 

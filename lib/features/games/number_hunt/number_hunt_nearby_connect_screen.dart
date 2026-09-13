@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'number_hunt_board_screen.dart';
 import 'number_hunt_difficulty_screen.dart';
 import 'number_hunt_transport_nearby.dart';
@@ -174,6 +175,7 @@ class _NumberHuntNearbyConnectScreenState extends State<NumberHuntNearbyConnectS
 
   void _openBoard(NearbyNumberHuntTransport transport) {
     final box = BoxScope.of(context).currentBox;
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kNumberHuntHostRole : kNumberHuntGuestRole;
     final partnerRole = _isHost ? kNumberHuntGuestRole : kNumberHuntHostRole;

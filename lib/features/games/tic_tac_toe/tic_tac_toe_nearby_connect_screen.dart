@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'tic_tac_toe_board_screen.dart';
 import 'tic_tac_toe_transport_nearby.dart';
 
@@ -166,6 +167,7 @@ class _TicTacToeNearbyConnectScreenState extends State<TicTacToeNearbyConnectScr
 
   void _openBoard(NearbyTicTacToeTransport transport) {
     final box = BoxScope.of(context).currentBox;
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kTicTacToeHostRole : kTicTacToeGuestRole;
     final partnerRole = _isHost ? kTicTacToeGuestRole : kTicTacToeHostRole;

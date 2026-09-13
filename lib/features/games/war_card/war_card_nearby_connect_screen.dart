@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'war_card_board_screen.dart';
 import 'war_card_difficulty_screen.dart';
 import 'war_card_transport_nearby.dart';
@@ -177,6 +178,10 @@ class _WarCardNearbyConnectScreenState extends State<WarCardNearbyConnectScreen>
 
   void _openBoard(NearbyWarCardTransport transport, int deckSize) {
     final box = BoxScope.of(context).currentBox;
+    // Facturation forfaitaire du mode Nearby (voir NearbyBillingTracker/
+    // demande utilisateur) — uniquement dans une vraie Box (jamais pour un
+    // défi entre amis hors couple, sans portefeuille partagé).
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kWarCardHostRole : kWarCardGuestRole;
     final partnerRole = _isHost ? kWarCardGuestRole : kWarCardHostRole;

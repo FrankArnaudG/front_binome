@@ -27,6 +27,14 @@ class GameService {
     return data.map((e) => Game.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// Déclare au serveur les jours de jeu "présentiel connecté" en attente
+  /// (voir NearbyBillingTracker/NearbyBillingController) — forfait
+  /// journalier, aucun décompte à la minute possible pour ce mode (pas de
+  /// contact serveur pendant la partie elle-même).
+  Future<void> reportNearbyDays(List<String> dates) async {
+    await ApiClient.instance.post('/nearby-billing/report', body: {'dates': dates});
+  }
+
   /// Dernière liste connue de boîtes pour ce jeu (voir LocalCache), sans
   /// appel réseau — permet à GameBoxesScreen de s'afficher instantanément
   /// au lieu d'un loader à chaque ouverture. `null` si jamais mise en cache.

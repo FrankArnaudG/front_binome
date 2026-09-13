@@ -12,6 +12,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
+import '../nearby_billing_tracker.dart';
 import 'battleship_difficulty_screen.dart';
 import 'battleship_placement_screen.dart';
 import 'battleship_transport_nearby.dart';
@@ -179,6 +180,9 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
 
   void _openPlacement(NearbyBattleshipTransport transport) {
     final box = BoxScope.of(context).currentBox;
+    // Facturation forfaitaire du mode Nearby (voir NearbyBillingTracker/
+    // demande utilisateur) — uniquement dans une vraie Box.
+    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kBattleshipHostRole : kBattleshipGuestRole;
     final partnerRole = _isHost ? kBattleshipGuestRole : kBattleshipHostRole;
