@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
+import 'server_clock.dart';
 import 'token_storage.dart';
 
 class ApiException implements Exception {
@@ -121,6 +122,7 @@ class ApiClient {
   }
 
   dynamic _decode(http.Response response) {
+    ServerClock.instance.updateFromHeader(response.headers['date']);
     final decoded = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body) as Map<String, dynamic>;
 
     if (response.statusCode < 200 || response.statusCode >= 300 || decoded['success'] != true) {

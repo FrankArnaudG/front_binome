@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
+import '../../../core/server_clock.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -224,7 +225,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     // Figé au moment où la pause a commencé (voir MemoryGameBoardState.
     // pausedAt) — sinon le chrono continuerait de tourner à l'écran pendant
     // la pause, alors que startedAt n'est décalé qu'à la reprise.
-    final now = _state.pausedAt ?? DateTime.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     // max(0, ...) : si l'horloge du téléphone est en retard sur celle du
     // serveur (courant sur un appareil de test dont la date n'est pas
     // synchronisée), la différence peut devenir négative — un chrono

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
+import '../../../core/server_clock.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -176,7 +177,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? DateTime.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     final seconds = now.difference(started).inSeconds.clamp(0, 1 << 31);
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;

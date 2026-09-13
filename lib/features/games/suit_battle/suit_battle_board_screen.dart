@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
+import '../../../core/server_clock.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -178,7 +179,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? DateTime.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     final seconds = now.difference(started).inSeconds.clamp(0, 1 << 31);
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;
@@ -809,8 +810,8 @@ class _SuitBattleScoreboardSheet extends StatelessWidget {
     final theme = ThemeScope.paletteOf(context);
     final players = playerNames.keys.toList();
 
-    final minutes = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
-    final seconds = state.startedAt != null ? DateTime.now().difference(state.startedAt!).inSeconds % 60 : 0;
+    final minutes = state.startedAt != null ? ServerClock.instance.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
+    final seconds = state.startedAt != null ? ServerClock.instance.now().difference(state.startedAt!).inSeconds % 60 : 0;
 
     // Un abandon ne déclare jamais de gagnant — `winnerUserId` reste `null`
     // sans que `isTie` soit posé pour autant (voir WarCardScoreboardSheet,

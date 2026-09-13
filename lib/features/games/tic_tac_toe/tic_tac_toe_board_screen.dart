@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
+import '../../../core/server_clock.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -265,7 +266,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? DateTime.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     // max(0, ...) : horloge du téléphone en retard sur celle du serveur
     // (courant sur un appareil de test) -> différence négative, un chrono
     // négatif n'a aucun sens à l'écran (même correctif que MemoryGameBoardScreen).
