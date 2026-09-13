@@ -180,8 +180,9 @@ class _DotSquaresModeScreenState extends State<DotSquaresModeScreen> {
     final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
     return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
         "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost pièces par jour, un montant unique qui couvre tous les jeux interactifs joués ce jour là, "
-        "quel que soit leur nombre ou leur durée.$trial";
+        "Il est facturé $cost pièces une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
+        "TOUS les jeux interactifs de l'application, autant de fois que vous voulez ce jour là, sans être facturé "
+        "de nouveau.$trial";
   }
 
   static const String _localInfoText =
