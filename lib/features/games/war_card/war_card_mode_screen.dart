@@ -15,6 +15,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
+import '../widgets/remote_billing_info.dart';
 import 'war_card_board_screen.dart';
 import 'war_card_difficulty_screen.dart';
 import 'war_card_nearby_connect_screen.dart';
@@ -181,6 +182,7 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
                       subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                       onTap: () => _goToDifficulty(WarCardMode.remote),
                     ),
+                    RemoteBillingInfo(theme: theme),
                     const SizedBox(height: 14),
                     _ModeTile(
                       theme: theme,

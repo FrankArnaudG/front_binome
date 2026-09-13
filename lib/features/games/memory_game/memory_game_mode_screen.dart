@@ -10,6 +10,7 @@ import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../widgets/remote_billing_info.dart';
 import 'memory_game_difficulty_screen.dart';
 import 'memory_game_nearby_connect_screen.dart';
 
@@ -71,6 +72,7 @@ class MemoryGameModeScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              RemoteBillingInfo(theme: theme),
               const SizedBox(height: 14),
               _ModeTile(
                 theme: theme,

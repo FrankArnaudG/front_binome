@@ -15,6 +15,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
+import '../widgets/remote_billing_info.dart';
 import 'tic_tac_toe_board_screen.dart';
 import 'tic_tac_toe_nearby_connect_screen.dart';
 import 'tic_tac_toe_transport.dart';
@@ -177,6 +178,7 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
                       subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                       onTap: () => _start(TicTacToeMode.remote),
                     ),
+                    RemoteBillingInfo(theme: theme),
                     const SizedBox(height: 14),
                     _ModeTile(
                       theme: theme,

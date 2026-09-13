@@ -15,6 +15,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
+import '../widgets/remote_billing_info.dart';
 import 'number_hunt_board_screen.dart';
 import 'number_hunt_difficulty_screen.dart';
 import 'number_hunt_nearby_connect_screen.dart';
@@ -194,6 +195,7 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
                 subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                 onTap: () => _goToDifficulty(NumberHuntMode.remote),
               ),
+              RemoteBillingInfo(theme: theme),
               const SizedBox(height: 14),
               _ModeTile(
                 theme: theme,

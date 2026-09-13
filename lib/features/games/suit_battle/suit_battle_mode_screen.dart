@@ -14,6 +14,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
+import '../widgets/remote_billing_info.dart';
 import 'suit_battle_nearby_connect_screen.dart';
 
 enum SuitBattleMode { remote, nearby }
@@ -121,6 +122,7 @@ class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
                       subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                       onTap: _startRemote,
                     ),
+                    RemoteBillingInfo(theme: theme),
                     const SizedBox(height: 14),
                     _ModeTile(
                       theme: theme,

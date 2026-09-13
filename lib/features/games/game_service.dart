@@ -27,6 +27,25 @@ class GameService {
     return data.map((e) => Game.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// Taux de décompte en pièces des jeux interactifs (voir demande
+  /// utilisateur : afficher "1 pièce = X minutes" sur l'écran de choix du
+  /// mode "à distance") — mis en cache en mémoire pour cette session, pas
+  /// besoin de re-fetch à chaque écran ouvert (ce réglage change rarement).
+  Map<String, int>? _cachedEconomyRate;
+
+  Future<Map<String, int>> fetchGameEconomyRate() async {
+    final cached = _cachedEconomyRate;
+    if (cached != null) return cached;
+    final data = await ApiClient.instance.get('/game-economy-rate') as Map<String, dynamic>;
+    final rate = {
+      'minutes_per_coin': data['minutes_per_coin'] as int? ?? 8,
+      'grace_period_seconds': data['grace_period_seconds'] as int? ?? 0,
+      'nearby_daily_coin_cost': data['nearby_daily_coin_cost'] as int? ?? 5,
+    };
+    _cachedEconomyRate = rate;
+    return rate;
+  }
+
   /// Déclare au serveur les jours de jeu "présentiel connecté" en attente
   /// (voir NearbyBillingTracker/NearbyBillingController) — forfait
   /// journalier, aucun décompte à la minute possible pour ce mode (pas de
