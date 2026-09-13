@@ -15,6 +15,7 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_wallet_guard.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../widgets/war_card_match_scoreboard.dart';
 import 'war_card_transport.dart';
@@ -62,6 +63,9 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   // distance" (voir _onState) — seul ce second cas doit afficher la
   // pop-up dédiée plutôt que de rester silencieux.
   bool _leavingMyself = false;
+  // Solde de pièces du couple épuisé en cours de partie (voir
+  // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
+  bool _walletDepleted = false;
 
   // Séquence "duel" (voir demande utilisateur) : chaque carte monte
   // IMMÉDIATEMENT au centre dès qu'elle est retournée (voir _tapFlip) et
@@ -339,9 +343,23 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
   Future<void> _readyUp() => widget.transport.readyUp();
 
+  /// Bouton "Terminer la partie" du popup de solde épuisé (voir
+  /// GameWalletGuard) — même geste qu'un abandon volontaire, sans re-passer
+  /// par la confirmation (déjà confirmé en fermant ce popup-là).
+  Future<void> _endGameFromWalletDepletion() async {
+    _leavingMyself = true;
+    await widget.transport.abandon();
+    if (mounted) Navigator.of(context).pop();
+  }
+
   String? get _commentsBoxId {
     final transport = widget.transport;
     return transport is RemoteWarCardTransport ? transport.boxId : null;
+  }
+
+  String get _sessionId {
+    final transport = widget.transport;
+    return transport is RemoteWarCardTransport ? transport.sessionId : '';
   }
 
   @override
@@ -543,7 +561,21 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerId(), enabled: true, paused: _state.isPaused),
+          VoiceCallOverlay(
+            boxId: commentsBoxId,
+            myUserId: widget.user.id,
+            partnerUserId: _partnerId(),
+            enabled: true,
+            paused: _state.isPaused,
+            forceEnded: _walletDepleted,
+          ),
+        GameWalletGuard(
+          boxId: commentsBoxId,
+          sessionType: 'war_card',
+          sessionId: _sessionId,
+          onDepletedChanged: (v) => setState(() => _walletDepleted = v),
+          onEndGame: _endGameFromWalletDepletion,
+        ),
       ],
       ),
     );

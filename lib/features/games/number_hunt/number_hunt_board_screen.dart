@@ -15,6 +15,7 @@ import '../../box/box_scope.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/number_hunt_match_scoreboard.dart';
+import '../widgets/game_wallet_guard.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'number_hunt_transport.dart';
 import 'number_hunt_transport_remote.dart';
@@ -93,6 +94,9 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   // distance" (voir _onState) — seul ce second cas doit afficher la
   // pop-up dédiée plutôt que de rester silencieux.
   bool _leavingMyself = false;
+  // Solde de pièces du couple épuisé en cours de partie (voir
+  // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
+  bool _walletDepleted = false;
   int? _lastFoundNumber;
   Timer? _highlightTimer;
 
@@ -265,6 +269,19 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   String? get _commentsBoxId {
     final transport = widget.transport;
     return transport is RemoteNumberHuntTransport ? transport.boxId : null;
+  }
+
+  String get _sessionId {
+    final transport = widget.transport;
+    return transport is RemoteNumberHuntTransport ? transport.sessionId : '';
+  }
+
+  /// Bouton "Terminer la partie" du popup de solde épuisé (voir
+  /// GameWalletGuard) — même geste qu'un abandon volontaire.
+  Future<void> _endGameFromWalletDepletion() async {
+    _leavingMyself = true;
+    await widget.transport.abandon();
+    if (mounted) Navigator.of(context).pop();
   }
 
   String get _partnerUserId =>
@@ -469,7 +486,21 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
+          VoiceCallOverlay(
+            boxId: commentsBoxId,
+            myUserId: widget.user.id,
+            partnerUserId: _partnerUserId,
+            enabled: true,
+            paused: _state.isPaused,
+            forceEnded: _walletDepleted,
+          ),
+        GameWalletGuard(
+          boxId: commentsBoxId,
+          sessionType: 'number_hunt',
+          sessionId: _sessionId,
+          onDepletedChanged: (v) => setState(() => _walletDepleted = v),
+          onEndGame: _endGameFromWalletDepletion,
+        ),
       ],
       ),
     );

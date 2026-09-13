@@ -17,6 +17,7 @@ import '../../box/box_scope.dart';
 import '../widgets/dot_squares_match_scoreboard.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_wallet_guard.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'dot_squares_engine.dart';
 import 'dot_squares_transport.dart';
@@ -67,6 +68,9 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   // distance" (voir _onState) — seul ce second cas doit afficher la
   // pop-up dédiée plutôt que de rester silencieux.
   bool _leavingMyself = false;
+  // Solde de pièces du couple épuisé en cours de partie (voir
+  // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
+  bool _walletDepleted = false;
 
   // Défilement synchronisé PAR CHOIX (voir demande utilisateur : jamais
   // forcé sur l'écran du binôme, qui pourrait vouloir regarder ailleurs)
@@ -331,6 +335,19 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     return transport is RemoteDotSquaresTransport ? transport.boxId : null;
   }
 
+  String get _sessionId {
+    final transport = widget.transport;
+    return transport is RemoteDotSquaresTransport ? transport.sessionId : '';
+  }
+
+  /// Bouton "Terminer la partie" du popup de solde épuisé (voir
+  /// GameWalletGuard) — même geste qu'un abandon volontaire.
+  Future<void> _endGameFromWalletDepletion() async {
+    _leavingMyself = true;
+    await widget.transport.abandon();
+    if (mounted) Navigator.of(context).pop();
+  }
+
   String get _partnerUserId =>
       widget.playerNames.keys.firstWhere((id) => id != widget.user.id, orElse: () => widget.user.id);
 
@@ -593,7 +610,21 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
         ),
         if (commentsBoxId != null) GameCommentOverlay(boxId: commentsBoxId, enabled: true),
         if (commentsBoxId != null)
-          VoiceCallOverlay(boxId: commentsBoxId, myUserId: widget.user.id, partnerUserId: _partnerUserId, enabled: true, paused: _state.isPaused),
+          VoiceCallOverlay(
+            boxId: commentsBoxId,
+            myUserId: widget.user.id,
+            partnerUserId: _partnerUserId,
+            enabled: true,
+            paused: _state.isPaused,
+            forceEnded: _walletDepleted,
+          ),
+        GameWalletGuard(
+          boxId: commentsBoxId,
+          sessionType: 'dot_squares',
+          sessionId: _sessionId,
+          onDepletedChanged: (v) => setState(() => _walletDepleted = v),
+          onEndGame: _endGameFromWalletDepletion,
+        ),
       ],
       ),
     );

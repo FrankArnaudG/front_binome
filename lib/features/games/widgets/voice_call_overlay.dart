@@ -26,6 +26,11 @@ class VoiceCallOverlay extends StatefulWidget {
   // croire que le bouton a bougé/disparu, tout en rendant clair qu'il faut
   // reprendre la partie pour l'utiliser.
   final bool paused;
+  // Solde de pièces du couple épuisé en cours de partie (voir
+  // GameWalletGuard/demande utilisateur : "on coupe automatiquement le
+  // micro/vidéo") — raccroche l'appel en cours dès que ce flag passe à
+  // vrai, comme un appui sur le bouton raccrocher.
+  final bool forceEnded;
 
   const VoiceCallOverlay({
     super.key,
@@ -34,6 +39,7 @@ class VoiceCallOverlay extends StatefulWidget {
     required this.partnerUserId,
     required this.enabled,
     this.paused = false,
+    this.forceEnded = false,
   });
 
   @override
@@ -76,6 +82,14 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
       if (!mounted) return;
       setState(() => _remoteVideoOn = active);
     });
+  }
+
+  @override
+  void didUpdateWidget(VoiceCallOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.forceEnded && !oldWidget.forceEnded) {
+      unawaited(_hangup());
+    }
   }
 
   @override
