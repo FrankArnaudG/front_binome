@@ -290,6 +290,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'timeline_title_message_partner': '{name} t\'a glissé un petit mot 💬',
     'timeline_title_poem_mine': 'Un poème s\'est envolé vers {name} 🕊️',
     'timeline_title_poem_partner': '{name} t\'a envoyé une pensée 🕊️',
+    'timeline_title_game_mine': 'Une carte envoyée à {name} 🃏',
+    'timeline_title_game_partner': '{name} t\'a envoyé une carte 🃏',
     'vault_title': 'Jardin secret',
     'vault_subtitle': "Nos souvenirs, rien qu'à nous.",
     'vault_cancel_selection': 'Annuler la sélection',

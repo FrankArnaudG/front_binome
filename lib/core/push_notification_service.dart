@@ -189,7 +189,7 @@ class PushNotificationService {
     // DoodleNotifier/DoodleOverlay pour l'affichage plein écran).
     final doodleId = message.data['doodle_id'] as String?;
     if (message.data['type'] == 'doodle' && doodleId != null) {
-      TabNavigationController.instance.setIndex(1);
+      TabNavigationController.instance.setIndex(0);
       await DoodleNotifier.instance.showDoodleById(doodleId);
       return;
     }
@@ -234,9 +234,10 @@ class PushNotificationService {
       return;
     }
 
-    // Index 0 : le Carnet de bord est devenu le premier onglet (page
-    // d'accueil, voir TabNavigationController).
-    TabNavigationController.instance.setIndex(0);
+    // Index 1 : Duo est devenu le premier onglet (page d'accueil), le
+    // Carnet de bord est repasse en deuxieme position (voir
+    // TabNavigationController).
+    TabNavigationController.instance.setIndex(1);
     TimelineRefreshSignal.instance.requestRefresh();
 
     // Ouvre directement l'envoi visé par-dessus le Carnet de bord (déjà

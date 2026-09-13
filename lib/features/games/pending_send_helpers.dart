@@ -122,3 +122,29 @@ Future<void> openPendingSend(Send send) async {
     );
   }
 }
+
+/// Ouvre le fil d'un jeu à cartes-questions déjà connu (pas un envoi "en
+/// attente" — voir openPendingSend ci-dessus pour ce cas) : utilisée par le
+/// Carnet de bord pour continuer directement une conversation de jeu depuis
+/// son entrée unique (voir demande utilisateur), sans passer par l'éventail
+/// de cartes du menu Jeux. Atterrit sur EXACTEMENT le même écran
+/// (GameCardThreadScreen, même game_box_id) que "Continuer" depuis ce menu.
+Future<void> openGameConversation(Send send, AppUser user) async {
+  final gameCard = send.gameCard;
+  if (gameCard == null) return;
+
+  final games = await GameService.instance.fetchGames();
+  final gameMatches = games.where((g) => g.id == gameCard.gameId);
+  final game = gameMatches.isEmpty ? null : gameMatches.first;
+  if (game == null) return;
+
+  final boxes = await GameService.instance.fetchBoxes(gameCard.gameId);
+  final boxMatches = boxes.where((b) => b.id == gameCard.gameBoxId);
+  final box = boxMatches.isEmpty ? null : boxMatches.first;
+  if (box == null) return;
+
+  AppRouter.showGlobalNavBar.value = false;
+  AppRouter.navigatorKey.currentState?.push(
+    MaterialPageRoute(builder: (_) => GameCardThreadScreen(send: send, user: user, game: game, box: box)),
+  );
+}

@@ -26,6 +26,7 @@ import '../box/box_scope.dart';
 import '../box/couple_profile_screen.dart';
 import '../doodle/doodle_history_screen.dart';
 import '../doodle/doodle_service.dart';
+import '../games/pending_send_helpers.dart';
 import '../home/tab_navigation_controller.dart';
 import '../home/widgets/couple_avatars_badge.dart';
 import '../shop/shop_screen.dart';
@@ -62,6 +63,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // capsule à part par doodle.
   List<Doodle>? _doodles;
   Doodle? get _lastDoodle => (_doodles == null || _doodles!.isEmpty) ? null : _doodles!.last;
+  // Une entrée par jeu à cartes-questions (voir demande utilisateur) —
+  // fusionnée dans le même fil que les Sends classiques (voir build()),
+  // seulement pour la vue "Tous" (même principe que _lastDoodle).
+  List<Send>? _gameConversations;
   _GalleryFilter _filter = _GalleryFilter.all;
   // Pagination : seule la première page est mise en cache (voir
   // ContentService.fetchSends) et affichée d'entrée — le reste de
@@ -196,6 +201,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
+  /// Best-effort, même principe que _refreshDoodles ci-dessus — un échec ne
+  /// doit jamais empêcher le reste du Carnet de bord de s'afficher.
+  Future<void> _refreshGameConversations() async {
+    try {
+      final conversations = await ContentService.instance.fetchGameConversations();
+      if (mounted) setState(() => _gameConversations = conversations);
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
   Future<void> _openDoodleThread() async {
     AppRouter.showGlobalNavBar.value = false;
     await Navigator.of(context).push(
@@ -311,6 +327,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       if (_filter == _GalleryFilter.all) {
         UnreadTimelineService.instance.refresh(widget.user.id);
         _refreshDoodles();
+        _refreshGameConversations();
       }
     } catch (_) {
       // Rien de nouveau à montrer : on garde silencieusement ce qui est
@@ -364,6 +381,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   Future<void> _openSend(Send send) async {
+    // Entrée de jeu à cartes-questions (voir _gameConversations/demande
+    // utilisateur) : ouvre EXACTEMENT le même fil que "Continuer" depuis le
+    // menu Jeux (GameCardThreadScreen), pas SlideDetailScreen — logique déjà
+    // partagée avec GameCardBubble/InboxToast (voir openGameConversation).
+    if (send.isGameCard) {
+      await openGameConversation(send, widget.user);
+      if (mounted) _refreshGameConversations();
+      return;
+    }
+
     if (send.recipientId == widget.user.id && !send.isSeen) {
       try {
         await ContentService.instance.markSeen(send.id);
@@ -647,6 +674,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     if (send.isHeartbeat) return send.heartbeatMessageFor(localeCode) ?? 'Un cœur qui bat pour toi 💓';
     if (send.isEmojiReply) return send.emojiReplyText ?? '💬';
     if (send.isTextReply) return send.textReplyText ?? '';
+    if (send.isGameCard) return send.gameCard?.questionTextFor(localeCode) ?? 'Une carte de jeu';
     return send.slide?.textFor(localeCode) ?? '';
   }
 
@@ -669,6 +697,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
     if (send.isEmojiReply || send.isTextReply) {
       return isMine ? t('timeline_title_message_mine') : t('timeline_title_message_partner', {'name': senderName});
+    }
+    if (send.isGameCard) {
+      return isMine
+          ? t('timeline_title_game_mine', {'name': recipientName})
+          : t('timeline_title_game_partner', {'name': senderName});
     }
     return isMine
         ? t('timeline_title_poem_mine', {'name': recipientName})
@@ -912,7 +945,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           ],
                         );
                       }
-                      final sends = _sends ?? [];
+                      final sends = [
+                        ...?_sends,
+                        if (_filter == _GalleryFilter.all) ...?_gameConversations,
+                      ];
                       if (sends.isEmpty) {
                         return ListView(
                           children: [

@@ -11,7 +11,6 @@ import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
 import 'widgets/doodle_overlay.dart';
-import 'widgets/game_card_bubble.dart';
 import 'widgets/game_invite_overlay.dart';
 
 /// Coquille globale qui superpose la barre de navigation classique à
@@ -93,15 +92,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           animation: Listenable.merge([TabNavigationController.instance, UnreadTimelineService.instance]),
           builder: (context, _) {
             final items = [
-              // Carnet de bord en premier (page d'accueil, voir
+              // Duo en premier (page d'accueil, voir
               // TabNavigationController) — voir demande utilisateur.
+              NavItem(outlinedIcon: Icons.favorite_outline, filledIcon: Icons.favorite_rounded, label: t('nav_duo')),
               NavItem(
                 outlinedIcon: Icons.auto_awesome_outlined,
                 filledIcon: Icons.auto_awesome_rounded,
                 label: t('nav_gallery'),
                 badgeCount: UnreadTimelineService.instance.count,
               ),
-              NavItem(outlinedIcon: Icons.favorite_outline, filledIcon: Icons.favorite_rounded, label: t('nav_duo')),
               NavItem(outlinedIcon: Icons.sports_esports_outlined, filledIcon: Icons.sports_esports_rounded, label: t('nav_games')),
               NavItem(outlinedIcon: Icons.person_outline_rounded, filledIcon: Icons.person_rounded, label: t('nav_profile')),
             ];
@@ -109,7 +108,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               body: Stack(
                 children: [
                   widget.child,
-                  const GameCardBubble(),
                   const GameInviteOverlay(),
                   const DoodleOverlay(),
                 ],

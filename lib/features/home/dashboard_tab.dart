@@ -227,9 +227,9 @@ class _DashboardTabState extends State<DashboardTab> {
   void _openTimeline() {
     // La Galerie est un onglet du même shell (voir MainTabScreen) : on
     // bascule dessus plutôt que de la pousser en second exemplaire — sinon
-    // ce doublon sort de la portée de ThemeScope et plante. Index 0 depuis
-    // que le Carnet de bord est devenu le premier onglet (page d'accueil).
-    widget.onNavigateToTab?.call(0);
+    // ce doublon sort de la portée de ThemeScope et plante. Index 1 depuis
+    // que Duo est devenu le premier onglet (page d'accueil).
+    widget.onNavigateToTab?.call(1);
   }
 
   @override

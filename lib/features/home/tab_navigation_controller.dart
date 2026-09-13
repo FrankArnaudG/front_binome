@@ -9,7 +9,7 @@ class TabNavigationController extends ChangeNotifier {
   TabNavigationController._();
   static final TabNavigationController instance = TabNavigationController._();
 
-  // Carnet de bord — premier onglet (voir AppShell/MainTabScreen), page
+  // Duo — premier onglet (voir AppShell/MainTabScreen), page
   // d'accueil au lancement/à la connexion (voir demande utilisateur).
   int _index = 0;
   int get index => _index;
@@ -20,7 +20,7 @@ class TabNavigationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Remet l'onglet actif au Carnet de bord (0) — appelé à chaque
+  /// Remet l'onglet actif à Duo (0) — appelé à chaque
   /// connexion/déconnexion (voir AppRouter.toLogin/toHome) : sans ça, ce
   /// singleton garde l'onglet où on se trouvait avant de se déconnecter
   /// (ex. Profil), et on atterrit dessus après une reconnexion, même sur

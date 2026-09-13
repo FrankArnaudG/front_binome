@@ -31,11 +31,11 @@ class MainTabScreen extends StatefulWidget {
 class _MainTabScreenState extends State<MainTabScreen> {
   void _goToTab(int index) => TabNavigationController.instance.setIndex(index);
 
-  // Carnet de bord en premier (page d'accueil) — voir demande utilisateur,
+  // Duo en premier (page d'accueil) — voir demande utilisateur,
   // doit rester synchronisé avec l'ordre des NavItem dans AppShell.
   late final List<Widget> _pages = [
-    TimelineScreen(user: widget.user),
     DashboardTab(user: widget.user, onNavigateToTab: _goToTab),
+    TimelineScreen(user: widget.user),
     GamesMenuScreen(user: widget.user),
     SettingsScreen(user: widget.user),
   ];
