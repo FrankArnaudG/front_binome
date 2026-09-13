@@ -41,6 +41,7 @@ class GameService {
       'minutes_per_coin': data['minutes_per_coin'] as int? ?? 8,
       'grace_period_seconds': data['grace_period_seconds'] as int? ?? 0,
       'nearby_daily_coin_cost': data['nearby_daily_coin_cost'] as int? ?? 5,
+      'nearby_free_trial_days': data['nearby_free_trial_days'] as int? ?? 3,
     };
     _cachedEconomyRate = rate;
     return rate;
