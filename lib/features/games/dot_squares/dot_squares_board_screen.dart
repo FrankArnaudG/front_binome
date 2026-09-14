@@ -15,7 +15,6 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
-import '../../shop/wallet_balance_notifier.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
@@ -87,11 +86,6 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
-  // Solde du couple AU LANCEMENT de cette partie précise (voir demande
-  // utilisateur : "comment on sait combien de pièce déjà consommer ?") —
-  // la différence avec le solde ACTUEL (WalletBalanceNotifier) donne le
-  // nombre de pièces consommées depuis le début.
-  double? _startingBalance;
 
   // Défilement synchronisé PAR CHOIX (voir demande utilisateur : jamais
   // forcé sur l'écran du binôme, qui pourrait vouloir regarder ailleurs)
@@ -121,22 +115,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
-    if (_commentsBoxId != null) {
-      _loadEconomyRate();
-      _captureStartingBalance();
-    }
-  }
-
-  Future<void> _captureStartingBalance() async {
-    await WalletBalanceNotifier.instance.refresh();
-    if (mounted) setState(() => _startingBalance = WalletBalanceNotifier.instance.balance);
-  }
-
-  double? _coinsConsumed() {
-    final starting = _startingBalance;
-    if (starting == null) return null;
-    final consumed = starting - WalletBalanceNotifier.instance.balance;
-    return consumed < 0 ? 0 : consumed;
+    if (_commentsBoxId != null) _loadEconomyRate();
   }
 
   Future<void> _loadEconomyRate() async {
@@ -148,22 +127,38 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     }
   }
 
+  /// Temps facturable écoulé, en secondes — voir ServerClock, calibré sur
+  /// l'en-tête HTTP Date du serveur, jamais l'horloge brute de l'appareil
+  /// (voir demande utilisateur). Base commune à [_coinProgress] et
+  /// [_coinsConsumed] pour qu'ils restent parfaitement synchronisés.
+  double? _elapsedBillableSeconds() {
+    final rate = _economyRate;
+    final started = _state.startedAt;
+    if (rate == null || started == null) return null;
+    final graceSeconds = rate['grace_period_seconds'] ?? 0;
+    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final elapsed = now.difference(started).inSeconds - graceSeconds;
+    return elapsed < 0 ? 0 : elapsed.toDouble();
+  }
+
+  /// Nombre de pièces consommées depuis le début de CETTE partie — fluide
+  /// comme l'anneau (même calcul), voir demande utilisateur.
+  double? _coinsConsumed() {
+    final elapsed = _elapsedBillableSeconds();
+    final cycleSeconds = (_economyRate?['minutes_per_coin'] ?? 8) * 60;
+    if (elapsed == null || cycleSeconds <= 0) return 0;
+    return elapsed / cycleSeconds;
+  }
+
   /// Fraction (0..1) de progression vers la prochaine pièce déduite —
   /// purement indicatif (voir doc de CoinBillingRing), calculé à partir du
   /// même réglage que le serveur (minutes_per_coin/grace_period_seconds)
   /// mais jamais la source de vérité de la facturation elle-même.
   double _coinProgress() {
-    final rate = _economyRate;
-    final started = _state.startedAt;
-    if (rate == null || started == null) return 0;
-    final minutesPerCoin = rate['minutes_per_coin'] ?? 8;
-    final graceSeconds = rate['grace_period_seconds'] ?? 0;
-    final cycleSeconds = minutesPerCoin * 60;
-    if (cycleSeconds <= 0) return 0;
-    final now = _state.pausedAt ?? ServerClock.instance.now();
-    final elapsedSeconds = now.difference(started).inSeconds - graceSeconds;
-    if (elapsedSeconds <= 0) return 0;
-    return (elapsedSeconds % cycleSeconds) / cycleSeconds;
+    final elapsed = _elapsedBillableSeconds();
+    final cycleSeconds = (_economyRate?['minutes_per_coin'] ?? 8) * 60;
+    if (elapsed == null || cycleSeconds <= 0) return 0;
+    return (elapsed % cycleSeconds) / cycleSeconds;
   }
 
   void _onState(DotSquaresBoardState state) {
