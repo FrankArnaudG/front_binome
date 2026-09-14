@@ -31,7 +31,7 @@ class CoinBalanceBadge extends StatelessWidget {
               const CoinIcon(size: 16, fallbackColor: AppColors.primaryDeep),
               const SizedBox(width: 6),
               Text(
-                '${WalletBalanceNotifier.instance.balance}',
+                WalletBalanceNotifier.format(WalletBalanceNotifier.instance.balance),
                 style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textOnBlush),
               ),
             ],

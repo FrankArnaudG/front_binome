@@ -98,7 +98,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // en direct par GameWalletGuard à chaque GameWalletTicked) donne le
   // nombre de pièces consommées depuis le début, sans dépendre d'un champ
   // dédié côté backend.
-  int? _startingBalance;
+  double? _startingBalance;
 
   @override
   void initState() {
@@ -132,7 +132,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   /// Nombre de pièces consommées depuis le début de CETTE partie —
   /// `null` tant que le solde de départ n'est pas encore connu (voir
   /// _captureStartingBalance).
-  int? _coinsConsumed() {
+  double? _coinsConsumed() {
     final starting = _startingBalance;
     if (starting == null) return null;
     final consumed = starting - WalletBalanceNotifier.instance.balance;
@@ -500,7 +500,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                           if (_coinsConsumed() != null) ...[
                             const SizedBox(width: 4),
                             Text(
-                              '-${_coinsConsumed()}',
+                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
                               style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
                             ),
                           ],

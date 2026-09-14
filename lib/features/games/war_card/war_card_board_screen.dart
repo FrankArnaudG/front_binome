@@ -86,7 +86,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   // utilisateur : "comment on sait combien de pièce déjà consommer ?") —
   // la différence avec le solde ACTUEL (WalletBalanceNotifier) donne le
   // nombre de pièces consommées depuis le début.
-  int? _startingBalance;
+  double? _startingBalance;
 
   // Séquence "duel" (voir demande utilisateur) : chaque carte monte
   // IMMÉDIATEMENT au centre dès qu'elle est retournée (voir _tapFlip) et
@@ -135,7 +135,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     if (mounted) setState(() => _startingBalance = WalletBalanceNotifier.instance.balance);
   }
 
-  int? _coinsConsumed() {
+  double? _coinsConsumed() {
     final starting = _startingBalance;
     if (starting == null) return null;
     final consumed = starting - WalletBalanceNotifier.instance.balance;
@@ -559,7 +559,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                               if (_coinsConsumed() != null) ...[
                                 const SizedBox(width: 4),
                                 Text(
-                                  '-${_coinsConsumed()}',
+                                  '-${_coinsConsumed()!.toStringAsFixed(2)}',
                                   style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
                                 ),
                               ],

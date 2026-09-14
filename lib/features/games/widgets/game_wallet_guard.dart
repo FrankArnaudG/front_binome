@@ -70,16 +70,16 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
 
   void _onEvent(RealtimeEvent event) {
     if (event.event == 'GameWalletTicked') {
-      final balance = event.data?['balance'] as int?;
-      if (balance != null) WalletBalanceNotifier.instance.set(balance);
+      final rawBalance = event.data?['balance'];
+      if (rawBalance != null) WalletBalanceNotifier.instance.set(WalletBalanceNotifier.parseBalance(rawBalance));
       return;
     }
     if (event.event == 'GameWalletLow') {
-      final balance = event.data?['balance'] as int?;
-      if (balance != null) WalletBalanceNotifier.instance.set(balance);
+      final rawBalance = event.data?['balance'];
+      if (rawBalance != null) WalletBalanceNotifier.instance.set(WalletBalanceNotifier.parseBalance(rawBalance));
       if (_warningShown || !mounted) return;
       _warningShown = true;
-      final minutes = event.data?['minutes_remaining'] as int? ?? 0;
+      final minutes = WalletBalanceNotifier.parseBalance(event.data?['minutes_remaining']).round();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Il reste environ $minutes minute(s) de jeu — pensez à recharger.'),

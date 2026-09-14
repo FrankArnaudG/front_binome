@@ -91,7 +91,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   // utilisateur : "comment on sait combien de pièce déjà consommer ?") —
   // la différence avec le solde ACTUEL (WalletBalanceNotifier) donne le
   // nombre de pièces consommées depuis le début.
-  int? _startingBalance;
+  double? _startingBalance;
 
   // Défilement synchronisé PAR CHOIX (voir demande utilisateur : jamais
   // forcé sur l'écran du binôme, qui pourrait vouloir regarder ailleurs)
@@ -132,7 +132,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     if (mounted) setState(() => _startingBalance = WalletBalanceNotifier.instance.balance);
   }
 
-  int? _coinsConsumed() {
+  double? _coinsConsumed() {
     final starting = _startingBalance;
     if (starting == null) return null;
     final consumed = starting - WalletBalanceNotifier.instance.balance;
@@ -536,7 +536,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                           if (_coinsConsumed() != null) ...[
                             const SizedBox(width: 4),
                             Text(
-                              '-${_coinsConsumed()}',
+                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
                               style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
                             ),
                           ],
