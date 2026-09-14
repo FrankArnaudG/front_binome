@@ -15,11 +15,13 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../nearby/nearby_comms.dart';
+import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/memory_game_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../game_service.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_transport.dart';
 import 'memory_game_transport_remote.dart';
@@ -85,6 +87,10 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // Solde de pièces du couple épuisé en cours de partie (voir
   // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
   bool _walletDepleted = false;
+  // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
+  // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
+  // chargé une seule fois, uniquement utile en mode à distance.
+  Map<String, int>? _economyRate;
 
   @override
   void initState() {
@@ -100,6 +106,34 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
+    if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _loadEconomyRate() async {
+    try {
+      final rate = await GameService.instance.fetchGameEconomyRate();
+      if (mounted) setState(() => _economyRate = rate);
+    } catch (_) {
+      // Best-effort — l'anneau reste simplement invisible sans ce détail.
+    }
+  }
+
+  /// Fraction (0..1) de progression vers la prochaine pièce déduite —
+  /// purement indicatif (voir doc de CoinBillingRing), calculé à partir du
+  /// même réglage que le serveur (minutes_per_coin/grace_period_seconds)
+  /// mais jamais la source de vérité de la facturation elle-même.
+  double _coinProgress() {
+    final rate = _economyRate;
+    final started = _state.startedAt;
+    if (rate == null || started == null) return 0;
+    final minutesPerCoin = rate['minutes_per_coin'] ?? 8;
+    final graceSeconds = rate['grace_period_seconds'] ?? 0;
+    final cycleSeconds = minutesPerCoin * 60;
+    if (cycleSeconds <= 0) return 0;
+    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final elapsedSeconds = now.difference(started).inSeconds - graceSeconds;
+    if (elapsedSeconds <= 0) return 0;
+    return (elapsedSeconds % cycleSeconds) / cycleSeconds;
   }
 
   void _onState(MemoryGameBoardState state) {
@@ -423,6 +457,10 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                         Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                         const SizedBox(width: 4),
                         Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                        if (commentsBoxId != null) ...[
+                          const SizedBox(width: 8),
+                          CoinBillingRing(theme: theme, progress: _coinProgress()),
+                        ],
                       ],
                     ),
                   ],
