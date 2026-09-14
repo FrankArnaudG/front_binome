@@ -13,6 +13,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
@@ -91,6 +92,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
+  // Solde du couple AU LANCEMENT de cette partie précise (voir demande
+  // utilisateur : "comment on sait combien de pièce déjà consommer ?") —
+  // la différence avec le solde ACTUEL (WalletBalanceNotifier, mis à jour
+  // en direct par GameWalletGuard à chaque GameWalletTicked) donne le
+  // nombre de pièces consommées depuis le début, sans dépendre d'un champ
+  // dédié côté backend.
+  int? _startingBalance;
 
   @override
   void initState() {
@@ -106,7 +114,29 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
-    if (_commentsBoxId != null) _loadEconomyRate();
+    if (_commentsBoxId != null) {
+      _loadEconomyRate();
+      _captureStartingBalance();
+    }
+  }
+
+  Future<void> _captureStartingBalance() async {
+    // Rafraîchit depuis le serveur plutôt que de faire confiance à une
+    // valeur en cache potentiellement périmée (voir doc de classe de
+    // WalletBalanceNotifier : "un solde de pièces n'a pas le droit d'être
+    // périmé silencieusement").
+    await WalletBalanceNotifier.instance.refresh();
+    if (mounted) setState(() => _startingBalance = WalletBalanceNotifier.instance.balance);
+  }
+
+  /// Nombre de pièces consommées depuis le début de CETTE partie —
+  /// `null` tant que le solde de départ n'est pas encore connu (voir
+  /// _captureStartingBalance).
+  int? _coinsConsumed() {
+    final starting = _startingBalance;
+    if (starting == null) return null;
+    final consumed = starting - WalletBalanceNotifier.instance.balance;
+    return consumed < 0 ? 0 : consumed;
   }
 
   Future<void> _loadEconomyRate() async {
@@ -467,6 +497,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                         if (commentsBoxId != null) ...[
                           const SizedBox(width: 8),
                           CoinBillingRing(theme: theme, progress: _coinProgress()),
+                          if (_coinsConsumed() != null) ...[
+                            const SizedBox(width: 4),
+                            Text(
+                              '-${_coinsConsumed()}',
+                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                            ),
+                          ],
                         ],
                       ],
                     ),

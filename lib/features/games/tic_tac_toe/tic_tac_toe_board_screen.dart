@@ -13,6 +13,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
@@ -88,6 +89,11 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
+  // Solde du couple AU LANCEMENT de cette partie précise (voir demande
+  // utilisateur : "comment on sait combien de pièce déjà consommer ?") —
+  // la différence avec le solde ACTUEL (WalletBalanceNotifier) donne le
+  // nombre de pièces consommées depuis le début.
+  int? _startingBalance;
   int? _selectedPosition;
   // Non-null pendant la fenêtre de surbrillance qui suit un alignement —
   // remplace TEMPORAIREMENT l'affichage de `_state.board` (déjà dispersé)
@@ -110,7 +116,22 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
-    if (_commentsBoxId != null) _loadEconomyRate();
+    if (_commentsBoxId != null) {
+      _loadEconomyRate();
+      _captureStartingBalance();
+    }
+  }
+
+  Future<void> _captureStartingBalance() async {
+    await WalletBalanceNotifier.instance.refresh();
+    if (mounted) setState(() => _startingBalance = WalletBalanceNotifier.instance.balance);
+  }
+
+  int? _coinsConsumed() {
+    final starting = _startingBalance;
+    if (starting == null) return null;
+    final consumed = starting - WalletBalanceNotifier.instance.balance;
+    return consumed < 0 ? 0 : consumed;
   }
 
   Future<void> _loadEconomyRate() async {
@@ -486,6 +507,13 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                         if (commentsBoxId != null) ...[
                           const SizedBox(width: 8),
                           CoinBillingRing(theme: theme, progress: _coinProgress()),
+                          if (_coinsConsumed() != null) ...[
+                            const SizedBox(width: 4),
+                            Text(
+                              '-${_coinsConsumed()}',
+                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                            ),
+                          ],
                         ],
                       ],
                     ),
