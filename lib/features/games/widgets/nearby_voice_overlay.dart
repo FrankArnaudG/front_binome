@@ -41,6 +41,20 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
     });
   }
 
+  @override
+  void didUpdateWidget(NearbyVoiceOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Coupe micro/caméra dès la mise en pause (voir demande utilisateur :
+    // "couper tout les procecusse lour comme l'audio, la video" à la
+    // pause) — même principe que VoiceCallOverlay.forceEnded, mais ici
+    // directement sur `paused` : pas de connexion à "raccrocher" comme en
+    // WebRTC, juste à arrêter la capture locale.
+    if (widget.paused && !oldWidget.paused) {
+      if (_talking) unawaited(_onTalkStop());
+      if (_cameraOn) unawaited(_toggleCamera());
+    }
+  }
+
   Future<void> _onTalkStart() async {
     if (widget.paused || _starting || _talking) return;
     final comms = widget.comms;
@@ -63,6 +77,10 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
   Future<void> _toggleCamera() async {
     final comms = widget.comms;
     if (comms == null || _togglingCamera) return;
+    // Autorise toujours à ÉTEINDRE (y compris pendant la pause, voir
+    // didUpdateWidget), mais jamais à ALLUMER tant que c'est en pause —
+    // même garde-fou que le micro (voir widget.paused ci-dessous).
+    if (widget.paused && !_cameraOn) return;
     setState(() => _togglingCamera = true);
     if (_cameraOn) {
       await comms.stopVideo();
@@ -136,9 +154,9 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: _cameraOn
-                        ? Colors.greenAccent.shade400.withValues(alpha: 0.9)
-                        : Colors.black.withValues(alpha: 0.55),
+                    color: widget.paused
+                        ? Colors.grey.withValues(alpha: 0.5)
+                        : (_cameraOn ? Colors.greenAccent.shade400.withValues(alpha: 0.9) : Colors.black.withValues(alpha: 0.55)),
                     shape: BoxShape.circle,
                   ),
                   child: _togglingCamera

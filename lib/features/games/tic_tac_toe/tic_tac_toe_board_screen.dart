@@ -625,7 +625,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
             partnerUserId: _partnerUserId,
             enabled: true,
             paused: _state.isPaused,
-            forceEnded: _walletDepleted,
+            forceEnded: _walletDepleted || _state.isPaused,
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),

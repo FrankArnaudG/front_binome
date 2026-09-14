@@ -559,7 +559,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
               partnerUserId: partnerId,
               enabled: true,
               paused: _state.isPaused,
-              forceEnded: _walletDepleted,
+              forceEnded: _walletDepleted || _state.isPaused,
             )
           else if (widget.nearbyComms != null)
             NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),

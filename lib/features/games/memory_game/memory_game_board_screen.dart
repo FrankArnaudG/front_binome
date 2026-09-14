@@ -622,7 +622,11 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
             partnerUserId: _partnerUserId,
             enabled: true,
             paused: _state.isPaused,
-            forceEnded: _walletDepleted,
+            // Coupe l'appel en cours dès la mise en pause (voir demande
+            // utilisateur : "couper tout les procecusse lour comme
+            // l'audio, la video" à la pause), même mécanisme que pour un
+            // solde épuisé.
+            forceEnded: _walletDepleted || _state.isPaused,
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
