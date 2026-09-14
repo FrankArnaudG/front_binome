@@ -319,7 +319,11 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     final started = _state.startedAt;
     if (started == null) return '0:00';
     final now = _state.pausedAt ?? ServerClock.instance.now();
-    final seconds = now.difference(started).inSeconds.clamp(0, 1 << 31);
+    // Le chrono attend la même période de grâce que l'anneau de pièce
+    // (voir CoinBillingRing/demande utilisateur) — reste à 0:00 tant que
+    // la grâce n'est pas écoulée, nul en dehors du mode à distance.
+    final graceSeconds = _economyRate?['grace_period_seconds'] ?? 0;
+    final seconds = (now.difference(started).inSeconds - graceSeconds).clamp(0, 1 << 31);
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;
     return '$minutes:${rest.toString().padLeft(2, '0')}';

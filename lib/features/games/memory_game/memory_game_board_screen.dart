@@ -271,12 +271,19 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     // pausedAt) — sinon le chrono continuerait de tourner à l'écran pendant
     // la pause, alors que startedAt n'est décalé qu'à la reprise.
     final now = _state.pausedAt ?? ServerClock.instance.now();
+    // Le chrono attend la même période de grâce que l'anneau de pièce
+    // (voir CoinBillingRing/demande utilisateur : "les 10 secondes
+    // doivent représenter le temps que doit patienter le chrono avant de
+    // se mettre en marche officiellement") — reste à 0:00 tant que la
+    // grâce n'est pas écoulée, nul en dehors du mode à distance
+    // (_economyRate jamais chargé ailleurs).
+    final graceSeconds = _economyRate?['grace_period_seconds'] ?? 0;
     // max(0, ...) : si l'horloge du téléphone est en retard sur celle du
     // serveur (courant sur un appareil de test dont la date n'est pas
     // synchronisée), la différence peut devenir négative — un chrono
     // négatif n'a aucun sens à l'écran (voir demande utilisateur, capture
     // "-27:59").
-    final seconds = now.difference(started).inSeconds.clamp(0, 1 << 31);
+    final seconds = (now.difference(started).inSeconds - graceSeconds).clamp(0, 1 << 31);
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;
     return '$minutes:${rest.toString().padLeft(2, '0')}';
