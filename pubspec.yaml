@@ -72,6 +72,15 @@ dependencies:
   # bloque explicitement l'affichage en iframe/WebView, voir ShopScreen/
   # SubscriptionScreen._openPurchase).
   url_launcher: ^6.3.1
+  # Voix en direct en mode présentiel connecté (Nearby) — capture micro brute
+  # (PCM16) envoyée directement sur le canal Bluetooth/Wifi Direct du jeu
+  # (voir NearbyComms), jamais via WebRTC/serveur (contrairement au mode à
+  # distance, voir VoiceCallService) — aucune connexion internet requise.
+  record: ^6.2.1
+  # Lecture temps réel du PCM16 reçu du binôme via NearbyComms (voir
+  # ci-dessus) — just_audio (déjà utilisé ailleurs) ne convient pas à du
+  # flux PCM brut en direct.
+  flutter_pcm_sound: ^3.3.3
   # "Notre distance" — position PONCTUELLE (jamais de suivi continu, voir
   # demande utilisateur), un seul relevé GPS à la demande.
   geolocator: ^13.0.2

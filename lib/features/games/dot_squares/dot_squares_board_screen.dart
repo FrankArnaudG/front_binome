@@ -20,6 +20,7 @@ import '../widgets/dot_squares_match_scoreboard.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_wallet_guard.dart';
+import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'dot_squares_engine.dart';
 import 'dot_squares_transport.dart';
@@ -634,7 +635,9 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
             enabled: true,
             paused: _state.isPaused,
             forceEnded: _walletDepleted,
-          ),
+          )
+        else if (widget.nearbyComms != null)
+          NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'dot_squares',

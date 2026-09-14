@@ -18,6 +18,7 @@ import '../nearby/nearby_comms.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/memory_game_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
+import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_transport.dart';
@@ -577,7 +578,9 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
             enabled: true,
             paused: _state.isPaused,
             forceEnded: _walletDepleted,
-          ),
+          )
+        else if (widget.nearbyComms != null)
+          NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'memory_game',

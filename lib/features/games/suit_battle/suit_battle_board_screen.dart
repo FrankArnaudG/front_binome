@@ -18,6 +18,7 @@ import '../nearby/nearby_comms.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_wallet_guard.dart';
+import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import 'suit_battle_engine.dart';
 import 'suit_battle_transport.dart';
@@ -517,7 +518,9 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
               enabled: true,
               paused: _state.isPaused,
               forceEnded: _walletDepleted,
-            ),
+            )
+          else if (widget.nearbyComms != null)
+            NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
           GameWalletGuard(
             boxId: commentsBoxId,
             sessionType: 'suit_battle',

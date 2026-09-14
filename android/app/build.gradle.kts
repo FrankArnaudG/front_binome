@@ -30,7 +30,12 @@ android {
         applicationId = "com.binome.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Forcé à 23 (au lieu de flutter.minSdkVersion, qui vaut 21) — le
+        // plugin `record` (voir NearbyComms : voix en direct en présentiel
+        // connecté, capture micro brute PCM16) exige Android 6.0 minimum ;
+        // part de marché Android 5.0/5.1 aujourd'hui négligeable (décision
+        // utilisateur validée).
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
