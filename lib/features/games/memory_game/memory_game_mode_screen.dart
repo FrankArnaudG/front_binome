@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
@@ -10,10 +11,13 @@ import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
 import 'memory_game_difficulty_screen.dart';
 import 'memory_game_nearby_connect_screen.dart';
+
+const _kMemoryGameGuideKey = 'memory_game';
 
 enum MemoryGameMode { remote, nearby, local }
 
@@ -37,10 +41,30 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
 
   Map<String, int>? _economyRate;
 
+  // Guide pas-à-pas (voir demande utilisateur : "quelqu'un qui ne connaît
+  // pas le jeu... le guider à partir du mode qu'il choisira") — une bulle
+  // par tuile, affichée automatiquement la toute première fois, rejouable
+  // ensuite via l'icône "?" de l'AppBar (voir _startGuide).
+  final _remoteTileKey = GlobalKey();
+  final _nearbyTileKey = GlobalKey();
+  final _localTileKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _loadEconomyRate();
+    _maybeStartGuideAutomatically();
+  }
+
+  Future<void> _maybeStartGuideAutomatically() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _kMemoryGameGuideKey);
+    if (seen || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startGuide());
+  }
+
+  void _startGuide() {
+    ShowcaseView.get().startShowCase([_remoteTileKey, _nearbyTileKey, _localTileKey]);
+    GameGuideStorage.instance.markSeen(widget.user.id, _kMemoryGameGuideKey);
   }
 
   Future<void> _loadEconomyRate() async {
@@ -103,6 +127,13 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
           game.nameFor(localeCode),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline_rounded),
+            tooltip: 'Revoir le guide',
+            onPressed: _startGuide,
+          ),
+        ],
       ),
       body: ThemedBackground(
         child: SafeArea(
@@ -119,44 +150,64 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
                 style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
               ),
               const SizedBox(height: 20),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.wifi_rounded,
-                title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
-                infoText: _remoteInfoText,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => MemoryGameDifficultyScreen(game: game, user: user, mode: MemoryGameMode.remote),
+              Showcase(
+                key: _remoteTileKey,
+                title: 'Mode à distance',
+                description:
+                    "Joue en temps réel avec ton binôme, où qu'il ou elle soit. Vous pouvez aussi vous parler pendant la partie.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.wifi_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_remote_title'),
+                  subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                  infoText: _remoteInfoText,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => MemoryGameDifficultyScreen(game: game, user: user, mode: MemoryGameMode.remote),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(height: 14),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.bluetooth_rounded,
-                title: LocaleScope.t(context, 'memory_mode_nearby_title'),
-                subtitle: _nearbySupported
-                    ? LocaleScope.t(context, 'memory_mode_nearby_subtitle')
-                    : LocaleScope.t(context, 'memory_mode_nearby_unsupported'),
-                locked: !_nearbySupported,
-                infoText: _nearbyInfoText,
-                onTap: _nearbySupported
-                    ? () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => MemoryGameNearbyConnectScreen(game: game, user: user)),
-                        )
-                    : null,
+              Showcase(
+                key: _nearbyTileKey,
+                title: 'Mode présentiel connecté',
+                description:
+                    "Vous êtes ensemble, sans internet. Les deux téléphones se connectent directement en Bluetooth ou Wifi.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.bluetooth_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_nearby_title'),
+                  subtitle: _nearbySupported
+                      ? LocaleScope.t(context, 'memory_mode_nearby_subtitle')
+                      : LocaleScope.t(context, 'memory_mode_nearby_unsupported'),
+                  locked: !_nearbySupported,
+                  infoText: _nearbyInfoText,
+                  onTap: _nearbySupported
+                      ? () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => MemoryGameNearbyConnectScreen(game: game, user: user)),
+                          )
+                      : null,
+                ),
               ),
               const SizedBox(height: 14),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.phone_android_rounded,
-                title: LocaleScope.t(context, 'memory_mode_local_title'),
-                subtitle: LocaleScope.t(context, 'memory_mode_local_subtitle'),
-                infoText: _localInfoText,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => MemoryGameDifficultyScreen(game: game, user: user, mode: MemoryGameMode.local),
+              Showcase(
+                key: _localTileKey,
+                title: 'Mode présentiel, un seul téléphone',
+                description: "Vous jouez à tour de rôle sur le même appareil, sans internet.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.phone_android_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_local_title'),
+                  subtitle: LocaleScope.t(context, 'memory_mode_local_subtitle'),
+                  infoText: _localInfoText,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => MemoryGameDifficultyScreen(game: game, user: user, mode: MemoryGameMode.local),
+                    ),
                   ),
                 ),
               ),

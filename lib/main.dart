@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import 'core/app_router.dart';
 import 'core/pin_storage.dart';
@@ -49,6 +50,12 @@ void main() async {
   // : décider instantanément s'il faut proposer le choix, sans attendre le
   // réseau, qui laissait sinon les prix s'afficher un court instant avant.
   await PreferredCurrencyNotifier.instance.loadCached();
+  // Guide pas-à-pas des jeux interactifs (voir GameGuideStorage/demande
+  // utilisateur) — enregistré une seule fois ici, un singleton indépendant
+  // du widget tree (voir ShowcaseView.get()), pour pouvoir enchaîner des
+  // bulles à travers plusieurs écrans poussés (choix du mode → difficulté
+  // → plateau) sans avoir à ré-enregistrer à chaque écran.
+  ShowcaseView.register();
   runApp(const BinomeApp());
 }
 
