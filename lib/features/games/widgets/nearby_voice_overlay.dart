@@ -1,16 +1,19 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../nearby/nearby_comms.dart';
 
-/// Bouton "voix en direct" pour le mode présentiel connecté (voir
-/// NearbyComms) — push-to-talk comme VoiceCallOverlay (maintenir appuyé
-/// pour parler), mais SANS WebRTC ni serveur de signalisation : la voix
-/// transite uniquement par la connexion Bluetooth/Wifi Direct déjà utilisée
-/// par le jeu (voir demande utilisateur). Remplace VoiceCallOverlay pour ce
-/// mode, jamais affiché en même temps (voir *_board_screen.dart : l'un ou
-/// l'autre selon `commentsBoxId`/`nearbyComms`).
+/// Bouton "voix et vidéo en direct" pour le mode présentiel connecté (voir
+/// NearbyComms) — mic push-to-talk et caméra à bascule, même
+/// principe/disposition que VoiceCallOverlay, mais SANS WebRTC ni serveur
+/// de signalisation : voix et vidéo transitent uniquement par la connexion
+/// Bluetooth/Wifi Direct déjà utilisée par le jeu (voir demande
+/// utilisateur). Remplace VoiceCallOverlay pour ce mode, jamais affiché en
+/// même temps (voir *_board_screen.dart : l'un ou l'autre selon
+/// `commentsBoxId`/`nearbyComms`).
 class NearbyVoiceOverlay extends StatefulWidget {
   final NearbyComms? comms;
   final bool enabled;
@@ -25,6 +28,18 @@ class NearbyVoiceOverlay extends StatefulWidget {
 class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
   bool _talking = false;
   bool _starting = false;
+  bool _cameraOn = false;
+  bool _togglingCamera = false;
+  Uint8List? _remoteFrame;
+  StreamSubscription<Uint8List>? _remoteFrameSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _remoteFrameSubscription = widget.comms?.remoteVideoFrames.listen((bytes) {
+      if (mounted) setState(() => _remoteFrame = bytes);
+    });
+  }
 
   Future<void> _onTalkStart() async {
     if (widget.paused || _starting || _talking) return;
@@ -45,9 +60,32 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
     await widget.comms?.stopTalking();
   }
 
+  Future<void> _toggleCamera() async {
+    final comms = widget.comms;
+    if (comms == null || _togglingCamera) return;
+    setState(() => _togglingCamera = true);
+    if (_cameraOn) {
+      await comms.stopVideo();
+      if (!mounted) return;
+      setState(() {
+        _cameraOn = false;
+        _togglingCamera = false;
+      });
+    } else {
+      final ok = await comms.startVideo();
+      if (!mounted) return;
+      setState(() {
+        _cameraOn = ok;
+        _togglingCamera = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _remoteFrameSubscription?.cancel();
     if (_talking) unawaited(widget.comms?.stopTalking());
+    if (_cameraOn) unawaited(widget.comms?.stopVideo());
     super.dispose();
   }
 
@@ -55,29 +93,91 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
   Widget build(BuildContext context) {
     if (!widget.enabled || widget.comms == null) return const SizedBox.shrink();
 
+    final showVideoArea = _cameraOn || _remoteFrame != null;
+
     return Positioned(
       left: 16,
       bottom: 24,
-      child: GestureDetector(
-        onTapDown: (_) => _onTalkStart(),
-        onTapUp: (_) => _onTalkStop(),
-        onTapCancel: _onTalkStop,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: widget.paused
-                ? Colors.grey.withValues(alpha: 0.5)
-                : (_talking ? Colors.redAccent : Colors.black.withValues(alpha: 0.55)),
-            shape: BoxShape.circle,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showVideoArea) ...[
+            _buildVideoPreviews(),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTapDown: (_) => _onTalkStart(),
+                onTapUp: (_) => _onTalkStop(),
+                onTapCancel: _onTalkStop,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: widget.paused
+                        ? Colors.grey.withValues(alpha: 0.5)
+                        : (_talking ? Colors.redAccent : Colors.black.withValues(alpha: 0.55)),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    widget.paused ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: _toggleCamera,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _cameraOn
+                        ? Colors.greenAccent.shade400.withValues(alpha: 0.9)
+                        : Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: _togglingCamera
+                      ? const Padding(
+                          padding: EdgeInsets.all(9),
+                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                        )
+                      : Icon(
+                          _cameraOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                ),
+              ),
+            ],
           ),
-          child: Icon(
-            widget.paused ? Icons.mic_off_rounded : Icons.mic_rounded,
-            color: Colors.white,
-            size: 20,
-          ),
-        ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildVideoPreviews() {
+    final remoteFrame = _remoteFrame;
+    final controller = widget.comms?.cameraController;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (remoteFrame != null) _videoBox(child: Image.memory(remoteFrame, fit: BoxFit.cover, gaplessPlayback: true)),
+        if (remoteFrame != null && _cameraOn) const SizedBox(width: 6),
+        if (_cameraOn && controller != null && controller.value.isInitialized)
+          _videoBox(child: CameraPreview(controller)),
+      ],
+    );
+  }
+
+  Widget _videoBox({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(width: 84, height: 112, color: Colors.black, child: child),
     );
   }
 }

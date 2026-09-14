@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:camera/camera.dart' as cam;
 import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
+import 'package:image/image.dart' as img;
 import 'package:nearby_connections/nearby_connections.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 /// Un message de chat texte échangé en direct entre les deux téléphones en
@@ -18,41 +21,53 @@ class NearbyChatMessage {
   const NearbyChatMessage({required this.text, required this.fromMe});
 }
 
-/// Canal de communication (texte ET voix) multiplexé sur la MÊME connexion
-/// Nearby que celle utilisée par le transport du jeu (voir
+/// Canal de communication (texte, voix ET vidéo) multiplexé sur la MÊME
+/// connexion Nearby que celle utilisée par le transport du jeu (voir
 /// *_transport_nearby.dart de chaque jeu) — chaque message du jeu a déjà un
 /// champ "type" ('init'/'state'/'flip'/...), ce canal ajoute simplement
-/// 'text_message'/'voice_chunk' sans jamais toucher au protocole du jeu
-/// lui-même. [handleIncoming] doit être appelé AVANT
+/// 'text_message'/'voice_chunk'/'video_frame' sans jamais toucher au
+/// protocole du jeu lui-même. [handleIncoming] doit être appelé AVANT
 /// `transport.onPayloadReceived` (voir *_nearby_connect_screen.dart) : il
 /// consomme les messages de ce canal et laisse passer tout le reste
 /// inchangé.
 ///
 /// Voix : PCM16 mono 16kHz brut capturé au micro (voir [startTalking]),
-/// envoyé en petits paquets façon talkie-walkie — contrairement au mode à
-/// distance (voir VoiceCallService), jamais de WebRTC ni de serveur de
-/// signalisation : uniquement le canal Bluetooth/Wifi Direct déjà utilisé
-/// par le jeu (voir demande utilisateur). Encodé en base64 à l'intérieur
-/// du même JSON que les autres messages, pour rester sur un seul protocole
-/// simple plutôt que de mélanger JSON et paquets binaires bruts sur le même
-/// canal (voir *_transport_nearby.dart : un payload non-JSON y ferait
-/// planter le `jsonDecode` du jeu).
+/// envoyé en petits paquets façon talkie-walkie. Vidéo : images JPEG basse
+/// résolution/fréquence capturées caméra (voir [startVideo]) — contrairement
+/// au mode à distance (voir VoiceCallService), jamais de WebRTC ni de
+/// serveur de signalisation : uniquement le canal Bluetooth/Wifi Direct
+/// déjà utilisé par le jeu (voir demande utilisateur). Tout est encodé en
+/// base64 à l'intérieur du même JSON que les autres messages, pour rester
+/// sur un seul protocole simple plutôt que de mélanger JSON et paquets
+/// binaires bruts sur le même canal (voir *_transport_nearby.dart : un
+/// payload non-JSON y ferait planter le `jsonDecode` du jeu).
 class NearbyComms {
   final Nearby nearby;
   final String endpointId;
   final _messagesController = StreamController<NearbyChatMessage>.broadcast();
+  final _remoteVideoFrameController = StreamController<Uint8List>.broadcast();
   final _recorder = AudioRecorder();
   StreamSubscription<Uint8List>? _micSubscription;
   bool _talking = false;
   bool _playbackReady = false;
+  cam.CameraController? _cameraController;
+  bool _sendingVideo = false;
+  bool _encodingFrame = false;
 
   static const _sampleRate = 16000;
+  // Qualité JPEG volontairement basse (voir demande utilisateur : "es-ce
+  // possible sans internet") — priorité à la fluidité/bande passante sur
+  // Bluetooth/Wifi Direct plutôt qu'à la netteté de l'image.
+  static const _jpegQuality = 35;
 
   NearbyComms({required this.nearby, required this.endpointId});
 
   Stream<NearbyChatMessage> get messages => _messagesController.stream;
+  Stream<Uint8List> get remoteVideoFrames => _remoteVideoFrameController.stream;
 
   bool get isTalking => _talking;
+  bool get isSendingVideo => _sendingVideo;
+  cam.CameraController? get cameraController => _cameraController;
 
   void sendText(String text) {
     final trimmed = text.trim();
@@ -117,10 +132,118 @@ class NearbyComms {
     await FlutterPcmSound.feed(PcmArrayInt16.fromList(samples));
   }
 
-  /// Retourne `true` si ce canal a consommé le payload (chat texte ou
-  /// paquet vocal) — l'appelant doit alors s'arrêter là. Retourne `false`
-  /// pour tout le reste (messages du jeu), à transmettre au transport du
-  /// jeu comme avant.
+  /// Démarre la capture caméra (résolution basse, voir
+  /// [cam.ResolutionPreset.low]) — une image sur deux/trois seulement est
+  /// réellement encodée+envoyée (voir [_encodingFrame], sert de
+  /// contre-pression naturelle : si l'encodage JPEG précédent n'est pas
+  /// fini, l'image suivante est simplement sautée plutôt que mise en
+  /// attente). Retourne `false` si la permission caméra est refusée ou
+  /// qu'aucune caméra n'est disponible.
+  Future<bool> startVideo() async {
+    if (_sendingVideo) return true;
+    try {
+      if (!(await Permission.camera.request()).isGranted) return false;
+      final cameras = await cam.availableCameras();
+      if (cameras.isEmpty) return false;
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == cam.CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final controller = cam.CameraController(
+        camera,
+        cam.ResolutionPreset.low,
+        enableAudio: false,
+        imageFormatGroup: cam.ImageFormatGroup.yuv420,
+      );
+      await controller.initialize();
+      _cameraController = controller;
+      _sendingVideo = true;
+      await controller.startImageStream(_onCameraFrame);
+      return true;
+    } catch (_) {
+      _sendingVideo = false;
+      final controller = _cameraController;
+      _cameraController = null;
+      unawaited(controller?.dispose());
+      return false;
+    }
+  }
+
+  Future<void> stopVideo() async {
+    if (!_sendingVideo) return;
+    _sendingVideo = false;
+    final controller = _cameraController;
+    _cameraController = null;
+    try {
+      if (controller != null && controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+      await controller?.dispose();
+    } catch (_) {
+      // Best-effort — la capture est de toute façon marquée arrêtée.
+    }
+  }
+
+  void _onCameraFrame(cam.CameraImage frame) {
+    if (!_sendingVideo || _encodingFrame) return;
+    _encodingFrame = true;
+    unawaited(_encodeAndSendFrame(frame).whenComplete(() => _encodingFrame = false));
+  }
+
+  Future<void> _encodeAndSendFrame(cam.CameraImage frame) async {
+    try {
+      final image = _yuv420ToImage(frame);
+      final jpg = img.encodeJpg(image, quality: _jpegQuality);
+      nearby.sendBytesPayload(
+        endpointId,
+        Uint8List.fromList(utf8.encode(jsonEncode({'type': 'video_frame', 'jpg': base64Encode(jpg)}))),
+      );
+    } catch (_) {
+      // Best-effort : une image ratée n'interrompt pas le flux, la
+      // suivante arrivera au tour d'après.
+    }
+  }
+
+  /// Conversion YUV_420_888 (Android, 3 plans semi-planaires Y/U/V, voir
+  /// demande utilisateur : Nearby Connections est de toute façon
+  /// Android-only dans cette app) vers une image RGB — algorithme standard
+  /// BT.601, aucune dépendance à un encodeur matériel/plateforme.
+  img.Image _yuv420ToImage(cam.CameraImage frame) {
+    final width = frame.width;
+    final height = frame.height;
+    final image = img.Image(width: width, height: height, numChannels: 3);
+
+    final yPlane = frame.planes[0];
+    final uPlane = frame.planes[1];
+    final vPlane = frame.planes[2];
+    final yRowStride = yPlane.bytesPerRow;
+    final uvRowStride = uPlane.bytesPerRow;
+    final uvPixelStride = uPlane.bytesPerPixel ?? 1;
+
+    for (int y = 0; y < height; y++) {
+      final yRow = y * yRowStride;
+      final uvRow = (y >> 1) * uvRowStride;
+      for (int x = 0; x < width; x++) {
+        final uvIndex = uvRow + (x >> 1) * uvPixelStride;
+        final yValue = yPlane.bytes[yRow + x];
+        final uValue = uPlane.bytes[uvIndex];
+        final vValue = vPlane.bytes[uvIndex];
+
+        final r = (yValue + 1.402 * (vValue - 128)).round().clamp(0, 255);
+        final g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).round().clamp(0, 255);
+        final b = (yValue + 1.772 * (uValue - 128)).round().clamp(0, 255);
+
+        image.setPixelRgb(x, y, r, g, b);
+      }
+    }
+
+    return image;
+  }
+
+  /// Retourne `true` si ce canal a consommé le payload (chat texte, paquet
+  /// vocal ou image vidéo) — l'appelant doit alors s'arrêter là. Retourne
+  /// `false` pour tout le reste (messages du jeu), à transmettre au
+  /// transport du jeu comme avant.
   bool handleIncoming(Payload payload) {
     if (payload.type != PayloadType.BYTES || payload.bytes == null) return false;
     Map<String, dynamic> message;
@@ -146,6 +269,16 @@ class NearbyComms {
           }
         }
         return true;
+      case 'video_frame':
+        final b64 = message['jpg'] as String?;
+        if (b64 != null) {
+          try {
+            _remoteVideoFrameController.add(base64Decode(b64));
+          } catch (_) {
+            // Image corrompue/incomplète — ignorée, la suivante arrivera.
+          }
+        }
+        return true;
       default:
         return false;
     }
@@ -153,7 +286,9 @@ class NearbyComms {
 
   void dispose() {
     _messagesController.close();
+    _remoteVideoFrameController.close();
     unawaited(stopTalking());
+    unawaited(stopVideo());
     unawaited(_recorder.dispose());
     if (_playbackReady) unawaited(FlutterPcmSound.release());
   }
