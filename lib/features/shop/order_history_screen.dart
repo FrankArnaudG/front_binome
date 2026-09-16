@@ -109,12 +109,12 @@ class _OrderTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  order.coinPack?.name ?? 'Pack de pièces',
+                  order.coinPack?.name ?? 'Pack de Tokens',
                   style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textOnBlush),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${order.coinAmount} pièces • ${order.priceAmount.toStringAsFixed(0)} ${currencySymbol(order.priceCurrency)}',
+                  '${order.coinAmount} Tokens • ${order.priceAmount.toStringAsFixed(0)} ${currencySymbol(order.priceCurrency)}',
                   style: GoogleFonts.nunito(fontSize: 13, color: AppColors.textOnBlushMuted),
                 ),
               ],

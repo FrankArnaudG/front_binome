@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/api_client.dart';
 import '../../../l10n/locale_scope.dart';
@@ -13,6 +14,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
@@ -22,6 +24,8 @@ import 'number_hunt_nearby_connect_screen.dart';
 import 'number_hunt_transport_local.dart';
 
 enum NumberHuntMode { remote, nearby, local }
+
+const _kNumberHuntGuideKey = 'number_hunt';
 
 /// Démarre une partie (à distance ou pass-and-play) et pousse l'écran
 /// correspondant — pas de palier de difficulté à choisir avant (grille
@@ -128,10 +132,28 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
 
   Map<String, int>? _economyRate;
 
+  // Guide pas-à-pas (même principe que MemoryGameModeScreen) — une bulle
+  // par tuile, automatique la première fois, rejouable via le "?".
+  final _remoteTileKey = GlobalKey();
+  final _nearbyTileKey = GlobalKey();
+  final _localTileKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _loadEconomyRate();
+    _maybeStartGuideAutomatically();
+  }
+
+  Future<void> _maybeStartGuideAutomatically() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _kNumberHuntGuideKey);
+    if (seen || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startGuide());
+  }
+
+  void _startGuide() {
+    ShowcaseView.get().startShowCase([_remoteTileKey, _nearbyTileKey, _localTileKey]);
+    GameGuideStorage.instance.markSeen(widget.user.id, _kNumberHuntGuideKey);
   }
 
   Future<void> _loadEconomyRate() async {
@@ -157,8 +179,8 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
         "Jouez en temps réel avec votre binôme, où qu'il ou elle soit dans le monde. Vous pouvez aussi communiquer par message, audio ou vidéo pendant la partie.";
     if (rate == null) return base;
     final minutesPerCoin = rate['minutes_per_coin'] ?? 8;
-    return '$base\n\nCe mode est facturé au temps de jeu : 1 pièce équivaut à $minutesPerCoin minutes, '
-        'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 pièces.';
+    return '$base\n\nCe mode est facturé au temps de jeu : 1 Token équivaut à $minutesPerCoin minutes, '
+        'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 Tokens.';
   }
 
   String get _nearbyInfoText {
@@ -168,7 +190,7 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
     final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
     return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
         "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost pièces une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
+        "Il est facturé $cost Tokens une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
         "TOUS les jeux interactifs de l'application, autant de fois que vous voulez ce jour là, sans être facturé "
         "de nouveau.$trial";
   }
@@ -200,6 +222,9 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
           widget.game.nameFor(localeCode),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
+        actions: [
+          IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
+        ],
       ),
       body: ThemedBackground(
         child: SafeArea(
@@ -216,40 +241,60 @@ class _NumberHuntModeScreenState extends State<NumberHuntModeScreen> {
                 style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
               ),
               const SizedBox(height: 20),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.wifi_rounded,
-                title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
-                infoText: _remoteInfoText,
-                onTap: () => _goToDifficulty(NumberHuntMode.remote),
+              Showcase(
+                key: _remoteTileKey,
+                title: 'Mode à distance',
+                description:
+                    "Joue en temps réel avec ton binôme, où qu'il ou elle soit. Vous pouvez aussi vous parler pendant la partie.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.wifi_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_remote_title'),
+                  subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                  infoText: _remoteInfoText,
+                  onTap: () => _goToDifficulty(NumberHuntMode.remote),
+                ),
               ),
               const SizedBox(height: 14),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.bluetooth_rounded,
-                title: LocaleScope.t(context, 'memory_mode_nearby_title'),
-                subtitle: _nearbySupported
-                    ? LocaleScope.t(context, 'memory_mode_nearby_subtitle')
-                    : LocaleScope.t(context, 'memory_mode_nearby_unsupported'),
-                locked: !_nearbySupported,
-                infoText: _nearbyInfoText,
-                onTap: _nearbySupported
-                    ? () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => NumberHuntNearbyConnectScreen(game: widget.game, user: widget.user),
-                          ),
-                        )
-                    : null,
+              Showcase(
+                key: _nearbyTileKey,
+                title: 'Mode présentiel connecté',
+                description:
+                    "Vous êtes ensemble, sans internet. Les deux téléphones se connectent directement en Bluetooth ou Wifi.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.bluetooth_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_nearby_title'),
+                  subtitle: _nearbySupported
+                      ? LocaleScope.t(context, 'memory_mode_nearby_subtitle')
+                      : LocaleScope.t(context, 'memory_mode_nearby_unsupported'),
+                  locked: !_nearbySupported,
+                  infoText: _nearbyInfoText,
+                  onTap: _nearbySupported
+                      ? () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => NumberHuntNearbyConnectScreen(game: widget.game, user: widget.user),
+                            ),
+                          )
+                      : null,
+                ),
               ),
               const SizedBox(height: 14),
-              _ModeTile(
-                theme: theme,
-                icon: Icons.phone_android_rounded,
-                title: LocaleScope.t(context, 'memory_mode_local_title'),
-                subtitle: LocaleScope.t(context, 'memory_mode_local_subtitle'),
-                infoText: _localInfoText,
-                onTap: () => _goToDifficulty(NumberHuntMode.local),
+              Showcase(
+                key: _localTileKey,
+                title: 'Mode présentiel, un seul téléphone',
+                description: "Vous jouez à tour de rôle sur le même appareil, sans internet.",
+                targetBorderRadius: BorderRadius.circular(20),
+                child: _ModeTile(
+                  theme: theme,
+                  icon: Icons.phone_android_rounded,
+                  title: LocaleScope.t(context, 'memory_mode_local_title'),
+                  subtitle: LocaleScope.t(context, 'memory_mode_local_subtitle'),
+                  infoText: _localInfoText,
+                  onTap: () => _goToDifficulty(NumberHuntMode.local),
+                ),
               ),
             ],
           ),

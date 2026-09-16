@@ -18,7 +18,6 @@ import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/composer_actions.dart';
-import '../../widgets/emoji_compose_bar.dart';
 import '../../widgets/send_status_tick.dart';
 import '../box/couple_profile_screen.dart';
 import '../home/widgets/couple_avatars_badge.dart';
@@ -63,11 +62,12 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   bool _togglingFavorite = false;
   bool _reacting = false;
   bool _reactionPickerOpen = false;
-  bool _messageKeyboardOpen = false;
-  bool _sendingMessage = false;
   bool _sendingHeartbeatReply = false;
   bool _composerActionsOpen = false;
   final _messageComposeController = TextEditingController();
+  // Messages encore en vol (voir _sendMessage) — jamais mêlés à [_replies]
+  // elle-même, seulement pour l'affichage (voir build()).
+  List<_PendingReply> _pendingReplies = [];
   List<Slide>? _packSlides;
   bool _loadingPackSlides = false;
   // Plus récente d'abord (voir RepliesPage/SendController::replies) — plus
@@ -115,9 +115,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       onPresenceChange: _onPresenceChange,
     );
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) => _loadLatestReplies());
-    // Le clavier émoji maison (voir EmojiPickerPanel) écrit directement dans
-    // ce controller — TextField.onChanged ne se déclenche pas pour une
-    // saisie programmatique, d'où cet écouteur pour activer le bouton d'envoi.
+    // Réactive le bouton d'envoi dès que le champ contient du texte (clavier
+    // système classique — voir demande utilisateur : "un clavier classique").
     _messageComposeController.addListener(() => setState(() {}));
     _scrollController.addListener(() {
       if (!_scrollController.hasClients) return;
@@ -265,9 +264,32 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       final newSend = Send.fromJson(sendJson);
       if (newSend.replyToSendId != _send.id) return;
       if (_replies.any((r) => r.id == newSend.id)) return;
-      // En tête : la plus récente vient en premier dans notre ordre de
-      // stockage (voir _buildReplies pour l'ordre d'affichage réel).
-      setState(() => _replies = [newSend, ..._replies]);
+      setState(() {
+        // En tête : la plus récente vient en premier dans notre ordre de
+        // stockage (voir _buildReplies pour l'ordre d'affichage réel).
+        _replies = [newSend, ..._replies];
+        // Si CET écho est la confirmation d'un envoi que NOUS venons de
+        // faire (voir _sendMessage/_pendingReplies), retire tout de suite
+        // sa bulle optimiste plutôt que d'attendre le retour HTTP de
+        // _sendPendingReply — sinon les deux bulles (celle en vol et celle
+        // tout juste confirmée par le serveur) restent visibles ensemble
+        // le temps de cet aller-retour réseau (voir demande utilisateur :
+        // "la bulle dur message se duplique un laps de temps et l'une
+        // disparait", constaté une seconde fois malgré une comparaison de
+        // contenu, sans doute à cause d'une structure de payload temps réel
+        // légèrement différente de la réponse HTTP). On retire la PLUS
+        // ANCIENNE bulle en vol du même type (texte/émoji) plutôt que de
+        // comparer le contenu : les envois d'un même utilisateur arrivent
+        // dans l'ordre, donc la plus ancienne encore en vol correspond
+        // forcément à cet écho-ci. Restreint au même type pour ne jamais
+        // toucher par erreur un envoi en vol d'un tout autre mécanisme
+        // (poème/battement de cœur), qui ne passe pas par _pendingReplies.
+        if (newSend.senderId == widget.user.id &&
+            (newSend.isTextReply || newSend.isEmojiReply) &&
+            _pendingReplies.isNotEmpty) {
+          _pendingReplies = [..._pendingReplies]..removeAt(0);
+        }
+      });
       // Un nouvel échange ne doit ramener en bas QUE si on y était déjà —
       // sinon ça arracherait l'utilisateur à l'historique qu'il est en
       // train de lire plus haut.
@@ -363,7 +385,11 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     });
     try {
       final updated = await ContentService.instance.reactToSend(_send.id, emoji);
-      if (mounted) setState(() => _send = updated);
+      if (mounted) {
+        setState(() => _send = updated.copyWith(
+              reactions: SendReaction.dedupeByUser(updated.reactions),
+            ));
+      }
     } catch (_) {
       // best effort
     } finally {
@@ -376,23 +402,84 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   /// ici puisque c'est nous qui l'envoyons) — à distinguer d'une réaction
   /// (le petit cercle sur la bulle), qui s'accroche à CET envoi sans créer
   /// de nouvelle bulle.
-  Future<void> _sendEmojiMessage() async {
-    final emojis = _messageComposeController.text.trim();
-    if (emojis.isEmpty || _sendingMessage) return;
-    setState(() {
-      _sendingMessage = true;
-      _messageKeyboardOpen = false;
-    });
+  ///
+  /// Envoi optimiste façon WhatsApp/Telegram (même principe que
+  /// _GameCardThreadScreenState._submitMessage/_pending) : la bulle
+  /// apparaît tout de suite avec une horloge, la requête part en arrière-
+  /// plan — voir demande utilisateur : "des que je clique ca passe a mon
+  /// niveau et en arriere plan l'envoi vers le serveur s'effectue. si ca
+  /// reussi ca va et si ca echoue il y aura un petit icone rouge... et si
+  /// l'on clique dessus ca relance la soumission". Gardée à part de
+  /// [_replies] (plutôt que d'y injecter un faux Send) pour ne jamais
+  /// entrer en collision avec l'écho temps réel de SendCreated, qui peut
+  /// ajouter la vraie réponse à _replies avant même que cette requête HTTP
+  /// ne revienne. Voir _sendMessage plus bas.
+  ///
+  /// Horodatage local strictement après tout ce qu'on connaît déjà de ce
+  /// fil — sans ça, une bulle optimistique calée sur DateTime.now() (horloge
+  /// de l'appareil) peut se trier AVANT la dernière bulle confirmée si
+  /// l'horloge serveur (utilisée pour Send.createdAt) est un peu en avance,
+  /// et sauter visiblement de place une fois la vraie réponse reçue (voir
+  /// même correctif déjà en place côté
+  /// _GameCardThreadScreenState._nextPendingTime, constaté en réel là-bas
+  /// aussi, et demande utilisateur ici : "ca se position instantanement...
+  /// et revient rapidement apres a sa place qui est la position la plus bas").
+  DateTime _nextPendingTime() {
+    var latest = DateTime.now();
+    final known = <DateTime>[
+      _send.createdAt,
+      ..._replies.map((r) => r.createdAt),
+      ..._pendingReplies.map((p) => p.send.createdAt),
+    ];
+    for (final t in known) {
+      if (t.isAfter(latest)) latest = t.add(const Duration(milliseconds: 1));
+    }
+    return latest;
+  }
+
+  /// Message libre (texte normal, clavier système) — voir demande
+  /// utilisateur : "on doit pouvoir reagir en ecrivant du texte pas
+  /// seulement des emoji. un clavier classique". Utilise le même point
+  /// d'entrée générique que GameCardThreadScreen (ContentService.
+  /// sendTextReply), qui accepte n'importe quel texte, émojis compris.
+  Future<void> _sendMessage() async {
+    final text = _messageComposeController.text.trim();
+    if (text.isEmpty) return;
+    _messageComposeController.clear();
+    final fakeSend = Send(
+      id: 'local-reply-${DateTime.now().microsecondsSinceEpoch}',
+      boxId: _send.boxId,
+      senderId: widget.user.id,
+      recipientId: _send.senderId == widget.user.id ? _send.recipientId : _send.senderId,
+      sendableType: 'text_reply',
+      replyToSendId: _send.id,
+      coinCost: 0,
+      status: 'sent',
+      createdAt: _nextPendingTime(),
+      textReplyText: text,
+    );
+    final pending = _PendingReply(fakeSend);
+    setState(() => _pendingReplies = [..._pendingReplies, pending]);
+    if (_followLatest) _scrollToBottomSoon();
+    await _sendPendingReply(pending);
+  }
+
+  Future<void> _sendPendingReply(_PendingReply pending) async {
+    setState(() => pending.failed = false);
     try {
-      final reply = await ContentService.instance.sendEmojiReply(_send.id, emojis);
+      final reply = await ContentService.instance.sendTextReply(_send.id, pending.send.textReplyText!);
       if (!mounted) return;
-      _messageComposeController.clear();
-      setState(() => _replies = [reply, ..._replies]);
-      _scrollToBottomSoon();
+      setState(() {
+        _pendingReplies = _pendingReplies.where((p) => p != pending).toList();
+        // Même protection que _sendPending côté GameCardThreadScreen :
+        // l'écho temps réel peut déjà avoir ajouté ce message.
+        if (!_replies.any((r) => r.id == reply.id)) {
+          _replies = [reply, ..._replies];
+        }
+      });
     } catch (_) {
-      // best effort
-    } finally {
-      if (mounted) setState(() => _sendingMessage = false);
+      if (!mounted) return;
+      setState(() => pending.failed = true);
     }
   }
 
@@ -737,6 +824,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     if (send.isGift) return send.gift?.name ?? locale.t('send_fallback_gift');
     if (send.isHeartbeat) return send.heartbeatMessageFor(localeCode) ?? locale.t('heartbeat_default_message');
     if (send.isEmojiReply) return send.emojiReplyText ?? '💬';
+    if (send.isTextReply) return send.textReplyText ?? '';
     // "À nous deux" (voir GameBoxSessionScreen) — sans cette branche, une
     // carte-question ouverte depuis le Carnet de bord retombait dans le
     // texte vide par défaut ci-dessous (bulle vide constatée en réel,
@@ -984,18 +1072,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     final isMine = widget.isMine;
     final t = LocaleScope.of(context).t;
 
-    return PopScope(
-      // Le clavier émoji maison n'est pas un vrai clavier système : le
-      // bouton/geste retour du téléphone ne le referme pas tout seul. On
-      // intercepte donc le premier retour pour le fermer, et seul un
-      // second retour (clavier déjà fermé) quitte réellement l'écran.
-      canPop: !_messageKeyboardOpen,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _messageKeyboardOpen) {
-          setState(() => _messageKeyboardOpen = false);
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: theme.background,
       // Fond immersif du thème choisi (étoilé, montagnes...) plutôt qu'un
       // fond uni : rouvrir un envoi doit ressembler à retrouver une "photo"
@@ -1104,11 +1181,19 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                 child: Builder(
                   builder: (context) {
                     final repliesOldestFirst = _replies.reversed.toList();
+                    // Fusionnés et triés par date : un message émoji encore
+                    // en vol (voir _pendingReplies) doit s'insérer à sa
+                    // vraie place, même si une réponse du/de la binôme est
+                    // arrivée en temps réel entretemps.
+                    final combined = <_ThreadDisplayItem>[
+                      ...repliesOldestFirst.map((r) => _ThreadDisplayItem(reply: r, time: r.createdAt)),
+                      ..._pendingReplies.map((p) => _ThreadDisplayItem(pending: p, time: p.send.createdAt)),
+                    ]..sort((a, b) => a.time.compareTo(b.time));
                     final loadingOffset = _loadingMoreReplies ? 1 : 0;
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      itemCount: 1 + loadingOffset + repliesOldestFirst.length,
+                      itemCount: 1 + loadingOffset + combined.length,
                       itemBuilder: (context, index) {
                         if (index == 0) return _buildHeader(theme, isMine);
                         if (_loadingMoreReplies && index == 1) {
@@ -1117,7 +1202,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                             child: Center(child: CircularProgressIndicator()),
                           );
                         }
-                        final reply = repliesOldestFirst[index - 1 - loadingOffset];
+                        final item = combined[index - 1 - loadingOffset];
+                        final pending = item.pending;
+                        final reply = item.reply ?? pending!.send;
                         // Fil de discussion : chaque réponse envoyée depuis
                         // la barre du bas (ou "Répondre avec un poème")
                         // apparaît ici comme une bulle de messagerie —
@@ -1132,7 +1219,13 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                             fallbackText: _mainText(reply),
                             time: _formattedDate(reply.createdAt),
                             theme: theme,
-                            onTap: () => _openReply(reply),
+                            tickOverride: pending == null
+                                ? null
+                                : (pending.failed ? SendTick.failed : SendTick.sending),
+                            onRetry: pending != null && pending.failed
+                                ? () => _sendPendingReply(pending)
+                                : null,
+                            onTap: pending != null ? () {} : () => _openReply(reply),
                           ),
                         );
                       },
@@ -1200,17 +1293,63 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: EmojiComposeBar(
-                            theme: theme,
-                            controller: _messageComposeController,
-                            pickerOpen: _messageKeyboardOpen,
-                            sending: _sendingMessage,
-                            placeholder: t('reaction_compose_placeholder'),
-                            onTapField: () => setState(() => _messageKeyboardOpen = true),
-                            onToggleEmoji: () => setState(
-                              () => _messageKeyboardOpen = !_messageKeyboardOpen,
+                          child: Container(
+                            constraints: const BoxConstraints(minHeight: 48),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.surface,
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(color: theme.primary.withValues(alpha: 0.4)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                            onSend: _sendEmojiMessage,
+                            // Clavier système classique (voir demande
+                            // utilisateur : "on doit pouvoir reagir en
+                            // ecrivant du texte pas seulement des emoji. un
+                            // clavier classique") — remplace l'ancien
+                            // clavier maison émoji-only (EmojiComposeBar/
+                            // EmojiPickerPanel), qui ne permettait aucune
+                            // saisie de texte libre.
+                            child: TextField(
+                              controller: _messageComposeController,
+                              minLines: 1,
+                              maxLines: 4,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: GoogleFonts.nunito(color: theme.textOnBackground),
+                              cursorColor: theme.primary,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: t('reaction_compose_placeholder'),
+                                hintStyle: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Material(
+                          color: _messageComposeController.text.trim().isEmpty
+                              ? theme.surface
+                              : theme.primary,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: _messageComposeController.text.trim().isEmpty ? null : _sendMessage,
+                            child: Padding(
+                              padding: const EdgeInsets.all(13),
+                              child: Icon(
+                                Icons.send_rounded,
+                                size: 20,
+                                color: _messageComposeController.text.trim().isEmpty
+                                    ? theme.textOnBackgroundMuted
+                                    : Colors.white,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -1218,17 +1357,10 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                   ],
                 ),
               ),
-              if (_messageKeyboardOpen)
-                EmojiPickerPanel(
-                  theme: theme,
-                  controller: _messageComposeController,
-                  onClose: () => setState(() => _messageKeyboardOpen = false),
-                ),
             ],
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1552,6 +1684,24 @@ class _ReactionBar extends StatelessWidget {
 /// l'avons envoyée, à gauche si c'est le/la partenaire, comme une vraie
 /// messagerie. Chaque réponse (poème ou message émoji) a la sienne ; un tap
 /// ouvre cette réponse en plein écran (pour y réagir/répondre à son tour).
+/// Réponse encore en vol (voir _sendMessage) — [failed] bascule sans
+/// reconstruire tout l'objet, comme _PendingText côté GameCardThreadScreen.
+class _PendingReply {
+  final Send send;
+  bool failed = false;
+  _PendingReply(this.send);
+}
+
+/// Élément affichable du fil : soit une réponse confirmée, soit un envoi
+/// encore en vol — fusionnés et triés par date (voir leur usage dans
+/// _SlideDetailScreenState.build).
+class _ThreadDisplayItem {
+  final Send? reply;
+  final _PendingReply? pending;
+  final DateTime time;
+  _ThreadDisplayItem({this.reply, this.pending, required this.time});
+}
+
 class _ThreadReplyBubble extends StatelessWidget {
   final Send reply;
   final bool isMine;
@@ -1559,6 +1709,11 @@ class _ThreadReplyBubble extends StatelessWidget {
   final String time;
   final ThemePalette theme;
   final VoidCallback onTap;
+  // Envoi encore en vol/échoué (voir _PendingReply) — remplace le
+  // statut déduit de reply.status, qui reste 'sent' par défaut sur le faux
+  // Send local tant que rien n'est confirmé côté serveur.
+  final SendTick? tickOverride;
+  final VoidCallback? onRetry;
 
   const _ThreadReplyBubble({
     required this.reply,
@@ -1567,6 +1722,8 @@ class _ThreadReplyBubble extends StatelessWidget {
     required this.time,
     required this.theme,
     required this.onTap,
+    this.tickOverride,
+    this.onRetry,
   });
 
   @override
@@ -1604,7 +1761,7 @@ class _ThreadReplyBubble extends StatelessWidget {
           Text(time, style: GoogleFonts.nunito(fontSize: 9, color: color)),
           if (isMine) ...[
             const SizedBox(width: 4),
-            SendTickIcon(tick: sendTickFor(reply), color: color),
+            SendTickIcon(tick: tickOverride ?? sendTickFor(reply), color: color, onRetry: onRetry),
           ],
         ],
       );

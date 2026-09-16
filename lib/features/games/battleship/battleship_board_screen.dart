@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -12,18 +13,38 @@ import '../../../models/game.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/battleship_match_scoreboard.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'battleship_transport.dart';
 import 'battleship_transport_local.dart';
 import 'battleship_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général) — une bulle
+/// sur chacune des deux grilles (celle où l'on tire, celle de sa propre
+/// flotte), proportionné à ce jeu (voir demande utilisateur).
+enum _BattleshipGuideStep {
+  turn,
+  fireTap,
+  fireResult,
+  myGrid,
+  coins,
+  pause,
+  chat,
+  micJoin,
+  micReady,
+  cameraReady,
+}
 
 const _kShipColor = Color(0xFF2F6FED);
 const _kHitColor = Color(0xFFE5484D);
@@ -86,11 +107,35 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
 
   bool get _isLocalPassAndPlay => widget.transport is LocalBattleshipTransport;
 
+  // Guide pas-à-pas (voir doc de classe de _BattleshipGuideStep et
+  // demande utilisateur : "prends le même soin pour les autres jeux").
+  final _turnGuideKey = GlobalKey();
+  final _opponentGridGuideKey = GlobalKey();
+  final _myGridGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'battleship_board';
+  _BattleshipGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo "tire sur une case" du guide (voir demande utilisateur : "guider
+  // le user vers quelque action pour qu'il comprenne le mécanisme") — une
+  // VRAIE case jamais encore tirée (voir _pickGuideFireCell), marquée
+  // localement comme touchée au tap (voir _onGuideFireTap), jamais
+  // widget.transport.fire().
+  int? _guideFireCell;
+  bool? _guideFireHit;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -99,6 +144,158 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_BattleshipGuideStep.turn);
+  }
+
+  /// Indice de la première case RÉELLE jamais encore tirée sur la grille
+  /// de l'adversaire — `null` si toutes les cases ont déjà été tirées.
+  int? _pickGuideFireCell() {
+    final tried = {for (final s in _state.myShots) s.cell};
+    for (var cell = 0; cell < _state.gridSize * _state.gridSize; cell++) {
+      if (!tried.contains(cell)) return cell;
+    }
+    return null;
+  }
+
+  void _startGuideStep(_BattleshipGuideStep step) {
+    if (!mounted) return;
+    if (step == _BattleshipGuideStep.fireTap) {
+      _guideFireHit = null;
+      _guideFireCell = _pickGuideFireCell();
+      if (_guideFireCell == null) {
+        _startGuideStep(_BattleshipGuideStep.myGrid);
+        return;
+      }
+    }
+    setState(() {
+      _guideStep = step;
+      if (step == _BattleshipGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  /// Tap RÉEL sur la case désignée par le guide (voir
+  /// _OpponentGrid.onGuideTap) — simule un tir réussi en local, jamais
+  /// widget.transport.fire().
+  void _onGuideFireTap() {
+    setState(() => _guideFireHit = true);
+    _startGuideStep(_BattleshipGuideStep.fireResult);
+  }
+
+  GlobalKey _guideKeyFor(_BattleshipGuideStep step) {
+    switch (step) {
+      case _BattleshipGuideStep.turn:
+        return _turnGuideKey;
+      case _BattleshipGuideStep.fireTap:
+      case _BattleshipGuideStep.fireResult:
+        return _opponentGridGuideKey;
+      case _BattleshipGuideStep.myGrid:
+        return _myGridGuideKey;
+      case _BattleshipGuideStep.coins:
+        return _coinsGuideKey;
+      case _BattleshipGuideStep.pause:
+        return _pauseGuideKey;
+      case _BattleshipGuideStep.chat:
+        return _chatGuideKey;
+      case _BattleshipGuideStep.micJoin:
+      case _BattleshipGuideStep.micReady:
+        return _micGuideKey;
+      case _BattleshipGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _BattleshipGuideStep.turn:
+        _startGuideStep(_BattleshipGuideStep.fireTap);
+        break;
+      case _BattleshipGuideStep.fireTap:
+        // N'avance PAS ici (gestes de cible désactivés) — seul un vrai
+        // tap sur la case désignée fait avancer (voir _onGuideFireTap).
+        break;
+      case _BattleshipGuideStep.fireResult:
+        setState(() {
+          _guideFireCell = null;
+          _guideFireHit = null;
+        });
+        _startGuideStep(_BattleshipGuideStep.myGrid);
+        break;
+      case _BattleshipGuideStep.myGrid:
+        _startGuideStep(_BattleshipGuideStep.coins);
+        break;
+      case _BattleshipGuideStep.coins:
+        _startGuideStep(_BattleshipGuideStep.pause);
+        break;
+      case _BattleshipGuideStep.pause:
+        _startGuideStep(_BattleshipGuideStep.chat);
+        break;
+      case _BattleshipGuideStep.chat:
+        _startGuideStep(_BattleshipGuideStep.micJoin);
+        break;
+      case _BattleshipGuideStep.micJoin:
+        _startGuideStep(_BattleshipGuideStep.micReady);
+        break;
+      case _BattleshipGuideStep.micReady:
+        _startGuideStep(_BattleshipGuideStep.cameraReady);
+        break;
+      case _BattleshipGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guideFireCell = null;
+      _guideFireHit = null;
+    });
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _BattleshipGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _BattleshipGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _BattleshipGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -150,6 +347,8 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané".
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -249,6 +448,8 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     widget.transport.dispose();
     widget.nearbyComms?.dispose();
@@ -275,6 +476,8 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -329,6 +532,8 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -357,23 +562,30 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           if (!_state.finished)
             IconButton(
               icon: const Icon(Icons.flag_outlined),
@@ -391,6 +603,8 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
+          if (!_state.finished)
+            IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
       body: ThemedBackground(
@@ -404,34 +618,48 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          _state.finished
-                              ? LocaleScope.t(context, 'game_board_finished_label')
-                              : (_state.isMyTurn
-                                  ? LocaleScope.t(context, 'memory_board_your_turn')
-                                  : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                      'name': widget.playerNames[_state.currentTurnUserId] ??
-                                          LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                    })),
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 15, color: theme.primary),
+                        Showcase(
+                          key: _turnGuideKey,
+                          title: 'À qui de jouer ?',
+                          description: 'Ce texte indique à qui c\'est le tour de tirer.',
+                          targetBorderRadius: BorderRadius.circular(8),
+                          child: Text(
+                            _state.finished
+                                ? LocaleScope.t(context, 'game_board_finished_label')
+                                : (_state.isMyTurn
+                                    ? LocaleScope.t(context, 'memory_board_your_turn')
+                                    : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                        'name': widget.playerNames[_state.currentTurnUserId] ??
+                                            LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                      })),
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 15, color: theme.primary),
+                          ),
                         ),
-                        Row(
-                          children: [
-                            Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                            const SizedBox(width: 4),
-                            Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                            if (commentsBoxId != null) ...[
-                              const SizedBox(width: 8),
-                              CoinBillingRing(theme: theme, progress: _coinProgress()),
-                              if (_coinsConsumed() != null) ...[
-                                const SizedBox(width: 4),
-                                Text(
-                                  '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                                  style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                                ),
+                        Showcase(
+                          key: _coinsGuideKey,
+                          title: 'Temps et Tokens',
+                          description: commentsBoxId != null
+                              ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                              : 'Le temps écoulé depuis le début de la partie.',
+                          targetBorderRadius: BorderRadius.circular(8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                              const SizedBox(width: 4),
+                              Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                              if (commentsBoxId != null) ...[
+                                const SizedBox(width: 8),
+                                CoinBillingRing(theme: theme, progress: _coinProgress()),
+                                if (_coinsConsumed() != null) ...[
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                    style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                                  ),
+                                ],
                               ],
                             ],
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -446,14 +674,30 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                             style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
                           ),
                           const SizedBox(height: 6),
-                          _OpponentGrid(state: _state, onTapCell: _onTapOpponentCell),
+                          _OpponentGrid(
+                            state: _state,
+                            onTapCell: _onTapOpponentCell,
+                            guideCell: _guideFireCell,
+                            guideHit: _guideFireHit,
+                            guideKey: (_guideStep == _BattleshipGuideStep.fireTap ||
+                                    _guideStep == _BattleshipGuideStep.fireResult)
+                                ? _opponentGridGuideKey
+                                : null,
+                            onGuideTap: _guideStep == _BattleshipGuideStep.fireTap ? _onGuideFireTap : null,
+                          ),
                           const SizedBox(height: 20),
                           Text(
                             LocaleScope.t(context, 'battleship_my_grid_label'),
                             style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
                           ),
                           const SizedBox(height: 6),
-                          _MyGrid(state: _state),
+                          Showcase(
+                            key: _myGridGuideKey,
+                            title: 'Ta flotte',
+                            description: "Ici, tu vois tes propres navires et les tirs que ton binôme t'a déjà portés — cette grille n'est pas tapable, elle est juste là pour suivre la partie.",
+                            targetBorderRadius: BorderRadius.circular(8),
+                            child: _MyGrid(state: _state),
+                          ),
                           const SizedBox(height: 16),
                         ],
                       ),
@@ -461,7 +705,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                   ),
                 ],
               ),
-              if (_state.isPaused)
+              if (_state.isPaused && _guideStep == null)
                 Positioned.fill(
                   child: Container(
                     color: theme.background,
@@ -509,13 +753,14 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -528,6 +773,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'battleship',
@@ -544,8 +790,25 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
 class _OpponentGrid extends StatelessWidget {
   final BattleshipBoardState state;
   final void Function(int cell) onTapCell;
+  // Guide pas-à-pas (voir demande utilisateur : "guider le user vers
+  // quelque action pour qu'il comprenne le mécanisme") — [guideCell]
+  // désigne une vraie case jamais encore tirée ; [guideHit] simule
+  // localement le résultat une fois tapée (voir
+  // _BattleshipBoardScreenState._onGuideFireTap), jamais
+  // widget.transport.fire().
+  final int? guideCell;
+  final bool? guideHit;
+  final GlobalKey? guideKey;
+  final VoidCallback? onGuideTap;
 
-  const _OpponentGrid({required this.state, required this.onTapCell});
+  const _OpponentGrid({
+    required this.state,
+    required this.onTapCell,
+    this.guideCell,
+    this.guideHit,
+    this.guideKey,
+    this.onGuideTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -567,10 +830,11 @@ class _OpponentGrid extends StatelessWidget {
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: state.gridSize),
           itemCount: state.gridSize * state.gridSize,
           itemBuilder: (context, cell) {
-            final shotHit = shotByCell[cell];
+            final isGuideCell = cell == guideCell;
+            final shotHit = isGuideCell && guideHit != null ? guideHit : shotByCell[cell];
             final sunk = sunkCells.contains(cell);
-            return GestureDetector(
-              onTap: shotHit == null ? () => onTapCell(cell) : null,
+            final tile = GestureDetector(
+              onTap: isGuideCell && onGuideTap != null ? onGuideTap : (shotHit == null ? () => onTapCell(cell) : null),
               child: Container(
                 margin: const EdgeInsets.all(1),
                 decoration: BoxDecoration(
@@ -588,6 +852,17 @@ class _OpponentGrid extends StatelessWidget {
                     ? null
                     : Icon(shotHit ? Icons.close_rounded : Icons.circle, size: 10, color: Colors.white),
               ),
+            );
+            if (!isGuideCell || guideKey == null) return tile;
+            return Showcase(
+              key: guideKey!,
+              title: guideHit == null ? 'Tire ici' : 'Touché !',
+              description: guideHit == null
+                  ? 'Tape cette case pour y tirer.'
+                  : "Touché ! Comme c'est réussi, tu rejoues aussitôt une autre case. Si ça avait été manqué (gris), ce serait passé au tour de ton binôme. Coule tous les navires pour gagner.",
+              targetBorderRadius: BorderRadius.circular(3),
+              disableDefaultTargetGestures: onGuideTap != null,
+              child: tile,
             );
           },
         ),

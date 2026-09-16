@@ -1,3 +1,5 @@
+import '../shop/subscription_status_notifier.dart';
+
 /// Un tome d'une [RomanPhotoStory] — une suite ordonnée de pages déjà
 /// composées (bulles de dialogue incrustées, gérées depuis l'espace admin)
 /// plutôt que du texte géré par l'app. Voir RomanPhotoReaderScreen.
@@ -29,8 +31,12 @@ class RomanPhotoVolume {
 
   /// Faut-il confirmer un achat avant de proposer le téléchargement ? (voir
   /// demande utilisateur : "pour les bd payant, il faut d'abord confirmer
-  /// l'achat et ensuite télécharger").
-  bool get needsPurchase => !isFree && !purchased;
+  /// l'achat et ensuite télécharger"). Un abonnement actif donne un accès
+  /// illimité et gratuit (voir RomanPhotoPurchaseController côté backend,
+  /// aucun débit pour un abonné) — jamais besoin de confirmer un achat ni
+  /// d'afficher le moindre prix dans ce cas (voir demande utilisateur :
+  /// "si c'est la formule abonnement... rien ne doit apparaître").
+  bool get needsPurchase => !isFree && !purchased && !SubscriptionStatusNotifier.instance.isActive;
 
   String titleFor(String localeCode) {
     if (title.containsKey(localeCode)) return title[localeCode]!;

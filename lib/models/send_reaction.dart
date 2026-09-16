@@ -47,4 +47,21 @@ class SendReaction {
         createdAt: DateTime.parse(json['created_at'] as String),
         user: json['user'] != null ? AppUser.fromJson(json['user'] as Map<String, dynamic>) : null,
       );
+
+  /// Ne garde qu'une réaction par utilisateur (la plus récente). Le
+  /// backend est cumulable (chaque réaction ajoute une ligne sans jamais
+  /// retirer les précédentes du même utilisateur), donc une réponse HTTP
+  /// brute peut contenir l'ancienne et la nouvelle réaction pour la même
+  /// personne — à appliquer partout où une liste de réactions est
+  /// remplacée telle quelle depuis une réponse serveur.
+  static List<SendReaction> dedupeByUser(List<SendReaction> reactions) {
+    final latestByUser = <String, SendReaction>{};
+    for (final reaction in reactions) {
+      final existing = latestByUser[reaction.userId];
+      if (existing == null || reaction.createdAt.isAfter(existing.createdAt)) {
+        latestByUser[reaction.userId] = reaction;
+      }
+    }
+    return latestByUser.values.toList();
+  }
 }

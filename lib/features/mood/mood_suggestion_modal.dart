@@ -57,8 +57,11 @@ Future<void> showMoodSuggestionModal(
                 ),
                 const SizedBox(width: 14),
                 Expanded(
+                  // Un seul titre, en gras (voir demande utilisateur) —
+                  // remplace l'ancienne paire légende + besoin ("Pour
+                  // combler Frank aujourd'hui" / "Être aimé").
                   child: Text(
-                    name != null ? '$name aujourd\'hui' : 'Son humeur aujourd\'hui',
+                    name != null ? 'Pour combler $name aujourd\'hui' : 'Pour le/la combler aujourd\'hui',
                     style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: theme.textOnBackground),
                   ),
                 ),

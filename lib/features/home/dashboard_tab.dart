@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/feature_flags_service.dart';
 import '../../core/realtime_client.dart';
+import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/mood.dart';
@@ -25,7 +26,6 @@ import '../shop/shop_screen.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'widgets/couple_avatars_badge.dart';
 import 'widgets/dark_day_counter_card.dart';
-import 'widgets/dark_nightly_poem_banner.dart';
 import 'widgets/dark_quick_actions_grid.dart';
 import 'widgets/inbox_toast.dart';
 import 'widgets/mood_of_day_card.dart';
@@ -64,7 +64,25 @@ class _DashboardTabState extends State<DashboardTab> {
     GameCardInboxService.instance.refresh();
     UnreadTimelineService.instance.refresh(widget.user.id);
     _checkTodayActivity();
+    // Peint la météo déjà connue immédiatement, avant même que le réseau
+    // ait pu répondre (voir MoodService.cachedToday et demande
+    // utilisateur), puis _fetchTodayMood() ci-dessous vérifie et met à
+    // jour depuis le serveur juste après (jamais l'inverse : le cache ne
+    // remplace jamais une vraie réponse serveur, il ne fait que patienter
+    // en attendant).
+    _loadCachedMood();
     _fetchTodayMood();
+  }
+
+  Future<void> _loadCachedMood() async {
+    final cached = await MoodService.instance.cachedToday();
+    if (cached == null || !mounted) return;
+    final (mine, partner, _, partnerSuggestion) = cached;
+    setState(() {
+      _myMood = mine;
+      _partnerMood = partner;
+      _partnerSuggestion = partnerSuggestion;
+    });
   }
 
   @override
@@ -172,10 +190,28 @@ class _DashboardTabState extends State<DashboardTab> {
   }
 
   /// Ouvre la modale de conseil/défi pour l'humeur du binôme (voir demande
-  /// utilisateur) — rien à faire tant qu'aucune suggestion n'est disponible
-  /// pour sa combinaison (ex. avant qu'elle ait rempli besoin+envie).
+  /// utilisateur). Auparavant un simple no-op silencieux tant que rien
+  /// n'était disponible — remplacé par un message explicite selon la vraie
+  /// raison (voir demande utilisateur : "il faut dire que ton binôme n'a
+  /// pas encore partagé son humeur du jour"/"il faut lui dire qu'il doit
+  /// renseigner son humeur du jour d'abord") : soit le/la binôme n'a rien
+  /// renseigné du tout, soit c'est MOI qui n'ai pas encore renseigné la
+  /// mienne (nécessaire pour calculer la météo du couple à deux).
   void _openPartnerMoodSuggestion() {
-    if (_partnerMood == null || _partnerSuggestion == null) return;
+    final t = LocaleScope.of(context).t;
+    if (_partnerMood == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('mood_partner_not_shared_yet'))),
+      );
+      return;
+    }
+    if (_myMood == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('mood_share_yours_first'))),
+      );
+      return;
+    }
+    if (_partnerSuggestion == null) return;
     final partner = BoxScope.of(context).currentBox?.partnerOf(widget.user.id);
     showMoodSuggestionModal(
       context,
@@ -219,6 +255,7 @@ class _DashboardTabState extends State<DashboardTab> {
   }
 
   void _openPacks() {
+    UsageService.instance.logFeature('pack');
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const PacksScreen()));
@@ -309,6 +346,12 @@ class _DashboardTabState extends State<DashboardTab> {
                     children: [
                       DarkDayCounterCard(
                         box: box,
+                        // Le crayon d'édition de la date ne doit jamais
+                        // apparaître ici (voir demande utilisateur) — seule
+                        // CoupleProfileScreen (son propre crayon dédié,
+                        // voir DarkDayCounterCard.showDateEditControl)
+                        // permet de la modifier.
+                        showDateEditControl: false,
                         // Ouvre "Notre Bulle à nous" — même geste que les
                         // avatars du haut. Géré à l'intérieur de la carte
                         // (sur la zone texte uniquement, pas l'avatar/le
@@ -334,8 +377,17 @@ class _DashboardTabState extends State<DashboardTab> {
                         onTap: _openMoodScreen,
                         onTapPartner: _openPartnerMoodSuggestion,
                       ),
+                      // Placé juste après le bandeau "jours ensemble/Météo
+                      // du couple" (toujours affiché) plutôt que plus bas
+                      // (voir demande utilisateur) — cette carte reste la
+                      // première chose visible sans avoir à scroller.
+                      // Bascule elle-même vers le texte "rituel du soir"
+                      // une fois l'heure passée (voir SendThoughtCta) au
+                      // lieu d'une bannière séparée juste en dessous : voir
+                      // demande utilisateur, "ça évite d'avoir deux bandes
+                      // ayant le même chemin au même moment".
                       const SizedBox(height: 16),
-                      SendThoughtCta(onTap: _openPacks),
+                      SendThoughtCta(onTap: _openPacks, box: box, hasSentToday: _hasSentToday),
                       if (_receivedPoemToday != null) ...[
                         const SizedBox(height: 16),
                         ReceivedPoemCard(
@@ -343,12 +395,6 @@ class _DashboardTabState extends State<DashboardTab> {
                           onTap: _openTimeline,
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      DarkNightlyPoemBanner(
-                        box: box,
-                        hasSentToday: _hasSentToday,
-                        onTap: _openPacks,
-                      ),
                       const SizedBox(height: 24),
                       Text(
                         t('dashboard_quick_actions'),
@@ -362,6 +408,7 @@ class _DashboardTabState extends State<DashboardTab> {
                       DarkQuickActionsGrid(
                         user: widget.user,
                         onNavigateToTab: widget.onNavigateToTab,
+                        onOpenMood: _openMoodScreen,
                       ),
                     ],
                   ),

@@ -92,6 +92,16 @@ class _MoodScreenState extends State<MoodScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                 children: [
+                  // Explique le mécanisme (voir demande utilisateur) : sans
+                  // ce texte, rien n'indiquait qu'il fallait aussi que le
+                  // binôme renseigne SA propre humeur/besoin/envie pour
+                  // obtenir la météo du couple, ni qu'il fallait revenir
+                  // voir une fois les deux renseignés.
+                  Text(
+                    t('mood_screen_intro'),
+                    style: GoogleFonts.nunito(fontSize: 12.5, color: theme.textOnBackgroundMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
                   Text(t('mood_card_prompt'), style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted)),
                   const SizedBox(height: 14),
                   _CardChoiceRow(
@@ -185,7 +195,7 @@ class _MoodScreenState extends State<MoodScreen> {
 /// horizontal, puis retour au format carte après comparaison avec des
 /// variantes en cercle qui coupaient le texte des images. Pas de libellé
 /// séparé : le texte de l'image fait déjà le travail.
-class _CardChoiceRow extends StatelessWidget {
+class _CardChoiceRow extends StatefulWidget {
   final List<String> keys;
   final String? selectedKey;
   final dynamic theme;
@@ -201,18 +211,55 @@ class _CardChoiceRow extends StatelessWidget {
   });
 
   @override
+  State<_CardChoiceRow> createState() => _CardChoiceRowState();
+}
+
+// Largeur de carte (voir width: 215 plus bas) + espacement du separatorBuilder.
+const double _kCardChoiceExtent = 215 + 8;
+
+class _CardChoiceRowState extends State<_CardChoiceRow> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Météo déjà renseignée (voir MoodScreen._load) : amène directement la
+    // carte déjà choisie dans le cadre visible au lieu de toujours repartir
+    // du début de la rangée (voir demande utilisateur : "si j'ouvre ce soit
+    // ce que j'ai sélectionné qui doit apparaître et les autres je
+    // défile").
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
+  }
+
+  void _scrollToSelected() {
+    if (widget.selectedKey == null || !_scrollController.hasClients) return;
+    final index = widget.keys.indexOf(widget.selectedKey!);
+    if (index <= 0) return;
+    final offset = (index * _kCardChoiceExtent).clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.jumpTo(offset);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
     return SizedBox(
       height: 150,
       child: ListView.separated(
+        controller: _scrollController,
         scrollDirection: Axis.horizontal,
-        itemCount: keys.length,
+        itemCount: widget.keys.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
-          final key = keys[i];
-          final selected = selectedKey == key;
+          final key = widget.keys[i];
+          final selected = widget.selectedKey == key;
           return GestureDetector(
-            onTap: () => onTap(key),
+            onTap: () => widget.onTap(key),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               // Largeur proche du ratio réel des images (≈ 1,5:1) — voir
@@ -238,7 +285,7 @@ class _CardChoiceRow extends StatelessWidget {
                 // ratio d'origine.
                 child: Container(
                   color: theme.surface,
-                  child: Image.asset(imageFor(key), fit: BoxFit.contain),
+                  child: Image.asset(widget.imageFor(key), fit: BoxFit.contain),
                 ),
               ),
             ),

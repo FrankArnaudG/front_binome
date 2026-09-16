@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/realtime_client.dart';
 import '../../../l10n/locale_scope.dart';
@@ -32,6 +33,10 @@ class GameCommentOverlay extends StatefulWidget {
   final NearbyComms? nearbyComms;
   final String myName;
   final String partnerName;
+  // Guide pas-à-pas (voir demande utilisateur : "un guide sur comment
+  // envoyer un message") — non-null uniquement pour faire apparaître une
+  // bulle sur le bouton qui ouvre le compositeur de message.
+  final GlobalKey? guideKey;
 
   const GameCommentOverlay({
     super.key,
@@ -40,6 +45,7 @@ class GameCommentOverlay extends StatefulWidget {
     this.nearbyComms,
     this.myName = '',
     this.partnerName = '',
+    this.guideKey,
   });
 
   @override
@@ -247,7 +253,7 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
   }
 
   Widget _buildFab(BuildContext context) {
-    return FloatingActionButton.small(
+    final fab = FloatingActionButton.small(
       heroTag: 'game_comment_fab_${widget.boxId ?? widget.nearbyComms?.endpointId ?? 'local'}',
       backgroundColor: Colors.black.withValues(alpha: 0.55),
       elevation: 0,
@@ -256,6 +262,15 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
         WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
       },
       child: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
+    );
+    final guideKey = widget.guideKey;
+    if (guideKey == null) return fab;
+    return Showcase(
+      key: guideKey,
+      title: 'Envoie un message',
+      description: 'Tape ici pour écrire un petit mot à ton binôme pendant la partie.',
+      targetShapeBorder: const CircleBorder(),
+      child: fab,
     );
   }
 

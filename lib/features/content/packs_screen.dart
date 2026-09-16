@@ -11,6 +11,7 @@ import '../../widgets/asset_or_fallback.dart';
 import '../../widgets/empty_state.dart';
 import 'category_packs_screen.dart';
 import 'content_service.dart';
+import 'favorite_packs_screen.dart';
 import 'pack_categories.dart';
 
 const double _kCardHeight = 128;
@@ -113,6 +114,15 @@ class _PacksScreenState extends State<PacksScreen> {
             color: theme.textOnBackground,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.star_rounded),
+            tooltip: t('favorite_packs_tooltip'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FavoritePacksScreen(replyToSendId: widget.replyToSendId)),
+            ),
+          ),
+        ],
       ),
       body: ThemedBackground(
         child: SafeArea(

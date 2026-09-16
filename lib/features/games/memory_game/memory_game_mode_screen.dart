@@ -62,6 +62,12 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _startGuide());
   }
 
+  // Chaque écran suivant (difficulté, plateau) vérifie désormais LUI-MÊME
+  // s'il a déjà été vu (voir MemoryGameDifficultyScreen/MemoryGameBoardScreen
+  // et demande utilisateur : "ajouter dans tous les écrans qui suivent") —
+  // plus besoin de transmettre un `showGuide` d'écran en écran, ce qui
+  // fonctionne aussi pour le mode à distance accepté via une notification
+  // push, complètement hors de ce flux de navigation.
   void _startGuide() {
     ShowcaseView.get().startShowCase([_remoteTileKey, _nearbyTileKey, _localTileKey]);
     GameGuideStorage.instance.markSeen(widget.user.id, _kMemoryGameGuideKey);
@@ -90,8 +96,8 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
         "Jouez en temps réel avec votre binôme, où qu'il ou elle soit dans le monde. Vous pouvez aussi communiquer par message, audio ou vidéo pendant la partie.";
     if (rate == null) return base;
     final minutesPerCoin = rate['minutes_per_coin'] ?? 8;
-    return '$base\n\nCe mode est facturé au temps de jeu : 1 pièce équivaut à $minutesPerCoin minutes, '
-        'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 pièces.';
+    return '$base\n\nCe mode est facturé au temps de jeu : 1 Token équivaut à $minutesPerCoin minutes, '
+        'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 Tokens.';
   }
 
   String get _nearbyInfoText {
@@ -101,7 +107,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
     final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
     return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
         "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost pièces une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
+        "Il est facturé $cost Tokens une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
         "TOUS les jeux interactifs de l'application, autant de fois que vous voulez ce jour là, sans être facturé "
         "de nouveau.$trial";
   }

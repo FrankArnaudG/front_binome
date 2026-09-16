@@ -14,6 +14,7 @@ import '../../widgets/coin_icon.dart';
 import '../../widgets/empty_state.dart';
 import '../box/box_scope.dart';
 import '../shop/shop_service.dart';
+import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'widgets/eternal_rose.dart';
 import 'widgets/quantum_love_heart.dart';
@@ -541,40 +542,46 @@ class _GiftTileState extends State<_GiftTile>
                       ),
                     ],
                     const SizedBox(height: 8),
-                    // Pastille sombre neutre (pas teintée du thème) : la
-                    // pièce dorée s'y détache et "brille" par contraste,
-                    // plutôt que de se fondre dans un aplat coloré.
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.34),
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.25),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CoinIcon(size: 14, fallbackColor: _gold),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${widget.gift.coinPrice}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: _gold,
+                    // Abonnement actif : le cadeau est gratuit et illimité
+                    // (voir GiftController côté backend, aucun débit pour
+                    // un abonné) — plus aucune raison d'afficher son prix
+                    // (voir demande utilisateur : "rien ne doit
+                    // apparaître").
+                    if (!SubscriptionStatusNotifier.instance.isActive)
+                      // Pastille sombre neutre (pas teintée du thème) : la
+                      // pièce dorée s'y détache et "brille" par contraste,
+                      // plutôt que de se fondre dans un aplat coloré.
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.34),
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.25),
+                              blurRadius: 8,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CoinIcon(size: 14, fallbackColor: _gold),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${widget.gift.coinPrice}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: _gold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 Positioned.fill(
@@ -704,34 +711,39 @@ class _GiftConfirmDialogState extends State<_GiftConfirmDialog>
               ),
             ),
             const SizedBox(height: 10),
-            // Le prix est "l'attention qu'on offre" — le chiffre doit
-            // sauter aux yeux, pas juste la phrase entière.
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                CoinIcon(size: 17, fallbackColor: _gold),
-                const SizedBox(width: 5),
-                Text(
-                  '${gift.coinPrice}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: _gold,
+            // Abonnement actif : le cadeau est gratuit et illimité (voir
+            // GiftController côté backend, aucun débit pour un abonné) —
+            // plus aucune raison d'afficher son prix (voir demande
+            // utilisateur : "rien ne doit apparaître").
+            if (!SubscriptionStatusNotifier.instance.isActive)
+              // Le prix est "l'attention qu'on offre" — le chiffre doit
+              // sauter aux yeux, pas juste la phrase entière.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  CoinIcon(size: 17, fallbackColor: _gold),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${gift.coinPrice}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: _gold,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'pièces',
-                  style: GoogleFonts.nunito(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: theme.textOnBackgroundMuted,
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tokens',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: theme.textOnBackgroundMuted,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(height: 18),
             // Zone de texte à fond délimité — se distingue du reste de la
             // modale plutôt qu'une simple ligne soulignée.

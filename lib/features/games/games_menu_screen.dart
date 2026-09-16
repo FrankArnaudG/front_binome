@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/realtime_client.dart';
+import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/game.dart';
@@ -99,7 +100,13 @@ IconData _iconForGame(Game game) {
 class GamesMenuScreen extends StatefulWidget {
   final AppUser user;
 
-  const GamesMenuScreen({super.key, required this.user});
+  // 'interactive' (défaut) ou 'classic' — permet à un raccourci externe
+  // (voir DarkQuickActionsGrid, tuile "Cœur à Cœur") d'ouvrir directement
+  // sur la catégorie "Jeu classique" plutôt que de forcer un second tap une
+  // fois sur cet écran.
+  final String initialCategory;
+
+  const GamesMenuScreen({super.key, required this.user, this.initialCategory = 'interactive'});
 
   @override
   State<GamesMenuScreen> createState() => _GamesMenuScreenState();
@@ -110,8 +117,9 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
 
   // Onglet actif (voir demande utilisateur : deux boutons façon navigation
   // pour switcher entre les deux catégories, plutôt que deux sections
-  // empilées) — "interactive" en premier par défaut, voir _gameSection.
-  String _selectedCategory = 'interactive';
+  // empilées) — "interactive" en premier par défaut, sauf si un raccourci a
+  // demandé "classic" (voir widget.initialCategory), voir _gameSection.
+  late String _selectedCategory = widget.initialCategory;
 
   static const _catalogChannel = 'games-catalog';
 
@@ -152,6 +160,9 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
   /// côté backend) ouvre la liste de coffres thématiques ; sans ça, retombe
   /// sur le gabarit à prompt unique.
   Future<void> _playGame(Game game) async {
+    // "Fonctionnalité la plus utilisée" (voir demande utilisateur) — détail
+    // par jeu précis (sessionType), pas juste "games" globalement.
+    UsageService.instance.logFeature('game', detail: game.sessionType);
     if (game.isEmojiStory) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => EmojiStoryHistoryScreen(game: game, user: widget.user)),
@@ -297,10 +308,28 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
         elevation: 0,
         systemOverlayStyle: theme.statusBarOverlayStyle,
         foregroundColor: theme.textOnBackground,
+        // Assez de hauteur pour un titre sur 2 lignes (voir ci-dessous) —
+        // sans ça, la seconde ligne reste coupée quel que soit maxLines.
+        toolbarHeight: 64,
+        // Suit l'onglet actif (voir _selectedCategory) — voir demande
+        // utilisateur : "pour l'entête ca sera jeux de couple interactif...
+        // et si on rentre dans cœur à cœur on verra en entête Question pour
+        // un Couple". Change donc en direct si on bascule d'onglet, pas
+        // seulement selon le raccourci d'entrée (voir GamesMenuScreen.
+        // initialCategory).
+        //
+        // Retombe à la ligne plutôt que de tronquer avec "..." si le titre
+        // déborde (voir demande utilisateur : "si ca deborde, revenir a la
+        // ligne") — "Jeux de couple interactif" ne tient pas toujours sur
+        // une seule ligne à côté du bouton "défier un ami".
         title: Text(
-          t('games_menu_title'),
+          _selectedCategory == 'classic' ? t('games_menu_title_classic') : t('games_menu_title'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w700,
+            fontSize: 17,
+            height: 1.15,
             color: theme.textOnBackground,
           ),
         ),

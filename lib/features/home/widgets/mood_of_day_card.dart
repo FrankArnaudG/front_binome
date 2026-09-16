@@ -90,7 +90,7 @@ class MoodOfDayCard extends StatelessWidget {
                                 )
                               : _MoodPromptTile(
                                   theme: theme,
-                                  label: t('mood_save_cta'),
+                                  label: t('mood_share_cta'),
                                 ),
                         ),
                         if (myName != null)
@@ -251,8 +251,14 @@ class _MoodPromptTile extends StatelessWidget {
           children: [
             const Text('💭', style: TextStyle(fontSize: 28)),
             const SizedBox(height: 6),
+            // maxLines/overflow : voir demande utilisateur, ce libellé est
+            // désormais plus long ("Partager mon humeur du jour") et doit
+            // rester dans cette tuile étroite (AspectRatio 1.2) sans faire
+            // déborder le Column.
             Text(
               label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,

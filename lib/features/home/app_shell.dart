@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_router.dart';
 import '../../core/delivery_ack_service.dart';
 import '../../core/doodle_notifier.dart';
+import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
@@ -40,17 +41,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Approximation "temps passé" (voir demande utilisateur, UsageService) —
+    // démarre dès que l'app est montée, s'arrête/reprend avec le premier
+    // plan ci-dessous.
+    UsageService.instance.startSessionPings();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    UsageService.instance.stopSessionPings();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      UsageService.instance.startSessionPings();
       DeliveryAckService.instance.onAppResumed();
       // Voir demande utilisateur : si un dessin est arrivé pendant que
       // l'app n'était pas au premier plan, il doit s'afficher tout de
@@ -71,6 +78,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // de revenir.
       final boxId = BoxScope.of(context).currentBox?.id;
       if (boxId != null) NearbyBillingTracker.instance.reportAndClear(boxId);
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      UsageService.instance.stopSessionPings();
     }
   }
 

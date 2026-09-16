@@ -8,6 +8,11 @@ class SubscriptionPlan {
   final String period; // month | year
   final double priceAmountXof;
   final String priceCurrency;
+  // Montant réellement facturé par YengaPay (toujours XOF, voir demande
+  // utilisateur : "faire savoir que le paiement se fera en FCFA et donner
+  // l'équivalent") — distinct de [priceAmountXof] (malgré son nom, ce champ
+  // est déjà converti dans [priceCurrency]) quand celle-ci n'est pas XOF.
+  final double priceAmountXofNative;
 
   const SubscriptionPlan({
     required this.id,
@@ -17,6 +22,7 @@ class SubscriptionPlan {
     required this.period,
     required this.priceAmountXof,
     required this.priceCurrency,
+    required this.priceAmountXofNative,
   });
 
   bool get isCouple => scope == 'couple';
@@ -30,5 +36,13 @@ class SubscriptionPlan {
         period: json['period'] as String,
         priceAmountXof: double.parse(json['price_amount_xof'].toString()),
         priceCurrency: json['price_currency'] as String? ?? 'XOF',
+        // Absent quand ce plan est imbriqué dans SubscriptionOrder/
+        // Subscription (relation chargée brute côté backend, sans passer
+        // par SubscriptionPlanController::index qui seul ajoute ce champ) :
+        // repli sur price_amount_xof, déjà natif XOF dans ce contexte (voir
+        // le même repli et sa justification dans CoinPack.fromJson).
+        priceAmountXofNative: json['price_amount_xof_native'] != null
+            ? double.parse(json['price_amount_xof_native'].toString())
+            : double.parse(json['price_amount_xof'].toString()),
       );
 }

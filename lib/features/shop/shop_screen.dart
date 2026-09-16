@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/coin_pack.dart';
-import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/coin_balance_badge.dart';
@@ -13,9 +13,9 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/status_chip.dart';
 import 'currency_picker.dart';
 import 'currency_service.dart';
+import 'payment_confirm_sheet.dart';
 import 'preferred_currency_notifier.dart';
 import 'shop_service.dart';
-import 'subscription_screen.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -131,7 +131,6 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<void> _openPurchase(CoinPack pack) async {
-    final theme = ThemeScope.paletteOf(context);
     final t = LocaleScope.of(context).t;
 
     // Filet de sécurité : la devise est normalement déjà réglée dès
@@ -144,86 +143,60 @@ class _ShopScreenState extends State<ShopScreen> {
     }
 
     if (!mounted) return;
-    final provider = await showModalBottomSheet<String>(
+    // Récapitulatif avant paiement (voir demande utilisateur) — annonce
+    // clairement l'équivalent FCFA puisque YengaPay ne règle qu'en XOF,
+    // même si le prix ci-dessus est affiché dans une autre devise.
+    await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: theme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      isScrollControlled: true,
+      builder: (_) => PaymentConfirmSheet(
+        title: pack.name,
+        subtitle: t('coin_count', {'amount': '${pack.coinAmount}'}),
+        xofAmountLabel: '${pack.priceAmountXofNative.toStringAsFixed(0)} FCFA',
+        // Équivalent dans la devise choisie — inutile si elle est déjà XOF
+        // (voir demande utilisateur : "ajoute le montant en euro ou dans
+        // la devise demandée").
+        approxAmountLabel: pack.priceCurrency == 'XOF' ? null : _formatPrice(pack),
+        onConfirm: () => _payViaYengaPay(pack),
       ),
-      builder: (_) => _ProviderSheet(pack: pack),
     );
-    if (provider == null || !mounted) return;
-
-    // "ligdicash" est un 3e choix distinct proposé par _ProviderSheet, en
-    // plus des deux tiles de test existants (Orange Money/Wave, inchangés
-    // ci-dessous) — voir la demande explicite de garder le flux manuel
-    // actuel comme chemin par défaut, LigdiCash n'étant qu'une option
-    // supplémentaire tant qu'il n'est pas éprouvé en conditions réelles.
-    if (provider == 'ligdicash') {
-      await _payViaLigdiCash(pack);
-      return;
-    }
-
-    try {
-      await ShopService.instance.createOrder(
-        coinPackId: pack.id,
-        provider: provider,
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(t('shop_order_created_title')),
-          content: Text(
-            t('shop_order_created_body', {
-              'amount': '${pack.coinAmount}',
-              'provider': _providerLabel(provider),
-            }),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(t('common_ok')),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t('common_network_error'))),
-      );
-    }
   }
 
-  /// Chemin séparé pour la vraie passerelle LigdiCash — ne remplace ni ne
-  /// dégrade vers le dialogue "commande créée, en attente" existant : si
-  /// `payment_url` est absent (clés pas encore configurées côté back), on
-  /// le dit clairement plutôt que de basculer silencieusement sur l'autre
-  /// flux, ce qui serait trompeur pour un bouton qui promet un vrai paiement.
-  Future<void> _payViaLigdiCash(CoinPack pack) async {
+  /// Un seul vrai moyen de paiement désormais : YengaPay (voir demande
+  /// utilisateur, remplace les anciennes tuiles Orange Money/Wave
+  /// manuelles qui ne déclenchaient aucun vrai paiement, et LigdiCash).
+  /// YengaPay affiche lui-même le choix mobile money/carte sur SA page de
+  /// checkout — rien à distinguer côté app.
+  Future<void> _payViaYengaPay(CoinPack pack) async {
     final t = LocaleScope.of(context).t;
 
     try {
       final order = await ShopService.instance.createOrder(
         coinPackId: pack.id,
-        provider: 'manual',
+        provider: 'yengapay',
       );
       if (!mounted) return;
 
       final paymentUrl = order.paymentUrl;
       if (paymentUrl == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('shop_ligdicash_not_configured'))),
+          SnackBar(content: Text(t('shop_yengapay_not_configured'))),
         );
         return;
       }
 
-      // LigdiCash bloque explicitement l'affichage en iframe/WebView —
-      // navigateur externe obligatoire. Le webhook back confirmera le
-      // paiement ; WalletBalanceNotifier se rafraîchit tout seul au retour
-      // dans l'app (voir AppShell.didChangeAppLifecycleState).
+      // Navigateur externe (pas de WebView) : le webhook back confirmera
+      // le paiement ; WalletBalanceNotifier se rafraîchit tout seul au
+      // retour dans l'app (voir AppShell.didChangeAppLifecycleState).
       await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
+    } on ApiException catch (e) {
+      // Affiche le vrai message du serveur (ex. "Non authentifié") plutôt
+      // que le message réseau générique — celui-ci masquait des échecs qui
+      // n'avaient rien à voir avec la connexion (voir demande utilisateur :
+      // session cassée après un changement de compte, confondue avec un
+      // problème réseau faute de détail affiché).
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -280,10 +253,6 @@ class _ShopScreenState extends State<ShopScreen> {
               }
               return Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: _SubscriptionBanner(theme: theme, t: t),
-                  ),
                   Expanded(
                     child: GridView.builder(
                       padding: const EdgeInsets.all(20),
@@ -313,70 +282,6 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 }
 
-/// Voir demande utilisateur : petite section faisant découvrir l'abonnement
-/// depuis la Boutique aux pièces elle-même, plutôt qu'un simple bouton
-/// discret dans la barre du haut.
-class _SubscriptionBanner extends StatelessWidget {
-  final ThemePalette theme;
-  final String Function(String, [Map<String, String>?]) t;
-
-  const _SubscriptionBanner({required this.theme, required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: theme.primary.withValues(alpha: theme.isDark ? 0.22 : 0.1),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t('shop_subscription_banner_title'),
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      t('shop_subscription_banner_body'),
-                      style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right_rounded, color: theme.textOnBackgroundMuted, size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-String _providerLabel(String provider) => switch (provider) {
-  'orange_money' => 'Orange Money',
-  'wave' => 'Wave',
-  _ => provider,
-};
 
 /// Le FCFA n'a pas de sous-unité usuelle (toujours des montants ronds) —
 /// les autres devises (EUR, USD) en ont besoin pour rester lisibles sur de
@@ -384,125 +289,6 @@ String _providerLabel(String provider) => switch (provider) {
 String _formatPrice(CoinPack pack) {
   final decimals = pack.priceCurrency == 'XOF' ? 0 : 2;
   return '${pack.priceAmount.toStringAsFixed(decimals)} ${currencySymbol(pack.priceCurrency)}';
-}
-
-class _ProviderSheet extends StatelessWidget {
-  final CoinPack pack;
-
-  const _ProviderSheet({required this.pack});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              pack.name,
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: theme.textOnBackground,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${t('coin_count', {'amount': '${pack.coinAmount}'})} • ${_formatPrice(pack)}',
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                color: theme.textOnBackgroundMuted,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              t('shop_payment_method'),
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: theme.textOnBackground,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ProviderTile(
-              label: 'Orange Money',
-              value: 'orange_money',
-              theme: theme,
-            ),
-            const SizedBox(height: 10),
-            _ProviderTile(label: 'Wave', value: 'wave', theme: theme),
-            const SizedBox(height: 16),
-            Divider(color: (theme.isDark ? Colors.white : Colors.black).withValues(alpha: 0.08)),
-            const SizedBox(height: 4),
-            _ProviderTile(
-              label: t('shop_pay_ligdicash'),
-              value: 'ligdicash',
-              theme: theme,
-              icon: Icons.bolt_rounded,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProviderTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final ThemePalette theme;
-  final IconData icon;
-
-  const _ProviderTile({
-    required this.label,
-    required this.value,
-    required this.theme,
-    this.icon = Icons.account_balance_wallet_rounded,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: theme.surface,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.of(context).pop(value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                alpha: 0.06,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: theme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.nunito(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: theme.textOnBackground,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _CoinPackTile extends StatelessWidget {

@@ -3,20 +3,21 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:screen_protector/screen_protector.dart';
 
 import '../../core/api_client.dart';
 import '../../core/token_storage.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/pack.dart';
-import '../../models/slide.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/coin_icon.dart';
+import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'content_service.dart';
+import 'pack_favorite_storage.dart';
 import 'slide_detail_screen.dart';
 import 'widgets/slide_visual_card.dart';
 
@@ -48,25 +49,65 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
   bool _packJustSent = false;
   final _pageController = PageController();
   int _currentSlideIndex = 0;
+  // Favori (voir PackFavoriteStorage et demande utilisateur : "à la place
+  // du bouton partager... un bouton pour mettre un poème slide en
+  // favori") — purement local, pas de champ côté Pack/backend.
+  String? _userId;
+  bool _isFavorite = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadFavorite();
+    // Capture d'écran bloquée tant que cet écran est ouvert (voir demande
+    // utilisateur : "impossible de faire capture d'écran des poème
+    // slide") — même mécanisme que RomanPhotoReaderScreen : best-effort,
+    // réellement empêché sur Android, seulement détecté sur iOS (voir doc
+    // du plugin screen_protector).
+    _enableScreenshotProtection();
+  }
+
+  Future<void> _enableScreenshotProtection() async {
+    try {
+      await ScreenProtector.preventScreenshotOn();
+    } catch (_) {
+      // Plateforme non supportée par le plugin (desktop/web) — la lecture
+      // reste possible, juste sans cette protection.
+    }
+  }
+
+  Future<void> _disableScreenshotProtection() async {
+    try {
+      await ScreenProtector.preventScreenshotOff();
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _disableScreenshotProtection();
     _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> _shareSlide(Pack pack, Slide slide) {
-    final localeCode = LocaleScope.of(context).current.code;
-    return Share.share(
-      '${slide.textFor(localeCode) ?? ''}\n\n— via B❤️nome Couple',
-      subject: pack.titleFor(localeCode),
-    );
+  Future<void> _loadFavorite() async {
+    final userJson = await TokenStorage.instance.readUserJson();
+    if (!mounted || userJson == null) return;
+    final user = AppUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+    final isFavorite = await PackFavoriteStorage.instance.isFavorite(user.id, widget.packId);
+    if (!mounted) return;
+    setState(() {
+      _userId = user.id;
+      _isFavorite = isFavorite;
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    final userId = _userId;
+    if (userId == null) return;
+    final nowFavorite = await PackFavoriteStorage.instance.toggleFavorite(userId, widget.packId);
+    if (!mounted) return;
+    setState(() => _isFavorite = nowFavorite);
   }
 
   Future<void> _load() async {
@@ -245,7 +286,8 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
                     sent: _packJustSent,
                     loading: _sendingPack,
                     onSend: _packJustSent ? null : _sendPack,
-                    onShare: () => _shareSlide(pack, slide),
+                    favorite: _isFavorite,
+                    onFavorite: _toggleFavorite,
                   ),
                 ),
               ),
@@ -301,6 +343,11 @@ class _FixedPriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement actif : l'envoi d'un poème-slide est gratuit et illimité
+    // (voir SendController côté backend, aucun débit pour un abonné) —
+    // plus aucune raison d'afficher son prix (voir demande utilisateur :
+    // "rien ne doit apparaître").
+    if (SubscriptionStatusNotifier.instance.isActive) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -323,19 +370,23 @@ class _FixedPriceBadge extends StatelessWidget {
 }
 
 /// Barre d'actions verticale façon TikTok, empilée à droite du feed. Le
-/// cœur envoie le pack ENTIER (toutes ses cartes, pas juste celle affichée)
-/// au/à la partenaire, le partage passe par le sélecteur natif (share_plus).
+/// cœur envoie le pack ENTIER (toutes ses cartes, pas juste celle
+/// affichée) au/à la partenaire ; l'étoile marque/démarque ce poème
+/// comme favori (voir PackFavoriteStorage, purement local) — remplace
+/// l'ancien bouton "Partager" (voir demande utilisateur).
 class _ActionRail extends StatelessWidget {
   final bool sent;
   final bool loading;
   final VoidCallback? onSend;
-  final VoidCallback onShare;
+  final bool favorite;
+  final VoidCallback onFavorite;
 
   const _ActionRail({
     required this.sent,
     required this.loading,
     required this.onSend,
-    required this.onShare,
+    required this.favorite,
+    required this.onFavorite,
   });
 
   @override
@@ -355,10 +406,10 @@ class _ActionRail extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         _RailButton(
-          onTap: onShare,
-          background: Colors.white.withValues(alpha: 0.18),
-          icon: Icons.ios_share_rounded,
-          label: t('pack_feed_share'),
+          onTap: onFavorite,
+          background: favorite ? const Color(0xFFFFB020) : Colors.white.withValues(alpha: 0.18),
+          icon: favorite ? Icons.star_rounded : Icons.star_border_rounded,
+          label: t('pack_feed_favorite'),
         ),
       ],
     );

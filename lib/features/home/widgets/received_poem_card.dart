@@ -6,9 +6,10 @@ import '../../../models/send.dart';
 import '../../../theme/theme_scope.dart';
 
 /// Affiche le contenu du poème reçu aujourd'hui (Rituel du Soir) — à ne pas
-/// confondre avec [DarkNightlyPoemBanner], qui incite à *envoyer* un
-/// poème ce soir. Les deux peuvent coexister : recevoir n'empêche pas
-/// d'envoyer le sien.
+/// confondre avec [SendThoughtCta], qui incite à *envoyer* un poème (et
+/// bascule elle-même vers un texte "rituel du soir" une fois l'heure
+/// passée). Les deux peuvent coexister : recevoir n'empêche pas d'envoyer
+/// le sien.
 class ReceivedPoemCard extends StatelessWidget {
   final Send poem;
   final VoidCallback onTap;

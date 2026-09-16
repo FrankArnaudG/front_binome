@@ -4,7 +4,7 @@ class SubscriptionOrder {
   final String id;
   final double priceAmount;
   final String priceCurrency;
-  final String provider; // orange_money | wave | manual
+  final String provider; // orange_money | wave | manual | yengapay
   final String status; // pending | paid | failed | cancelled
   final DateTime? paidAt;
   final DateTime createdAt;

@@ -12,19 +12,50 @@ import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import 'package:showcaseview/showcaseview.dart';
+
 import '../../box/box_scope.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/memory_game_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_transport.dart';
 import 'memory_game_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas réactif du plateau (voir demande utilisateur,
+/// message détaillé : "parler de chaque élément à tour de rôle... en
+/// commençant par indication qui dit qui doit jouer, la coloration du
+/// nom, celui qui joue retourner la carte 1... retourner la carte 2...
+/// garder les deux cartes ouvertes et un guide... l'essai a échoué et
+/// c'est le tour de ton binôme... revenir à l'indication qui dit qui doit
+/// jouer. aussi un guide sur le temps/les pièces consommées" + message
+/// suivant : "un guide sur comment envoyer un message, activer le micro
+/// et la caméra"). Voir _startGuideStep/_checkGuideProgress dans
+/// _MemoryGameBoardScreenState pour la machine à états qui enchaîne ces
+/// étapes.
+enum _BoardGuideStep {
+  turn,
+  activeName,
+  card1,
+  card2,
+  mismatch,
+  turnPassed,
+  coins,
+  pause,
+  chat,
+  micJoin,
+  micReady,
+  cameraReady,
+}
 
 /// Plateau de "Jeu de Mémoire" — UNIQUE écran de jeu partagé par les 3
 /// modes (voir MemoryGameTransport) : ne connaît que l'état abstrait
@@ -91,12 +122,64 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
+  // Guide pas-à-pas (voir demande utilisateur : "ajouter dans tous les
+  // écrans qui suivent, surtout là où on joue" puis, en détail, "il te
+  // manque beaucoup d'éléments de précision... parler de chaque élément à
+  // tour de rôle" puis, en dernier lieu, "chacun peut tester sans dépendre
+  // de l'autre... pendant ce temps, l'autre user ne voit rien") —
+  // séquence ENTIÈREMENT SIMULÉE en LOCAL (voir _BoardGuideStep/
+  // _startGuideStep/_onGuideCardTap ci-dessous) : les cartes "retournées"
+  // pendant le guide (voir _guideFakeFlipped) et l'appel micro/caméra
+  // "démarré" pendant le guide (voir _guideMicConnecting) sont de purs
+  // artefacts visuels côté client — RIEN n'est envoyé à widget.transport
+  // ni au binôme, précisément pour que chacun puisse lancer/rejouer le
+  // guide à tout moment SANS dépendre d'une vraie action du binôme (voir
+  // demande utilisateur, contrairement à une première version qui
+  // attendait un vrai changement d'état réseau et restait donc bloquée
+  // tant que le binôme ne jouait pas réellement). Vérifiée ICI,
+  // indépendamment de comment on est arrivé sur cet écran (mode à
+  // distance accepté via une notification push, présentiel connecté, un
+  // seul téléphone...) — s'affiche la toute première fois qu'un plateau
+  // de CE jeu s'ouvre pour ce compte, jamais plus ensuite automatiquement
+  // (voir GameGuideStorage), mais rejouable à tout moment via le bouton
+  // "?" (voir _startGuide).
+  final _turnGuideKey = GlobalKey();
+  final _activeNameGuideKey = GlobalKey();
+  final _card1GuideKey = GlobalKey();
+  final _card2GuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'memory_game_board';
+  _BoardGuideStep? _guideStep;
+  // Les deux cartes que le guide va indiquer d'ouvrir — choisies pour ne
+  // JAMAIS former une paire (voir demande utilisateur : "s'assurer que les
+  // deux cartes que tu vas indiquer... ne se ressemblent jamais"), tirées
+  // du plateau RÉEL au moment de démarrer l'étape carte 1 (voir
+  // _pickGuideCardPair), jamais deux indices fixes qui pourraient tomber
+  // sur une vraie paire selon le mélange.
+  int? _guideCardA;
+  int? _guideCardB;
+  // Cartes visuellement "retournées" PAR LE GUIDE uniquement (voir doc
+  // ci-dessus) — jamais ajoutées à _state.flipped, jamais transmises à
+  // widget.transport.flip().
+  final Set<int> _guideFakeFlipped = {};
+  // Fausse séquence de connexion du micro pendant le guide (voir demande
+  // utilisateur : "ça lance une recherche, ça passe en orange... notre
+  // binôme doit cliquer sur le micro pour rejoindre") — jamais un vrai
+  // appel VoiceCallService/NearbyComms.
+  bool _guideMicConnecting = false;
 
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     // Rejoue juste le rendu du chrono chaque seconde — aucun appel réseau,
     // même principe que TimelineScreen._tickTimer.
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -107,6 +190,249 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  /// Point d'entrée UNIQUE pour démarrer le guide, automatique ou via le
+  /// bouton "?" (voir AppBar) — met la partie en pause en premier (voir
+  /// demande utilisateur : "il sera contraint de mettre en pause pour
+  /// pouvoir lancer le guide pour ne pas le facturer") : le guide peut
+  /// prendre du temps à parcourir, et on ne veut pas continuer à décompter
+  /// le chrono/les pièces pendant ce temps. Le binôme voit alors juste la
+  /// partie "en pause" habituelle (voir demande utilisateur : "l'autre
+  /// user ne voit rien"), jamais les bulles du guide elles-mêmes, qui
+  /// restent purement locales à cet écran.
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_BoardGuideStep.turn);
+  }
+
+  /// Cherche deux indices du plateau RÉEL dont les emojis diffèrent (voir
+  /// demande utilisateur : jamais une vraie paire) — `null` si le plateau
+  /// n'a pas encore été reçu (invité en présentiel connecté) ou s'il ne
+  /// reste plus deux cartes non trouvées à proposer (partie quasi finie).
+  (int, int)? _pickGuideCardPair() {
+    final board = _state.board;
+    if (board.isEmpty) return null;
+    // Colonnes de la grille actuelle (voir difficulty.columns dans build())
+    // — nécessaire pour reconnaître un voisin direct (gauche/droite/haut/
+    // bas), pas juste un indice consécutif dans le tableau.
+    final columns = MemoryGameDifficulty.all
+        .firstWhere((d) => d.cardCount == board.length, orElse: () => MemoryGameDifficulty.all.last)
+        .columns;
+
+    int? a;
+    for (var i = 0; i < board.length; i++) {
+      if (!_state.matchedIndices.contains(i)) {
+        a = i;
+        break;
+      }
+    }
+    if (a == null) return null;
+
+    // Deuxième carte : jamais une vraie paire (voir board[b] != board[a])
+    // ET jamais une voisine directe de la première (voir demande
+    // utilisateur : "ne pas prendre directement la carte d'à côté, risque
+    // que le user croie qu'il faut forcément choisir la carte d'à côté")
+    // — on préfère une carte visuellement éloignée ; à défaut (grille
+    // minuscule où tout est voisin), n'importe quelle carte différente
+    // fait l'affaire plutôt que de bloquer le guide.
+    int? far;
+    int? any;
+    for (var b = 0; b < board.length; b++) {
+      if (b == a || _state.matchedIndices.contains(b)) continue;
+      if (board[b] == board[a]) continue;
+      any ??= b;
+      final sameRowNeighbor = (b - a).abs() == 1 && (a ~/ columns) == (b ~/ columns);
+      final sameColumnNeighbor = (b - a).abs() == columns;
+      if (!sameRowNeighbor && !sameColumnNeighbor) {
+        far = b;
+        break;
+      }
+    }
+    final b = far ?? any;
+    if (b == null) return null;
+    return (a, b);
+  }
+
+  /// Démarre UNE étape du guide (voir doc de classe de _BoardGuideStep) —
+  /// TOUTES les étapes avancent désormais vers la suivante par un TAP de
+  /// l'utilisateur (voir _onGuideStepTapped/_onGuideCardTap), jamais en
+  /// attendant un vrai changement d'état réseau (voir doc de classe :
+  /// "chacun peut tester sans dépendre de l'autre").
+  void _startGuideStep(_BoardGuideStep step) {
+    if (!mounted) return;
+    if (step == _BoardGuideStep.card1) {
+      final pair = _pickGuideCardPair();
+      if (pair == null) {
+        // Rien à démontrer (plateau pas encore reçu ou presque terminé) —
+        // on saute directement à la suite plutôt que de bloquer le guide.
+        _startGuideStep(_BoardGuideStep.coins);
+        return;
+      }
+      _guideCardA = pair.$1;
+      _guideCardB = pair.$2;
+    }
+    if (step == _BoardGuideStep.turnPassed) {
+      // Les deux cartes "retournées" par le guide se referment (voir
+      // demande utilisateur : les cartes restent ouvertes UNIQUEMENT
+      // pendant l'étape "mismatch" qui explique le raté) — jamais un vrai
+      // état de partie modifié, donc rien côté serveur/binôme à annuler.
+      _guideFakeFlipped.clear();
+    }
+    if (step == _BoardGuideStep.micReady) {
+      _guideMicConnecting = true;
+    }
+    setState(() => _guideStep = step);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      // Le bouton caméra (voir VoiceCallOverlay) n'existe dans l'arbre
+      // qu'une fois l'appel connecté — s'il n'est pas encore monté, mieux
+      // vaut terminer proprement le guide que de rester bloqué à
+      // attendre une cible qui n'apparaîtra peut-être jamais.
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  GlobalKey _guideKeyFor(_BoardGuideStep step) {
+    switch (step) {
+      case _BoardGuideStep.turn:
+      case _BoardGuideStep.turnPassed:
+        return _turnGuideKey;
+      case _BoardGuideStep.activeName:
+        return _activeNameGuideKey;
+      case _BoardGuideStep.card1:
+        return _card1GuideKey;
+      case _BoardGuideStep.card2:
+      case _BoardGuideStep.mismatch:
+        return _card2GuideKey;
+      case _BoardGuideStep.coins:
+        return _coinsGuideKey;
+      case _BoardGuideStep.pause:
+        return _pauseGuideKey;
+      case _BoardGuideStep.chat:
+        return _chatGuideKey;
+      case _BoardGuideStep.micJoin:
+      case _BoardGuideStep.micReady:
+        return _micGuideKey;
+      case _BoardGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  /// Appelé quand l'utilisateur tape lui-même la bulle active (voir
+  /// ShowcaseView.get().addOnCompleteCallback dans initState) — fait
+  /// avancer les étapes purement informatives ; pour card1/card2, rien ne
+  /// se passe ici (le TARGET a ses gestes par défaut désactivés, voir
+  /// disableDefaultTargetGestures dans build()) — seul un vrai tap sur la
+  /// carte simulée (voir _onGuideCardTap) fait avancer la suite. L'étape
+  /// "mismatch", elle, avance normalement au tap comme les étapes
+  /// informatives (les deux cartes ont déjà été "retournées").
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _BoardGuideStep.turn:
+        _startGuideStep(_BoardGuideStep.activeName);
+        break;
+      case _BoardGuideStep.activeName:
+        _startGuideStep(_BoardGuideStep.card1);
+        break;
+      case _BoardGuideStep.mismatch:
+        _startGuideStep(_BoardGuideStep.turnPassed);
+        break;
+      case _BoardGuideStep.turnPassed:
+        _startGuideStep(_BoardGuideStep.coins);
+        break;
+      case _BoardGuideStep.coins:
+        _startGuideStep(_BoardGuideStep.pause);
+        break;
+      case _BoardGuideStep.pause:
+        _startGuideStep(_BoardGuideStep.chat);
+        break;
+      case _BoardGuideStep.chat:
+        _startGuideStep(_BoardGuideStep.micJoin);
+        break;
+      case _BoardGuideStep.micJoin:
+        _startGuideStep(_BoardGuideStep.micReady);
+        break;
+      case _BoardGuideStep.micReady:
+        _startGuideStep(_BoardGuideStep.cameraReady);
+        break;
+      case _BoardGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case _BoardGuideStep.card1:
+      case _BoardGuideStep.card2:
+      case null:
+        break;
+    }
+  }
+
+  /// Tap sur une carte du plateau PENDANT le guide (voir _guideCardA/
+  /// _guideCardB) — retourne la carte visuellement en LOCAL uniquement
+  /// (voir _guideFakeFlipped), sans jamais appeler widget.transport.flip()
+  /// ni dépendre de _state.isMyTurn (voir demande utilisateur : "chacun
+  /// peut tester sans dépendre de l'autre"). En dehors des étapes
+  /// card1/card2, ce tap ne fait rien (la carte n'est alors pas une carte
+  /// du guide, voir index == _guideCardA/_guideCardB dans build()).
+  void _onGuideCardTap(int index) {
+    if (_guideStep == _BoardGuideStep.card1 && index == _guideCardA) {
+      setState(() => _guideFakeFlipped.add(index));
+      _startGuideStep(_BoardGuideStep.card2);
+    } else if (_guideStep == _BoardGuideStep.card2 && index == _guideCardB) {
+      setState(() => _guideFakeFlipped.add(index));
+      _startGuideStep(_BoardGuideStep.mismatch);
+    }
+  }
+
+  /// Le tour entier du guide a été fermé avant la fin (croix, tap hors de
+  /// la bulle...) — nettoie les artefacts visuels locaux (voir doc de
+  /// classe) pour ne pas laisser une carte "retournée" ou un micro
+  /// "orange" qui resterait affiché sans bulle pour l'expliquer.
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideFakeFlipped.clear();
+      _guideMicConnecting = false;
+    });
+  }
+
+  /// Faux bouton micro/caméra affiché UNIQUEMENT pendant les étapes
+  /// micJoin/micReady/cameraReady du guide (voir doc de classe de
+  /// _BoardGuideStep) — voir GameGuideVoiceDemo (widget partagé par tous
+  /// les jeux, voir demande utilisateur : "prends le même soin pour les
+  /// autres jeux").
+  Widget _buildGuideVoiceDemo(ThemePalette theme) {
+    final phase = switch (_guideStep) {
+      _BoardGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _BoardGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _BoardGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -175,6 +501,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané" — dès que la
+      // partie est vraiment terminée (quelle qu'en soit la cause), on
+      // rafraîchit le solde tout de suite plutôt que d'attendre que
+      // l'utilisateur retourne au tableau de bord ; le score/pop-up qui
+      // suit laisse largement le temps à cet appel réseau d'aboutir
+      // avant que l'écran ne se ferme.
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -280,6 +613,9 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané" — même
+    // raisonnement que dans le PopScope ci-dessus.
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -316,6 +652,8 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _mismatchTimer?.cancel();
     _clockTimer?.cancel();
     widget.transport.dispose();
@@ -376,6 +714,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Le solde en cache peut encore refléter le dernier tick reçu,
+          // pas le règlement final de la minute en cours — voir demande
+          // utilisateur : "ça doit être instantané". Attendu AVANT de
+          // sortir pour que le tableau de bord affiche déjà le bon
+          // montant dès son premier rendu, sans "flash" d'un ancien
+          // solde suivi d'une correction visible.
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -404,27 +749,41 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              // En pause : bouton "Reprendre" UNIQUEMENT pour qui l'a posée
-              // (voir demande utilisateur) — désactivé (grisé, pas caché)
-              // côté binôme, pour que ça reste visible que le jeu est en
-              // pause sans laisser croire qu'iel peut la lever.
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            // Le guide met la partie en pause avant de démarrer (voir
+            // _startGuide) — la bulle doit donc pouvoir pointer sur les
+            // DEUX boutons possibles (pause OU reprendre), selon lequel
+            // est visible au moment où l'étape "pause" du guide est
+            // atteinte, plutôt que de ne connaître que le bouton "pause"
+            // qui, en pratique, n'existe plus pendant le guide.
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? // En pause : bouton "Reprendre" UNIQUEMENT pour qui l'a
+                    // posée (voir demande utilisateur) — désactivé (grisé,
+                    // pas caché) côté binôme, pour que ça reste visible que
+                    // le jeu est en pause sans laisser croire qu'iel peut
+                    // la lever.
+                    IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           // Masqué une fois la partie terminée — sinon un retap n'a plus
           // aucun effet visible (la partie est déjà `finished`) et donne
           // l'impression que le bouton "ne fonctionne pas" (même bug
@@ -437,6 +796,10 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                 if (await _confirmAbandon()) {
                   _leavingMyself = true;
                   await widget.transport.abandon();
+                  // Ce bouton ne quitte pas l'écran lui-même (voir
+                  // _onState, qui affiche le score une fois `finished`
+                  // reçu) — le rafraîchissement s'y fait déjà (voir
+                  // plus bas), inutile de le refaire ici.
                 }
               },
             ),
@@ -449,6 +812,18 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
               icon: const Icon(Icons.replay_rounded),
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
+            ),
+          // Bouton "?" pour rejouer le guide à tout moment (voir demande
+          // utilisateur : "si je clique sur le point d'interrogation le
+          // guide se relance pour cette page mais dans la page suivante...
+          // rien") — même principe que MemoryGameModeScreen._startGuide,
+          // indépendant du flag "déjà vu" (déjà marqué dès le premier
+          // affichage automatique, voir _maybeStartGuide).
+          if (!_state.finished)
+            IconButton(
+              icon: const Icon(Icons.help_outline_rounded),
+              tooltip: 'Revoir le guide',
+              onPressed: _startGuide,
             ),
         ],
       ),
@@ -466,40 +841,56 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Flexible(
-                      child: Text(
-                        // Une fois la partie finie, "Au tour de..." n'a
-                        // plus de sens (même correctif que Morpion à Deux,
-                        // voir demande utilisateur).
-                        _state.finished
-                            ? LocaleScope.t(context, 'game_board_finished_label')
-                            : (widget.transport.requiresTurnToFlip
-                                ? (_state.isMyTurn
-                                    ? LocaleScope.t(context, 'memory_board_your_turn')
-                                    : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                        'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                      }))
-                                : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'})),
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
-                        overflow: TextOverflow.ellipsis,
+                      child: Showcase(
+                        key: _turnGuideKey,
+                        title: _guideStep == _BoardGuideStep.turnPassed ? 'Le tour passe' : 'À qui de jouer ?',
+                        description: _guideStep == _BoardGuideStep.turnPassed
+                            ? "L'essai a échoué : dans une vraie partie, ce texte afficherait maintenant le nom de ton binôme, à qui la main serait passée. (Si les deux cartes avaient été identiques, tu aurais continué à jouer.)"
+                            : 'Ce texte indique à qui c\'est le tour de retourner une carte.',
+                        targetBorderRadius: BorderRadius.circular(8),
+                        child: Text(
+                          // Une fois la partie finie, "Au tour de..." n'a
+                          // plus de sens (même correctif que Morpion à Deux,
+                          // voir demande utilisateur).
+                          _state.finished
+                              ? LocaleScope.t(context, 'game_board_finished_label')
+                              : (widget.transport.requiresTurnToFlip
+                                  ? (_state.isMyTurn
+                                      ? LocaleScope.t(context, 'memory_board_your_turn')
+                                      : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                          'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                        }))
+                                  : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'})),
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                    Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                        const SizedBox(width: 4),
-                        Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                        if (commentsBoxId != null) ...[
-                          const SizedBox(width: 8),
-                          CoinBillingRing(theme: theme, progress: _coinProgress()),
-                          if (_coinsConsumed() != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                            ),
+                    Showcase(
+                      key: _coinsGuideKey,
+                      title: 'Temps et Tokens',
+                      description: commentsBoxId != null
+                          ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                          : 'Le temps écoulé depuis le début de la partie.',
+                      targetBorderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                          const SizedBox(width: 4),
+                          Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                          if (commentsBoxId != null) ...[
+                            const SizedBox(width: 8),
+                            CoinBillingRing(theme: theme, progress: _coinProgress()),
+                            if (_coinsConsumed() != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                              ),
+                            ],
                           ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -511,14 +902,29 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                     for (final userId in widget.playerNames.keys) ...[
                       if (userId != widget.playerNames.keys.first) const SizedBox(width: 10),
                       Expanded(
-                        child: _PlayerStatChip(
-                          theme: theme,
-                          name: widget.playerNames[userId] ?? '',
-                          avatar: widget.playerAvatars[userId],
-                          pairsFound: _pairsFoundBy(userId),
-                          moves: _state.movesByUser[userId] ?? 0,
-                          active: _state.currentTurnUserId == userId,
-                        ),
+                        child: Builder(builder: (context) {
+                          final chip = _PlayerStatChip(
+                            theme: theme,
+                            name: widget.playerNames[userId] ?? '',
+                            avatar: widget.playerAvatars[userId],
+                            pairsFound: _pairsFoundBy(userId),
+                            moves: _state.movesByUser[userId] ?? 0,
+                            active: _state.currentTurnUserId == userId,
+                          );
+                          // Bulle sur le nom mis en évidence uniquement
+                          // (voir demande utilisateur : "la coloration du
+                          // nom") — inerte tant que _activeNameGuideKey
+                          // n'est pas inclus dans un startShowCase actif,
+                          // même principe que la première carte ci-dessous.
+                          if (_state.currentTurnUserId != userId) return chip;
+                          return Showcase(
+                            key: _activeNameGuideKey,
+                            title: 'Le nom en surbrillance',
+                            description: 'Le nom coloré indique le joueur dont c\'est le tour en ce moment.',
+                            targetBorderRadius: BorderRadius.circular(14),
+                            child: chip,
+                          );
+                        }),
                       ),
                     ],
                   ],
@@ -568,23 +974,76 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                         itemCount: board.length,
                         itemBuilder: (context, index) {
                           final isMatched = _state.matchedIndices.contains(index);
-                          final isFlipped = _state.flipped.contains(index) || (_displayMismatch?.contains(index) ?? false);
-                          return _MemoryCardTile(
+                          final isFlipped = _state.flipped.contains(index) ||
+                              (_displayMismatch?.contains(index) ?? false) ||
+                              _guideFakeFlipped.contains(index);
+                          // Pendant les étapes card1/card2, le tap est
+                          // détourné vers _onGuideCardTap (voir doc de
+                          // classe : simulation 100% locale, jamais
+                          // widget.transport.flip()) — en dehors de ces
+                          // étapes, ces mêmes cartes redeviennent de
+                          // vraies cartes jouables normalement.
+                          final isGuideCard = index == _guideCardA || index == _guideCardB;
+                          // Tant que le guide tourne (partie déjà mise en
+                          // pause, voir _startGuide), ces deux cartes ne
+                          // doivent JAMAIS déclencher un vrai flip — que ce
+                          // soit à leur propre étape (voir _onGuideCardTap)
+                          // ou à une étape suivante (mismatch, coins...) où
+                          // elles restent affichées sans être "actives".
+                          final card = _MemoryCardTile(
                             emoji: board[index],
                             faceUp: isMatched || isFlipped,
                             dimmed: isMatched,
-                            onTap: () => _onTapCard(index),
+                            onTap: (isGuideCard && _guideStep != null) ? () => _onGuideCardTap(index) : () => _onTapCard(index),
+                          );
+                          // Bulles sur les DEUX cartes choisies par le
+                          // guide (voir _pickGuideCardPair) — inertes tant
+                          // que leur clé n'est pas incluse dans un
+                          // startShowCase actif, comme partout ailleurs
+                          // dans ce guide. `disableDefaultTargetGestures`
+                          // laisse notre propre onTap (voir isGuideCardActive
+                          // ci-dessus) gérer le tap au lieu que le paquet
+                          // se contente de fermer la bulle — le guide
+                          // n'avance que lorsque la carte est VRAIMENT
+                          // "retournée" en local (voir _onGuideCardTap).
+                          if (!isGuideCard) return card;
+                          if (index == _guideCardA) {
+                            return Showcase(
+                              key: _card1GuideKey,
+                              title: 'Retourne une première carte',
+                              description: 'Tape ici pour retourner cette carte.',
+                              targetBorderRadius: BorderRadius.circular(12),
+                              disableDefaultTargetGestures: true,
+                              child: card,
+                            );
+                          }
+                          return Showcase(
+                            key: _card2GuideKey,
+                            title: _guideStep == _BoardGuideStep.mismatch ? 'Ça ne correspond pas' : 'Retourne une deuxième carte',
+                            description: _guideStep == _BoardGuideStep.mismatch
+                                ? "Ces deux cartes ne se ressemblent pas : l'essai a échoué."
+                                : 'Retourne cette autre carte pour essayer de trouver sa paire.',
+                            targetBorderRadius: BorderRadius.circular(12),
+                            disableDefaultTargetGestures: true,
+                            child: card,
                           );
                         },
                       );
                     },
                   ),
                     ),
-                    if (_state.isPaused)
+                    if (_state.isPaused && _guideStep == null)
                       // Empêche tout tap sur la grille en dessous tant que
                       // la pause est active (en plus du garde-fou dans
                       // _onTapCard) — Positioned.fill capte tous les gestes
-                      // de cette zone.
+                      // de cette zone. Masqué tant que le guide tourne
+                      // (voir demande utilisateur : "ici y'a pas de carte
+                      // à retourner" — le guide met la partie en pause
+                      // pour ne pas facturer, voir _startGuide, mais a
+                      // justement besoin que la grille reste visible et
+                      // tapable pour ses étapes card1/card2, voir
+                      // _onGuideCardTap qui contourne déjà le garde-fou
+                      // `_state.isPaused` de _onTapCard).
                       Positioned.fill(
                         child: Container(
                           decoration: BoxDecoration(
@@ -638,13 +1097,14 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -661,6 +1121,18 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        // Démo micro/caméra du guide (voir doc de classe de
+        // _BoardGuideStep) — volontairement SÉPARÉE des vrais boutons
+        // ci-dessus (voir VoiceCallOverlay/NearbyVoiceOverlay) : le
+        // bouton caméra réel n'existe même pas tant qu'un appel n'est pas
+        // connecté (voir VoiceCallOverlay), et la partie est de toute
+        // façon en pause pendant tout le guide (voir _startGuide), donc
+        // un vrai appel ne pourrait jamais réellement se connecter.
+        // Rendue APRÈS les vrais boutons dans ce Stack : elle les
+        // recouvre visuellement et capte le tap à la même position
+        // pendant ces étapes, aucun risque de toucher le vrai bouton en
+        // dessous par erreur.
+        _buildGuideVoiceDemo(theme),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'memory_game',

@@ -12,6 +12,7 @@ import 'features/home/app_shell.dart';
 import 'features/lock/app_lock_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/shop/preferred_currency_notifier.dart';
+import 'features/shop/subscription_status_notifier.dart';
 import 'features/shop/wallet_balance_notifier.dart';
 import 'core/push_notification_service.dart';
 import 'firebase_options.dart';
@@ -46,6 +47,11 @@ void main() async {
   // qu'un appel réseau ait pu aboutir (voir WalletBalanceNotifier.refresh,
   // toujours appelé ensuite par les écrans concernés dès qu'il y a réseau).
   await WalletBalanceNotifier.instance.loadCached();
+  // Idem pour le statut d'abonnement (voir CoinBalanceBadge) : sans ça, le
+  // badge affichait d'abord le solde de pièces avant de basculer sur "∞"
+  // dès que le serveur répondait — un flash visible constaté en réel (voir
+  // demande utilisateur).
+  await SubscriptionStatusNotifier.instance.loadCached();
   // Idem pour la devise de la Boutique (voir ShopScreen._ensureCurrencySelected)
   // : décider instantanément s'il faut proposer le choix, sans attendre le
   // réseau, qui laissait sinon les prix s'afficher un court instant avant.
@@ -55,7 +61,31 @@ void main() async {
   // du widget tree (voir ShowcaseView.get()), pour pouvoir enchaîner des
   // bulles à travers plusieurs écrans poussés (choix du mode → difficulté
   // → plateau) sans avoir à ré-enregistrer à chaque écran.
-  ShowcaseView.register();
+  // `disableBarrierInteraction: true` — sans ça, un tap accidentel en
+  // dehors de la bulle (voir demande utilisateur : "si je clique dans un
+  // espace vide le guide s'annule") fermait tout le guide d'un coup,
+  // plutôt que de simplement l'ignorer ; il faut désormais taper la bulle
+  // ou l'élément qu'elle désigne pour avancer. `globalTooltipActions` (voir
+  // demande utilisateur : "comment on avance ? ajoute 2 btn... un pour
+  // suivant... un pour fermer le guide") ajoute ces deux boutons, icône
+  // seule, sur TOUTES les bulles de TOUS les guides de jeu.
+  ShowcaseView.register(
+    disableBarrierInteraction: true,
+    globalTooltipActionConfig: const TooltipActionConfig(position: TooltipActionPosition.outside),
+    globalTooltipActions: [
+      TooltipActionButton(
+        type: TooltipDefaultActionType.skip,
+        name: '',
+        backgroundColor: Colors.black.withValues(alpha: 0.6),
+        leadIcon: const ActionButtonIcon(icon: Icon(Icons.close_rounded, color: Colors.white, size: 18)),
+      ),
+      TooltipActionButton(
+        type: TooltipDefaultActionType.next,
+        name: '',
+        leadIcon: const ActionButtonIcon(icon: Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18)),
+      ),
+    ],
+  );
   runApp(const BinomeApp());
 }
 

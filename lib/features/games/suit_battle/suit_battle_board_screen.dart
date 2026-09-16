@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -14,17 +15,26 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'suit_battle_engine.dart';
 import 'suit_battle_transport.dart';
 import 'suit_battle_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général) — une bulle
+/// sur le bandeau de tour et une sur SA main (proportionné à ce jeu, voir
+/// demande utilisateur), pas de simulation carte par carte.
+enum _SuitBattleGuideStep { turn, hand, handResult, coins, pause, chat, micJoin, micReady, cameraReady }
 
 const _kRedColor = Color(0xFFE5484D);
 const _kBlueColor = Color(0xFF2F6FED);
@@ -93,11 +103,35 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   late final AnimationController _rejectController;
   int? _rejectingIndex;
 
+  // Guide pas-à-pas (voir doc de classe de _SuitBattleGuideStep et
+  // demande utilisateur : "prends le même soin pour les autres jeux").
+  final _turnGuideKey = GlobalKey();
+  final _handGuideKey = GlobalKey();
+  final _tableGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'suit_battle_board';
+  _SuitBattleGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo "joue une carte" du guide (voir demande utilisateur : "guider le
+  // user vers quelque action pour qu'il comprenne le mécanisme") — la
+  // carte tapée disparaît localement de ma main (voir _HandFan.
+  // excludeIndex) et s'affiche sur la table (voir _displayTableCard),
+  // jamais widget.transport.playLead()/respondCard().
+  int? _guidePlayedIndex;
+  String? _guidePlayedCard;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -112,6 +146,139 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_SuitBattleGuideStep.turn);
+  }
+
+  void _startGuideStep(_SuitBattleGuideStep step) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = step;
+      if (step == _SuitBattleGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  GlobalKey _guideKeyFor(_SuitBattleGuideStep step) {
+    switch (step) {
+      case _SuitBattleGuideStep.turn:
+        return _turnGuideKey;
+      case _SuitBattleGuideStep.hand:
+        return _handGuideKey;
+      case _SuitBattleGuideStep.handResult:
+        return _tableGuideKey;
+      case _SuitBattleGuideStep.coins:
+        return _coinsGuideKey;
+      case _SuitBattleGuideStep.pause:
+        return _pauseGuideKey;
+      case _SuitBattleGuideStep.chat:
+        return _chatGuideKey;
+      case _SuitBattleGuideStep.micJoin:
+      case _SuitBattleGuideStep.micReady:
+        return _micGuideKey;
+      case _SuitBattleGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _SuitBattleGuideStep.turn:
+        _startGuideStep(_SuitBattleGuideStep.hand);
+        break;
+      case _SuitBattleGuideStep.hand:
+        // N'avance PAS ici (gestes de cible désactivés) — seul un vrai
+        // tap sur la carte désignée fait avancer (voir _onGuideHandTap).
+        break;
+      case _SuitBattleGuideStep.handResult:
+        setState(() {
+          _guidePlayedIndex = null;
+          _guidePlayedCard = null;
+        });
+        _startGuideStep(_SuitBattleGuideStep.coins);
+        break;
+      case _SuitBattleGuideStep.coins:
+        _startGuideStep(_SuitBattleGuideStep.pause);
+        break;
+      case _SuitBattleGuideStep.pause:
+        _startGuideStep(_SuitBattleGuideStep.chat);
+        break;
+      case _SuitBattleGuideStep.chat:
+        _startGuideStep(_SuitBattleGuideStep.micJoin);
+        break;
+      case _SuitBattleGuideStep.micJoin:
+        _startGuideStep(_SuitBattleGuideStep.micReady);
+        break;
+      case _SuitBattleGuideStep.micReady:
+        _startGuideStep(_SuitBattleGuideStep.cameraReady);
+        break;
+      case _SuitBattleGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guidePlayedIndex = null;
+      _guidePlayedCard = null;
+    });
+  }
+
+  /// Tap RÉEL sur la carte désignée par le guide (voir _HandFan.
+  /// onGuideTap) — la retire visuellement de ma main et l'affiche sur la
+  /// table, purement en local.
+  void _onGuideHandTap(int index, String card) {
+    setState(() {
+      _guidePlayedIndex = index;
+      _guidePlayedCard = card;
+    });
+    _startGuideStep(_SuitBattleGuideStep.handResult);
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _SuitBattleGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _SuitBattleGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _SuitBattleGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -163,6 +330,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané".
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -291,6 +460,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     _rejectController.dispose();
     widget.transport.dispose();
@@ -323,6 +494,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -369,6 +542,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -391,23 +566,30 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                 ),
                 actions: [
                   if (!_state.finished)
-                    if (_state.isPaused)
-                      IconButton(
-                        icon: const Icon(Icons.play_circle_outline),
-                        tooltip: _state.pausedByMe
-                            ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                            : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                                'name': widget.playerNames[_state.pausedByUserId] ??
-                                    LocaleScope.t(context, 'memory_board_partner_fallback'),
-                              }),
-                        onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.pause_circle_outline),
-                        tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                        onPressed: () => widget.transport.pause(),
-                      ),
+                    Showcase(
+                      key: _pauseGuideKey,
+                      title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+                      description: _state.isPaused
+                          ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                          : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+                      targetShapeBorder: const CircleBorder(),
+                      child: _state.isPaused
+                          ? IconButton(
+                              icon: const Icon(Icons.play_circle_outline),
+                              tooltip: _state.pausedByMe
+                                  ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                                  : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                                      'name': widget.playerNames[_state.pausedByUserId] ??
+                                          LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                    }),
+                              onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.pause_circle_outline),
+                              tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                              onPressed: () => widget.transport.pause(),
+                            ),
+                    ),
                   if (!_state.finished)
                     IconButton(
                       icon: const Icon(Icons.flag_outlined),
@@ -425,6 +607,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                       tooltip: LocaleScope.t(context, 'memory_score_rematch'),
                       onPressed: () => widget.onRematch!(context),
                     ),
+                  if (!_state.finished)
+                    IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
                 ],
               ),
               body: ThemedBackground(
@@ -444,33 +628,48 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                                       : 'Manche ${_state.roundsCount}',
                                   style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16, color: theme.primary),
                                 ),
-                                Row(
-                                  children: [
-                                    Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                                    const SizedBox(width: 4),
-                                    Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                                    if (commentsBoxId != null) ...[
-                                      const SizedBox(width: 8),
-                                      CoinBillingRing(theme: theme, progress: _coinProgress()),
-                                      if (_coinsConsumed() != null) ...[
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                                          style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                                        ),
+                                Showcase(
+                                  key: _coinsGuideKey,
+                                  title: 'Temps et Tokens',
+                                  description: commentsBoxId != null
+                                      ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                                      : 'Le temps écoulé depuis le début de la partie.',
+                                  targetBorderRadius: BorderRadius.circular(8),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                                      const SizedBox(width: 4),
+                                      Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                                      if (commentsBoxId != null) ...[
+                                        const SizedBox(width: 8),
+                                        CoinBillingRing(theme: theme, progress: _coinProgress()),
+                                        if (_coinsConsumed() != null) ...[
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                            style:
+                                                GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                                          ),
+                                        ],
                                       ],
                                     ],
-                                  ],
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: _TurnBanner(
-                              theme: theme,
-                              state: _state,
-                              partnerName: widget.playerNames[partnerId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+                            child: Showcase(
+                              key: _turnGuideKey,
+                              title: 'À qui de jouer ?',
+                              description: 'Ce bandeau indique à qui c\'est le tour et ce qu\'il reste à faire (jouer, répondre, capturer).',
+                              targetBorderRadius: BorderRadius.circular(8),
+                              child: _TurnBanner(
+                                theme: theme,
+                                state: _state,
+                                partnerName: widget.playerNames[partnerId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+                              ),
                             ),
                           ),
                           Padding(
@@ -485,27 +684,45 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                           ),
                           Expanded(
                             child: Center(
-                              child: _TableArea(
-                                theme: theme,
-                                tableCard: _state.tableCard,
-                                canCapture: canRespond,
-                                onCapture: _tapCapture,
-                              ),
+                              child: _guideStep == _SuitBattleGuideStep.handResult
+                                  ? Showcase(
+                                      key: _tableGuideKey,
+                                      title: 'Elle part sur la table',
+                                      description:
+                                          "Cette carte est maintenant sur la table. Si c'était à toi d'entamer, n'importe quelle carte convenait. Si tu répondais à ton binôme, elle devait être de la même couleur — sinon il aurait fallu capturer ou la perdre.",
+                                      targetBorderRadius: BorderRadius.circular(12),
+                                      child: _TableArea(
+                                        theme: theme,
+                                        tableCard: _guidePlayedCard ?? _state.tableCard,
+                                        canCapture: canRespond,
+                                        onCapture: _tapCapture,
+                                      ),
+                                    )
+                                  : _TableArea(
+                                      theme: theme,
+                                      tableCard: _guidePlayedCard ?? _state.tableCard,
+                                      canCapture: canRespond,
+                                      onCapture: _tapCapture,
+                                    ),
                             ),
                           ),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
                             child: AnimatedBuilder(
-                              animation: _rejectController,
-                              builder: (context, _) => _HandFan(
-                                cards: _state.mySpread,
-                                color: myColor,
-                                interactive: canLead || canRespond,
-                                rejectingIndex: _rejectingIndex,
-                                rejectProgress: _rejectController.value,
-                                onTapCard: _tapMyCard,
+                                animation: _rejectController,
+                                builder: (context, _) => _HandFan(
+                                  cards: _state.mySpread,
+                                  color: myColor,
+                                  interactive: canLead || canRespond,
+                                  rejectingIndex: _rejectingIndex,
+                                  rejectProgress: _rejectController.value,
+                                  onTapCard: _tapMyCard,
+                                  excludeIndex: _guidePlayedIndex,
+                                  guideIndex: _state.mySpread.isEmpty ? null : 0,
+                                  guideKey: _guideStep == _SuitBattleGuideStep.hand ? _handGuideKey : null,
+                                  onGuideTap: _onGuideHandTap,
+                                ),
                               ),
-                            ),
                           ),
                         ],
                       ),
@@ -519,7 +736,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                         left: 4,
                         child: _WonPileBadge(color: partnerColor, count: _state.partnerWonPile.length),
                       ),
-                      if (_state.isPaused)
+                      if (_state.isPaused && _guideStep == null)
                         Positioned.fill(
                           child: Container(
                             color: theme.background,
@@ -567,13 +784,14 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
             ),
           ),
           if (commentsBoxId != null)
-            GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+            GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
           else if (widget.nearbyComms != null)
             GameCommentOverlay(
               nearbyComms: widget.nearbyComms,
               enabled: true,
               myName: widget.nearbyMyName ?? '',
               partnerName: widget.nearbyPartnerName ?? '',
+              guideKey: _chatGuideKey,
             ),
           if (commentsBoxId != null)
             VoiceCallOverlay(
@@ -586,6 +804,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
             )
           else if (widget.nearbyComms != null)
             NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+          _buildGuideVoiceDemo(),
           GameWalletGuard(
             boxId: commentsBoxId,
             sessionType: 'suit_battle',
@@ -766,6 +985,17 @@ class _HandFan extends StatelessWidget {
   final int? rejectingIndex;
   final double rejectProgress;
   final void Function(int index, String card)? onTapCard;
+  // Guide pas-à-pas (voir demande utilisateur : "guider le user vers
+  // quelque action pour qu'il comprenne le mécanisme") — [excludeIndex]
+  // masque la carte "jouée" par la démo (voir
+  // _SuitBattleBoardScreenState._onGuideHandTap, jamais un vrai
+  // widget.transport) ; [guideIndex]/[guideKey]/[onGuideTap] désignent LA
+  // carte que le guide fait taper, indépendamment de [interactive]
+  // (toujours faux pendant le guide, partie en pause).
+  final int? excludeIndex;
+  final int? guideIndex;
+  final GlobalKey? guideKey;
+  final void Function(int index, String card)? onGuideTap;
 
   const _HandFan({
     required this.cards,
@@ -774,6 +1004,10 @@ class _HandFan extends StatelessWidget {
     required this.rejectingIndex,
     this.rejectProgress = 0,
     required this.onTapCard,
+    this.excludeIndex,
+    this.guideIndex,
+    this.guideKey,
+    this.onGuideTap,
   });
 
   @override
@@ -789,21 +1023,34 @@ class _HandFan extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         itemCount: cards.length,
         itemBuilder: (context, index) {
+          if (index == excludeIndex) return const SizedBox.shrink();
           final card = cards[index];
           final shaking = rejectingIndex == index;
           final shakeOffset = shaking ? math.sin(rejectProgress * math.pi * 6) * 6 * (1 - rejectProgress) : 0.0;
+          final isGuideTarget = index == guideIndex && guideKey != null;
+
+          final cardTile = GestureDetector(
+            onTap: isGuideTarget ? () => onGuideTap?.call(index, card) : (interactive ? () => onTapCard?.call(index, card) : null),
+            child: Opacity(
+              opacity: interactive ? 1 : 0.92,
+              child: _PlayingCardFace(card: card, width: _kHandCardWidth, height: _kHandCardHeight),
+            ),
+          );
 
           return Padding(
             padding: EdgeInsets.only(left: index == 0 ? 0 : 22, top: 6),
             child: Transform.translate(
               offset: Offset(shakeOffset, 0),
-              child: GestureDetector(
-                onTap: interactive ? () => onTapCard?.call(index, card) : null,
-                child: Opacity(
-                  opacity: interactive ? 1 : 0.92,
-                  child: _PlayingCardFace(card: card, width: _kHandCardWidth, height: _kHandCardHeight),
-                ),
-              ),
+              child: isGuideTarget
+                  ? Showcase(
+                      key: guideKey!,
+                      title: 'Tape cette carte',
+                      description: 'Tape ici pour la jouer.',
+                      targetBorderRadius: BorderRadius.circular(8),
+                      disableDefaultTargetGestures: true,
+                      child: cardTile,
+                    )
+                  : cardTile,
             ),
           );
         },

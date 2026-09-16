@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -13,18 +14,41 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/tic_tac_toe_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'tic_tac_toe_engine.dart';
 import 'tic_tac_toe_transport.dart';
 import 'tic_tac_toe_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général). Une seule
+/// bulle sur la grille entière plutôt qu'une simulation case par case
+/// (voir demande utilisateur : rester proportionné à chaque jeu) — le
+/// Morpion a deux phases (pose puis déplacement) déjà expliquées dans le
+/// texte de la bulle plutôt que démontrées.
+enum _TicTacToeGuideStep {
+  turn,
+  activeName,
+  placementTap,
+  selectTap,
+  moveTap,
+  coins,
+  pause,
+  chat,
+  micJoin,
+  micReady,
+  cameraReady,
+}
 
 /// Plateau de "Morpion à Deux" — UNIQUE écran de jeu partagé par les 3
 /// modes (voir TicTacToeTransport), copie structurelle conforme de
@@ -98,11 +122,39 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   List<int>? _highlightedLine;
   Timer? _highlightTimer;
 
+  // Guide pas-à-pas (voir doc de classe de _TicTacToeGuideStep et demande
+  // utilisateur : "prends le même soin pour les autres jeux") — mêmes
+  // principes qu'au Jeu de Mémoire/Bataille : étapes informatives,
+  // avancées au tap, mise en pause automatique, rejouable via le "?".
+  final _turnGuideKey = GlobalKey();
+  final _activeNameGuideKey = GlobalKey();
+  final _gridGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'tic_tac_toe_board';
+  _TicTacToeGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo pose/déplacement du guide (voir demande utilisateur : "peu tu
+  // guider pour que le user connaisse comment se fait la pose et aussi
+  // comment se fait le déplacement") — indices/état purement LOCAUX,
+  // jamais transmis à widget.transport (mêmes principes que
+  // _guideFakeFlipped dans memory_game_board_screen.dart).
+  int? _guidePlaceIndex;
+  int? _guideMoveIndex;
+  bool _guidePlaced = false;
+  bool _guideSelected = false;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -111,6 +163,191 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_TicTacToeGuideStep.turn);
+  }
+
+  /// Premier indice vide du plateau RÉEL, différent de [exclude] — voir
+  /// demande utilisateur : la démo doit poser/déplacer sur de vraies
+  /// cases vides, jamais une case déjà occupée. `null` si le plateau
+  /// n'a pas encore été reçu ou n'a plus de case libre.
+  int? _pickGuideEmptyIndex({int? exclude}) {
+    final board = _highlightBoard ?? _state.board;
+    for (var i = 0; i < board.length; i++) {
+      if (i == exclude) continue;
+      if (board[i] == null) return i;
+    }
+    return null;
+  }
+
+  void _startGuideStep(_TicTacToeGuideStep step) {
+    if (!mounted) return;
+    if (step == _TicTacToeGuideStep.placementTap) {
+      _guidePlaced = false;
+      _guideSelected = false;
+      _guidePlaceIndex = _pickGuideEmptyIndex();
+      if (_guidePlaceIndex == null) {
+        _startGuideStep(_TicTacToeGuideStep.coins);
+        return;
+      }
+    }
+    if (step == _TicTacToeGuideStep.moveTap) {
+      _guideMoveIndex = _pickGuideEmptyIndex(exclude: _guidePlaceIndex);
+      if (_guideMoveIndex == null) {
+        _startGuideStep(_TicTacToeGuideStep.coins);
+        return;
+      }
+    }
+    setState(() {
+      _guideStep = step;
+      if (step == _TicTacToeGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  /// Étape "pose" (voir _TicTacToeGuideStep.placementTap) — tap RÉEL sur
+  /// la case désignée, purement local (voir doc de classe des champs
+  /// _guidePlaceIndex/_guidePlaced), jamais widget.transport.place().
+  void _onGuidePlacementTap() {
+    setState(() => _guidePlaced = true);
+    _startGuideStep(_TicTacToeGuideStep.selectTap);
+  }
+
+  /// Étape "sélection" (phase de déplacement) — tap sur le pion posé par
+  /// la démo, purement local.
+  void _onGuideSelectTap() {
+    setState(() => _guideSelected = true);
+    _startGuideStep(_TicTacToeGuideStep.moveTap);
+  }
+
+  /// Étape "déplacement" — tap sur la case destination, purement local ;
+  /// nettoie tous les artefacts de démo avant de continuer le guide.
+  void _onGuideMoveTap() {
+    setState(() {
+      _guidePlaced = false;
+      _guideSelected = false;
+      _guidePlaceIndex = null;
+      _guideMoveIndex = null;
+    });
+    _startGuideStep(_TicTacToeGuideStep.coins);
+  }
+
+  GlobalKey _guideKeyFor(_TicTacToeGuideStep step) {
+    switch (step) {
+      case _TicTacToeGuideStep.turn:
+        return _turnGuideKey;
+      case _TicTacToeGuideStep.activeName:
+        return _activeNameGuideKey;
+      case _TicTacToeGuideStep.placementTap:
+      case _TicTacToeGuideStep.selectTap:
+      case _TicTacToeGuideStep.moveTap:
+        return _gridGuideKey;
+      case _TicTacToeGuideStep.coins:
+        return _coinsGuideKey;
+      case _TicTacToeGuideStep.pause:
+        return _pauseGuideKey;
+      case _TicTacToeGuideStep.chat:
+        return _chatGuideKey;
+      case _TicTacToeGuideStep.micJoin:
+      case _TicTacToeGuideStep.micReady:
+        return _micGuideKey;
+      case _TicTacToeGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  /// Appelé au tap sur la bulle elle-même (voir
+  /// ShowcaseView.get().addOnCompleteCallback) — ne fait avancer que les
+  /// étapes purement informatives ; placementTap/selectTap/moveTap ont
+  /// leurs gestes de cible désactivés (voir disableDefaultTargetGestures
+  /// dans build()) et n'avancent QUE via un vrai tap sur la case
+  /// désignée (voir _onGuidePlacementTap/_onGuideSelectTap/
+  /// _onGuideMoveTap), jamais ici.
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _TicTacToeGuideStep.turn:
+        _startGuideStep(_TicTacToeGuideStep.activeName);
+        break;
+      case _TicTacToeGuideStep.activeName:
+        _startGuideStep(_TicTacToeGuideStep.placementTap);
+        break;
+      case _TicTacToeGuideStep.placementTap:
+      case _TicTacToeGuideStep.selectTap:
+      case _TicTacToeGuideStep.moveTap:
+        break;
+      case _TicTacToeGuideStep.coins:
+        _startGuideStep(_TicTacToeGuideStep.pause);
+        break;
+      case _TicTacToeGuideStep.pause:
+        _startGuideStep(_TicTacToeGuideStep.chat);
+        break;
+      case _TicTacToeGuideStep.chat:
+        _startGuideStep(_TicTacToeGuideStep.micJoin);
+        break;
+      case _TicTacToeGuideStep.micJoin:
+        _startGuideStep(_TicTacToeGuideStep.micReady);
+        break;
+      case _TicTacToeGuideStep.micReady:
+        _startGuideStep(_TicTacToeGuideStep.cameraReady);
+        break;
+      case _TicTacToeGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guidePlaced = false;
+      _guideSelected = false;
+      _guidePlaceIndex = null;
+      _guideMoveIndex = null;
+    });
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _TicTacToeGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _TicTacToeGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _TicTacToeGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -189,6 +426,8 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   void _maybeShowScoreboard(TicTacToeBoardState state) {
     if (_scoreboardShown) return;
     _scoreboardShown = true;
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
     if (state.abandoned && !_leavingMyself) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
     } else {
@@ -341,6 +580,8 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     _highlightTimer?.cancel();
     widget.transport.dispose();
@@ -368,6 +609,8 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -393,6 +636,8 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -421,23 +666,30 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           // Masqué une fois la partie terminée (victoire) — sinon un retap
           // n'a plus aucun effet visible (la partie est déjà `finished`,
           // voir _onTapCell) et donne l'impression que le bouton "ne
@@ -464,6 +716,8 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
+          if (!_state.finished)
+            IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
       body: ThemedBackground(
@@ -476,41 +730,55 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Flexible(
-                      child: Text(
-                        // Une fois la partie finie, "Au tour de..." n'a
-                        // plus de sens (voir demande utilisateur, capture :
-                        // le tour restait affiché alors que la partie était
-                        // déjà gagnée).
-                        _state.finished
-                            ? LocaleScope.t(context, 'game_board_finished_label')
-                            : (widget.transport.requiresTurnToPlay
-                                ? (_state.isMyTurn
-                                    ? LocaleScope.t(context, 'memory_board_your_turn')
-                                    : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                        'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                      }))
-                                : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'})),
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
-                        overflow: TextOverflow.ellipsis,
+                      child: Showcase(
+                        key: _turnGuideKey,
+                        title: 'À qui de jouer ?',
+                        description: 'Ce texte indique à qui c\'est le tour de jouer.',
+                        targetBorderRadius: BorderRadius.circular(8),
+                        child: Text(
+                          // Une fois la partie finie, "Au tour de..." n'a
+                          // plus de sens (voir demande utilisateur, capture :
+                          // le tour restait affiché alors que la partie était
+                          // déjà gagnée).
+                          _state.finished
+                              ? LocaleScope.t(context, 'game_board_finished_label')
+                              : (widget.transport.requiresTurnToPlay
+                                  ? (_state.isMyTurn
+                                      ? LocaleScope.t(context, 'memory_board_your_turn')
+                                      : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                          'name': turnName ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                        }))
+                                  : LocaleScope.t(context, 'memory_board_partner_turn', {'name': turnName ?? '...'})),
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                    Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                        const SizedBox(width: 4),
-                        Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                        if (commentsBoxId != null) ...[
-                          const SizedBox(width: 8),
-                          CoinBillingRing(theme: theme, progress: _coinProgress()),
-                          if (_coinsConsumed() != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                            ),
+                    Showcase(
+                      key: _coinsGuideKey,
+                      title: 'Temps et Tokens',
+                      description: commentsBoxId != null
+                          ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                          : 'Le temps écoulé depuis le début de la partie.',
+                      targetBorderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                          const SizedBox(width: 4),
+                          Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                          if (commentsBoxId != null) ...[
+                            const SizedBox(width: 8),
+                            CoinBillingRing(theme: theme, progress: _coinProgress()),
+                            if (_coinsConsumed() != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                              ),
+                            ],
                           ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -533,15 +801,25 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                     for (final userId in widget.playerNames.keys) ...[
                       if (userId != widget.playerNames.keys.first) const SizedBox(width: 10),
                       Expanded(
-                        child: _TicTacToePlayerChip(
-                          theme: theme,
-                          name: widget.playerNames[userId] ?? '',
-                          avatar: widget.playerAvatars[userId],
-                          mine: _markerFor(userId) == _Marker.heart,
-                          active: _state.currentTurnUserId == userId,
-                          score: _state.scoreFor(userId),
-                          targetScore: _state.targetScore,
-                        ),
+                        child: Builder(builder: (context) {
+                          final chip = _TicTacToePlayerChip(
+                            theme: theme,
+                            name: widget.playerNames[userId] ?? '',
+                            avatar: widget.playerAvatars[userId],
+                            mine: _markerFor(userId) == _Marker.heart,
+                            active: _state.currentTurnUserId == userId,
+                            score: _state.scoreFor(userId),
+                            targetScore: _state.targetScore,
+                          );
+                          if (_state.currentTurnUserId != userId) return chip;
+                          return Showcase(
+                            key: _activeNameGuideKey,
+                            title: 'Le nom en surbrillance',
+                            description: 'Le nom coloré indique le joueur dont c\'est le tour en ce moment.',
+                            targetBorderRadius: BorderRadius.circular(14),
+                            child: chip,
+                          );
+                        }),
                       ),
                     ],
                   ],
@@ -565,18 +843,86 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                             itemCount: TicTacToeEngine.cellCount,
                             itemBuilder: (context, index) {
                               final displayBoard = _highlightBoard ?? _state.board;
-                              final occupant = displayBoard[index];
-                              return _TicTacToeCellTile(
+                              // Case "posée" par le guide (voir doc de
+                              // classe de _TicTacToeGuideStep) — purement
+                              // visuelle, jamais transmise à
+                              // widget.transport.place() (voir
+                              // _onGuidePlacementTap et demande
+                              // utilisateur : simulation locale, jamais
+                              // dépendante du binôme).
+                              final guideOccupant =
+                                  (index == _guidePlaceIndex && _guidePlaced) ? widget.user.id : null;
+                              final occupant = displayBoard[index] ?? guideOccupant;
+                              // Sélection factice active (voir
+                              // _onGuideSelectTap) — indépendante de
+                              // l'index, contrairement à isThisCellSelected
+                              // ci-dessous, pour que TOUTES les cases
+                              // vides s'affichent comme destinations
+                              // valides pendant l'étape moveTap (même
+                              // logique que _selectedPosition != null en
+                              // temps réel).
+                              final guideSelectionActive =
+                                  _guideStep == _TicTacToeGuideStep.moveTap && _guideSelected;
+                              final isThisCellSelected = guideSelectionActive && index == _guidePlaceIndex;
+                              final tile = _TicTacToeCellTile(
                                 theme: theme,
                                 marker: occupant == null ? null : _markerFor(occupant),
-                                selected: _selectedPosition == index,
-                                movableTarget: _highlightBoard == null && _selectedPosition != null && occupant == null,
+                                selected: _selectedPosition == index || isThisCellSelected,
+                                movableTarget: _highlightBoard == null &&
+                                    (_selectedPosition != null || guideSelectionActive) &&
+                                    occupant == null,
                                 justScored: _highlightedLine?.contains(index) ?? false,
-                                onTap: () => _onTapCell(index),
+                                onTap: () {
+                                  if (_guideStep == _TicTacToeGuideStep.placementTap && index == _guidePlaceIndex) {
+                                    _onGuidePlacementTap();
+                                    return;
+                                  }
+                                  if (_guideStep == _TicTacToeGuideStep.selectTap && index == _guidePlaceIndex) {
+                                    _onGuideSelectTap();
+                                    return;
+                                  }
+                                  if (_guideStep == _TicTacToeGuideStep.moveTap && index == _guideMoveIndex) {
+                                    _onGuideMoveTap();
+                                    return;
+                                  }
+                                  _onTapCell(index);
+                                },
                               );
+                              if (_guideStep == _TicTacToeGuideStep.placementTap && index == _guidePlaceIndex) {
+                                return Showcase(
+                                  key: _gridGuideKey,
+                                  title: 'Place un pion',
+                                  description: 'Tape cette case vide pour y placer un pion.',
+                                  targetBorderRadius: BorderRadius.circular(8),
+                                  disableDefaultTargetGestures: true,
+                                  child: tile,
+                                );
+                              }
+                              if (_guideStep == _TicTacToeGuideStep.selectTap && index == _guidePlaceIndex) {
+                                return Showcase(
+                                  key: _gridGuideKey,
+                                  title: 'Sélectionne ton pion',
+                                  description:
+                                      "En phase de déplacement, tape d'abord un de tes pions pour le sélectionner.",
+                                  targetBorderRadius: BorderRadius.circular(8),
+                                  disableDefaultTargetGestures: true,
+                                  child: tile,
+                                );
+                              }
+                              if (_guideStep == _TicTacToeGuideStep.moveTap && index == _guideMoveIndex) {
+                                return Showcase(
+                                  key: _gridGuideKey,
+                                  title: 'Déplace-le ici',
+                                  description: 'Tape une case vide pour y déplacer le pion sélectionné.',
+                                  targetBorderRadius: BorderRadius.circular(8),
+                                  disableDefaultTargetGestures: true,
+                                  child: tile,
+                                );
+                              }
+                              return tile;
                             },
                           ),
-                          if (_state.isPaused)
+                          if (_state.isPaused && _guideStep == null)
                             Positioned.fill(
                               child: Container(
                                 decoration: BoxDecoration(
@@ -633,13 +979,14 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -652,6 +999,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'tic_tac_toe',

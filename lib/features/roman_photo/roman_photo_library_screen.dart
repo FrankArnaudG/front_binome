@@ -9,6 +9,7 @@ import '../../theme/theme_scope.dart';
 import '../../widgets/coin_icon.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/wood_texture.dart';
+import '../shop/subscription_status_notifier.dart';
 import 'roman_photo_download_service.dart';
 import 'roman_photo_local_db.dart';
 import 'roman_photo_purchase_flow.dart';
@@ -680,6 +681,13 @@ class _PriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement actif : le tome est gratuit et illimité (voir
+    // RomanPhotoVolume.needsPurchase et RomanPhotoPurchaseController côté
+    // backend) — plus aucune raison d'afficher un prix en pièces (voir
+    // demande utilisateur : "rien ne doit apparaître").
+    if (coinPrice > 0 && SubscriptionStatusNotifier.instance.isActive) {
+      return const SizedBox.shrink();
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

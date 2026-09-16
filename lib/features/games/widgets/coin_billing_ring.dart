@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/theme_palette.dart';
 import '../../../widgets/coin_icon.dart';
+import '../../shop/subscription_status_notifier.dart';
 
 /// Petit indicateur visuel de la progression vers la prochaine pièce
 /// déduite en mode à distance (voir demande utilisateur) — une pièce
@@ -20,6 +21,12 @@ class CoinBillingRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement actif : le temps de jeu est illimité et gratuit (voir
+    // BillGameSessions côté backend, aucun débit pour un abonné) — plus
+    // aucune raison d'afficher une progression vers une pièce déduite qui
+    // n'arrivera jamais (voir demande utilisateur : "rien ne doit
+    // apparaître").
+    if (SubscriptionStatusNotifier.instance.isActive) return SizedBox(width: size, height: size);
     return SizedBox(
       width: size,
       height: size,

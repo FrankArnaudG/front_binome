@@ -82,6 +82,9 @@ class TermsOfServiceScreen extends StatelessWidget {
 
               sectionTitle(t('terms_s11_title')),
               body(t('terms_s11_body')),
+
+              sectionTitle(t('terms_s12_title')),
+              body(t('terms_s12_body')),
             ],
           ),
         ),

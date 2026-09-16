@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../nearby/nearby_comms.dart';
 
@@ -18,8 +19,20 @@ class NearbyVoiceOverlay extends StatefulWidget {
   final NearbyComms? comms;
   final bool enabled;
   final bool paused;
+  // Guide pas-à-pas (voir demande utilisateur : "un guide sur... activer le
+  // micro et la camera") — non-null uniquement pour faire apparaître une
+  // bulle sur le bouton correspondant.
+  final GlobalKey? micGuideKey;
+  final GlobalKey? cameraGuideKey;
 
-  const NearbyVoiceOverlay({super.key, required this.comms, required this.enabled, this.paused = false});
+  const NearbyVoiceOverlay({
+    super.key,
+    required this.comms,
+    required this.enabled,
+    this.paused = false,
+    this.micGuideKey,
+    this.cameraGuideKey,
+  });
 
   @override
   State<NearbyVoiceOverlay> createState() => _NearbyVoiceOverlayState();
@@ -127,48 +140,58 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              GestureDetector(
-                onTapDown: (_) => _onTalkStart(),
-                onTapUp: (_) => _onTalkStop(),
-                onTapCancel: _onTalkStop,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: widget.paused
-                        ? Colors.grey.withValues(alpha: 0.5)
-                        : (_talking ? Colors.redAccent : Colors.black.withValues(alpha: 0.55)),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    widget.paused ? Icons.mic_off_rounded : Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 20,
+              _wrapGuide(
+                widget.micGuideKey,
+                title: 'Active le micro',
+                description: 'Maintiens ce bouton appuyé pour parler à ton binôme pendant la partie.',
+                child: GestureDetector(
+                  onTapDown: (_) => _onTalkStart(),
+                  onTapUp: (_) => _onTalkStop(),
+                  onTapCancel: _onTalkStop,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: widget.paused
+                          ? Colors.grey.withValues(alpha: 0.5)
+                          : (_talking ? Colors.redAccent : Colors.black.withValues(alpha: 0.55)),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.paused ? Icons.mic_off_rounded : Icons.mic_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _toggleCamera,
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: widget.paused
-                        ? Colors.grey.withValues(alpha: 0.5)
-                        : (_cameraOn ? Colors.greenAccent.shade400.withValues(alpha: 0.9) : Colors.black.withValues(alpha: 0.55)),
-                    shape: BoxShape.circle,
+              _wrapGuide(
+                widget.cameraGuideKey,
+                title: 'Active la caméra',
+                description: "Ajoute la vidéo si tu veux vous voir pendant la partie.",
+                child: GestureDetector(
+                  onTap: _toggleCamera,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: widget.paused
+                          ? Colors.grey.withValues(alpha: 0.5)
+                          : (_cameraOn ? Colors.greenAccent.shade400.withValues(alpha: 0.9) : Colors.black.withValues(alpha: 0.55)),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _togglingCamera
+                        ? const Padding(
+                            padding: EdgeInsets.all(9),
+                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                          )
+                        : Icon(
+                            _cameraOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
                   ),
-                  child: _togglingCamera
-                      ? const Padding(
-                          padding: EdgeInsets.all(9),
-                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
-                        )
-                      : Icon(
-                          _cameraOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
                 ),
               ),
             ],
@@ -176,6 +199,11 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
         ],
       ),
     );
+  }
+
+  Widget _wrapGuide(GlobalKey? key, {required String title, required String description, required Widget child}) {
+    if (key == null) return child;
+    return Showcase(key: key, title: title, description: description, targetShapeBorder: const CircleBorder(), child: child);
   }
 
   Widget _buildVideoPreviews() {

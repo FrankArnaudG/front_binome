@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -14,18 +15,28 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../widgets/war_card_match_scoreboard.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'war_card_transport.dart';
 import 'war_card_transport_local.dart';
 import 'war_card_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général : simulation
+/// 100% locale, mise en pause automatique, rejouable via "?"). Plus
+/// simple qu'au Jeu de Mémoire : la Bataille n'a pas de "paire" à
+/// démontrer, juste un bouton à taper — pas d'étape réactive nécessaire.
+enum _WarCardGuideStep { status, flip, flipResult, coins, pause, chat, micJoin, micReady, cameraReady }
 
 const _kRedColor = Color(0xFFE5484D);
 const _kBlueColor = Color(0xFF2F6FED);
@@ -104,11 +115,36 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
   bool get _isLocalPassAndPlay => widget.transport is LocalWarCardTransport;
 
+  // Guide pas-à-pas (voir doc de classe de _WarCardGuideStep et demande
+  // utilisateur : "prends le même soin pour les autres jeux") — mêmes
+  // principes qu'au Jeu de Mémoire : étapes purement informatives,
+  // avancées au tap (voir _onGuideStepTapped), rejouable via le "?" de
+  // l'AppBar, jamais bloquée par le binôme.
+  final _statusGuideKey = GlobalKey();
+  final _flipGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'war_card_board';
+  _WarCardGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo "retourner sa carte" du guide (voir demande utilisateur :
+  // "guider le user vers quelque action pour qu'il comprenne le
+  // mécanisme") — révèle la carte du DESSUS de ma vraie pile (simple
+  // lecture, aucune triche : c'est déjà la carte que je jouerais), sans
+  // jamais appeler widget.transport.flip() ni dépendre du binôme.
+  bool _guideFlipped = false;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -119,6 +155,136 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  /// Point d'entrée unique du guide (auto ou via "?") — met la partie en
+  /// pause d'abord (voir memory_game_board_screen.dart._startGuide pour
+  /// le raisonnement complet : ne pas facturer pendant la démo, le
+  /// binôme ne voit que la pause habituelle).
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_WarCardGuideStep.status);
+  }
+
+  void _startGuideStep(_WarCardGuideStep step) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = step;
+      if (step == _WarCardGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  GlobalKey _guideKeyFor(_WarCardGuideStep step) {
+    switch (step) {
+      case _WarCardGuideStep.status:
+        return _statusGuideKey;
+      case _WarCardGuideStep.flip:
+      case _WarCardGuideStep.flipResult:
+        return _flipGuideKey;
+      case _WarCardGuideStep.coins:
+        return _coinsGuideKey;
+      case _WarCardGuideStep.pause:
+        return _pauseGuideKey;
+      case _WarCardGuideStep.chat:
+        return _chatGuideKey;
+      case _WarCardGuideStep.micJoin:
+      case _WarCardGuideStep.micReady:
+        return _micGuideKey;
+      case _WarCardGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _WarCardGuideStep.status:
+        _startGuideStep(_WarCardGuideStep.flip);
+        break;
+      case _WarCardGuideStep.flip:
+        // N'avance PAS ici (gestes de cible désactivés, voir
+        // disableDefaultTargetGestures) — seul un vrai tap sur la pile
+        // fait avancer (voir _onGuideFlipTap).
+        break;
+      case _WarCardGuideStep.flipResult:
+        setState(() => _guideFlipped = false);
+        _startGuideStep(_WarCardGuideStep.coins);
+        break;
+      case _WarCardGuideStep.coins:
+        _startGuideStep(_WarCardGuideStep.pause);
+        break;
+      case _WarCardGuideStep.pause:
+        _startGuideStep(_WarCardGuideStep.chat);
+        break;
+      case _WarCardGuideStep.chat:
+        _startGuideStep(_WarCardGuideStep.micJoin);
+        break;
+      case _WarCardGuideStep.micJoin:
+        _startGuideStep(_WarCardGuideStep.micReady);
+        break;
+      case _WarCardGuideStep.micReady:
+        _startGuideStep(_WarCardGuideStep.cameraReady);
+        break;
+      case _WarCardGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guideFlipped = false;
+    });
+  }
+
+  /// Tap RÉEL sur MA pile pendant l'étape flip (voir _WarCardPileBase.
+  /// guideKey) — révèle la carte du dessus SANS toucher au transport,
+  /// puis explique ce qu'il se passe ensuite.
+  void _onGuideFlipTap() {
+    setState(() => _guideFlipped = true);
+    _startGuideStep(_WarCardGuideStep.flipResult);
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _WarCardGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _WarCardGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _WarCardGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -198,6 +364,10 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
     if (state.finished && !_scoreboardShown && !_duelActive) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané" — rafraîchit
+      // le solde dès que la partie est vraiment terminée plutôt que
+      // d'attendre le retour au tableau de bord.
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -254,6 +424,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
     if (_state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (_state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -388,6 +559,8 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     widget.transport.dispose();
     widget.nearbyComms?.dispose();
@@ -413,6 +586,8 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -462,6 +637,8 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -490,23 +667,30 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           if (!_state.finished)
             IconButton(
               icon: const Icon(Icons.flag_outlined),
@@ -524,6 +708,8 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
+          if (!_state.finished)
+            IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
       body: ThemedBackground(
@@ -537,29 +723,43 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          _state.finished
-                              ? LocaleScope.t(context, 'game_board_finished_label')
-                              : LocaleScope.t(context, 'war_card_rounds_played', {'count': '${_state.roundsCount}'}),
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16, color: theme.primary),
+                        Showcase(
+                          key: _statusGuideKey,
+                          title: 'Manches jouées',
+                          description: 'Ce texte compte le nombre de manches déjà jouées dans cette partie.',
+                          targetBorderRadius: BorderRadius.circular(8),
+                          child: Text(
+                            _state.finished
+                                ? LocaleScope.t(context, 'game_board_finished_label')
+                                : LocaleScope.t(context, 'war_card_rounds_played', {'count': '${_state.roundsCount}'}),
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16, color: theme.primary),
+                          ),
                         ),
-                        Row(
-                          children: [
-                            Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                            const SizedBox(width: 4),
-                            Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                            if (commentsBoxId != null) ...[
-                              const SizedBox(width: 8),
-                              CoinBillingRing(theme: theme, progress: _coinProgress()),
-                              if (_coinsConsumed() != null) ...[
-                                const SizedBox(width: 4),
-                                Text(
-                                  '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                                  style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                                ),
+                        Showcase(
+                          key: _coinsGuideKey,
+                          title: 'Temps et Tokens',
+                          description: commentsBoxId != null
+                              ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                              : 'Le temps écoulé depuis le début de la partie.',
+                          targetBorderRadius: BorderRadius.circular(8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                              const SizedBox(width: 4),
+                              Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                              if (commentsBoxId != null) ...[
+                                const SizedBox(width: 8),
+                                CoinBillingRing(theme: theme, progress: _coinProgress()),
+                                if (_coinsConsumed() != null) ...[
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                    style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                                  ),
+                                ],
                               ],
                             ],
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -583,11 +783,14 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                       duelPartnerDisplayCount: _duelPartnerDisplayCount,
                       onTapFlip: _tapFlip,
                       onTapPeek: (userId) => _showFan(context, _pileFor(userId), _colorFor(userId)),
+                      flipGuideKey: _flipGuideKey,
+                      guideFlipped: _guideFlipped,
+                      onGuideFlipTap: _guideStep == _WarCardGuideStep.flip ? _onGuideFlipTap : null,
                     ),
                   ),
                 ],
               ),
-              if (_state.isPaused)
+              if (_state.isPaused && _guideStep == null)
                 Positioned.fill(
                   child: Container(
                     color: theme.background,
@@ -635,13 +838,14 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -654,6 +858,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'war_card',
@@ -1352,6 +1557,16 @@ class _WarCardDuelArea extends StatelessWidget {
   final int? duelPartnerDisplayCount;
   final Future<void> Function(String userId) onTapFlip;
   final void Function(String userId) onTapPeek;
+  // Guide pas-à-pas (voir demande utilisateur : "guider le user vers
+  // quelque action pour qu'il comprenne le mécanisme") — bulle sur MA
+  // pile uniquement (gauche), jamais celle du binôme. [guideFlipped]
+  // révèle localement la carte du dessus (voir _WarCardBoardScreenState.
+  // _onGuideFlipTap) ; [onGuideFlipTap] non-null UNIQUEMENT pendant
+  // l'étape "flip" du guide, pour intercepter le tap réel sur ma pile
+  // même si `canPlay` est faux (partie en pause pendant tout le guide).
+  final GlobalKey? flipGuideKey;
+  final bool guideFlipped;
+  final VoidCallback? onGuideFlipTap;
 
   const _WarCardDuelArea({
     required this.theme,
@@ -1371,6 +1586,9 @@ class _WarCardDuelArea extends StatelessWidget {
     required this.duelPartnerDisplayCount,
     required this.onTapFlip,
     required this.onTapPeek,
+    this.flipGuideKey,
+    this.guideFlipped = false,
+    this.onGuideFlipTap,
   });
 
   @override
@@ -1394,9 +1612,11 @@ class _WarCardDuelArea extends StatelessWidget {
     // ne bouge pas tant que la manche n'est pas résolue (voir
     // WarCardEngine.flip), donc la relire à chaque rendu ne peut jamais
     // diverger de ce que le moteur va effectivement comparer.
-    final leftCard = duelActive
-        ? (leftIsCreator ? duelCreatorCard : duelPartnerCard)
-        : (leftTapped && leftPile.isNotEmpty ? leftPile.first : null);
+    final leftCard = guideFlipped
+        ? (leftPile.isNotEmpty ? leftPile.first : null)
+        : (duelActive
+            ? (leftIsCreator ? duelCreatorCard : duelPartnerCard)
+            : (leftTapped && leftPile.isNotEmpty ? leftPile.first : null));
     final rightCard = duelActive
         ? (leftIsCreator ? duelPartnerCard : duelCreatorCard)
         : (rightTapped && rightPile.isNotEmpty ? rightPile.first : null);
@@ -1455,6 +1675,12 @@ class _WarCardDuelArea extends StatelessWidget {
             canPeek: true,
             onTapFlip: () => onTapFlip(leftId),
             onTapPeek: () => onTapPeek(leftId),
+            guideKey: flipGuideKey,
+            guideTitle: guideFlipped ? 'Elle attend ton binôme' : 'Tape pour retourner',
+            guideDescription: guideFlipped
+                ? "Ta carte est révélée et attend au centre. Dès que ton binôme tape la sienne aussi, elles s'affrontent : la plus forte gagne les deux. Égalité ? C'est la bataille : trois cartes cachées de chaque côté, puis on retourne à nouveau."
+                : "Tape ta pile pour retourner ta carte. Dès que ton binôme aura fait pareil, vos deux cartes s'affrontent au centre — la plus forte gagne les deux.",
+            onGuideTap: onGuideFlipTap,
           ),
         ),
         Align(
@@ -1511,6 +1737,15 @@ class _WarCardPileBase extends StatelessWidget {
   final bool canPeek;
   final VoidCallback onTapFlip;
   final VoidCallback onTapPeek;
+  final GlobalKey? guideKey;
+  final String? guideTitle;
+  final String? guideDescription;
+  // Non-null UNIQUEMENT pendant l'étape "flip" du guide (voir
+  // _WarCardBoardScreenState._onGuideFlipTap) — intercepte le tap réel
+  // sur cette pile même quand `canPlay` est faux (partie en pause
+  // pendant tout le guide, voir demande utilisateur : chacun doit
+  // pouvoir tester le guide sans dépendre du binôme).
+  final VoidCallback? onGuideTap;
 
   const _WarCardPileBase({
     required this.label,
@@ -1520,30 +1755,46 @@ class _WarCardPileBase extends StatelessWidget {
     required this.canPeek,
     required this.onTapFlip,
     required this.onTapPeek,
+    this.guideKey,
+    this.guideTitle,
+    this.guideDescription,
+    this.onGuideTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pile = GestureDetector(
+      onTap: onGuideTap ?? (canPlay ? onTapFlip : null),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _WarCardFullStack(count: count, color: color),
+          if (canPeek)
+            Positioned(
+              top: -8,
+              right: -8,
+              child: _WarCardPeekButton(color: color, onTap: onTapPeek),
+            ),
+        ],
+      ),
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
         const SizedBox(height: 8),
-        GestureDetector(
-          onTap: canPlay ? onTapFlip : null,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _WarCardFullStack(count: count, color: color),
-              if (canPeek)
-                Positioned(
-                  top: -8,
-                  right: -8,
-                  child: _WarCardPeekButton(color: color, onTap: onTapPeek),
-                ),
-            ],
+        if (guideKey == null)
+          pile
+        else
+          Showcase(
+            key: guideKey!,
+            title: guideTitle ?? 'Tape pour retourner',
+            description: guideDescription ??
+                "Tape ta pile pour retourner ta carte. Dès que ton binôme aura fait pareil, vos deux cartes s'affrontent au centre — la plus forte gagne les deux.",
+            targetBorderRadius: BorderRadius.circular(12),
+            disableDefaultTargetGestures: onGuideTap != null,
+            child: pile,
           ),
-        ),
         const SizedBox(height: 6),
         Text('$count', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
       ],

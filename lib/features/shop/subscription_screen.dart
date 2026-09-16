@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/subscription_plan.dart';
 import '../../theme/theme_palette.dart';
@@ -11,6 +12,7 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/status_chip.dart';
 import 'currency_picker.dart';
 import 'currency_service.dart';
+import 'payment_confirm_sheet.dart';
 import 'preferred_currency_notifier.dart';
 import 'subscription_service.dart';
 import 'subscription_status_notifier.dart';
@@ -109,7 +111,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _openPurchase(SubscriptionPlan plan) async {
-    final theme = ThemeScope.paletteOf(context);
     final t = LocaleScope.of(context).t;
 
     if (PreferredCurrencyNotifier.instance.currency == null) {
@@ -120,79 +121,52 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
 
     if (!mounted) return;
-    final provider = await showModalBottomSheet<String>(
+    // Récapitulatif avant paiement (voir demande utilisateur, même
+    // principe que ShopScreen._openPurchase).
+    await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: theme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      isScrollControlled: true,
+      builder: (_) => PaymentConfirmSheet(
+        title: plan.name,
+        subtitle: _formatPrice(plan, t),
+        xofAmountLabel: '${plan.priceAmountXofNative.toStringAsFixed(0)} FCFA',
+        // Équivalent dans la devise choisie, sans le suffixe /mois-/an (déjà
+        // dans le sous-titre juste au-dessus) — voir demande utilisateur.
+        approxAmountLabel: plan.priceCurrency == 'XOF'
+            ? null
+            : '${plan.priceAmountXof.toStringAsFixed(2)} ${currencySymbol(plan.priceCurrency)}',
+        onConfirm: () => _payViaYengaPay(plan),
       ),
-      builder: (_) => _ProviderSheet(plan: plan),
     );
-    if (provider == null || !mounted) return;
-
-    // "ligdicash" est un 3e choix distinct proposé par _ProviderSheet, en
-    // plus des deux tiles de test existants (Orange Money/Wave, inchangés
-    // ci-dessous) — voir ShopScreen._payViaLigdiCash pour le même principe
-    // côté achat de pièces : le flux manuel reste le chemin par défaut.
-    if (provider == 'ligdicash') {
-      await _payViaLigdiCash(plan);
-      return;
-    }
-
-    try {
-      await SubscriptionService.instance.createOrder(
-        subscriptionPlanId: plan.id,
-        provider: provider,
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(t('subscription_order_created_title')),
-          content: Text(
-            t('subscription_order_created_body', {
-              'plan': plan.name,
-              'provider': _providerLabel(provider),
-            }),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(t('common_ok')),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t('common_network_error'))),
-      );
-    }
   }
 
-  /// Chemin séparé pour la vraie passerelle LigdiCash — voir
-  /// ShopScreen._payViaLigdiCash (mirroir exact) : ne remplace ni ne
-  /// dégrade vers le dialogue "commande créée, en attente" existant.
-  Future<void> _payViaLigdiCash(SubscriptionPlan plan) async {
+  /// Un seul vrai moyen de paiement désormais : YengaPay (voir demande
+  /// utilisateur — mirroir exact de ShopScreen._payViaYengaPay, remplace
+  /// les anciennes tuiles Orange Money/Wave manuelles et LigdiCash).
+  Future<void> _payViaYengaPay(SubscriptionPlan plan) async {
     final t = LocaleScope.of(context).t;
 
     try {
       final order = await SubscriptionService.instance.createOrder(
         subscriptionPlanId: plan.id,
-        provider: 'manual',
+        provider: 'yengapay',
       );
       if (!mounted) return;
 
       final paymentUrl = order.paymentUrl;
       if (paymentUrl == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('subscription_ligdicash_not_configured'))),
+          SnackBar(content: Text(t('subscription_yengapay_not_configured'))),
         );
         return;
       }
 
       await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
+    } on ApiException catch (e) {
+      // Voir ShopScreen._payViaYengaPay — affiche le vrai message serveur
+      // plutôt que le message réseau générique.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -297,12 +271,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 }
 
-String _providerLabel(String provider) => switch (provider) {
-  'orange_money' => 'Orange Money',
-  'wave' => 'Wave',
-  _ => provider,
-};
-
 String _formatDate(DateTime date) {
   final day = date.day.toString().padLeft(2, '0');
   final month = date.month.toString().padLeft(2, '0');
@@ -356,11 +324,14 @@ class _StatusBanner extends StatelessWidget {
       builder: (context, _) {
         final notifier = SubscriptionStatusNotifier.instance;
         final active = notifier.isActive;
-        final message = active
-            ? t('subscription_active_banner', {
-                'date': _formatDate(notifier.expiresAt!),
-              })
-            : t('subscription_not_active');
+        // N'affiche plus rien quand il n'y a pas d'abonnement actif (voir
+        // demande utilisateur) — c'est l'état par défaut de la plupart des
+        // gens qui ouvrent cet écran, annoncer "pas d'abonnement" n'apporte
+        // rien ; le bandeau ne sert plus qu'à confirmer un abonnement actif.
+        if (!active) return const SizedBox.shrink();
+        final message = t('subscription_active_banner', {
+          'date': _formatDate(notifier.expiresAt!),
+        });
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -389,125 +360,6 @@ class _StatusBanner extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _ProviderSheet extends StatelessWidget {
-  final SubscriptionPlan plan;
-
-  const _ProviderSheet({required this.plan});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              plan.name,
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: theme.textOnBackground,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _formatPrice(plan, t),
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                color: theme.textOnBackgroundMuted,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              t('shop_payment_method'),
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: theme.textOnBackground,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ProviderTile(
-              label: 'Orange Money',
-              value: 'orange_money',
-              theme: theme,
-            ),
-            const SizedBox(height: 10),
-            _ProviderTile(label: 'Wave', value: 'wave', theme: theme),
-            const SizedBox(height: 16),
-            Divider(color: (theme.isDark ? Colors.white : Colors.black).withValues(alpha: 0.08)),
-            const SizedBox(height: 4),
-            _ProviderTile(
-              label: t('subscription_pay_ligdicash'),
-              value: 'ligdicash',
-              theme: theme,
-              icon: Icons.bolt_rounded,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProviderTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final ThemePalette theme;
-  final IconData icon;
-
-  const _ProviderTile({
-    required this.label,
-    required this.value,
-    required this.theme,
-    this.icon = Icons.account_balance_wallet_rounded,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: theme.surface,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.of(context).pop(value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                alpha: 0.06,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: theme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.nunito(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: theme.textOnBackground,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

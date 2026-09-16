@@ -32,6 +32,7 @@ import '../content/widgets/heartbeat_card.dart';
 import '../content/widgets/heartbeat_reply_modal.dart';
 import '../content/widgets/pack_reply_modal.dart';
 import '../content/widgets/slide_pack_viewer.dart';
+import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'game_box_session_screen.dart';
 import 'game_service.dart';
@@ -1174,7 +1175,11 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     });
     try {
       final updated = await ContentService.instance.reactToSend(send.id, emoji);
-      if (mounted) setState(() => _updateSend(updated));
+      if (mounted) {
+        setState(() => _updateSend(updated.copyWith(
+              reactions: SendReaction.dedupeByUser(updated.reactions),
+            )));
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _updateSend(send.copyWith(reactions: previousReactions)));
@@ -4503,6 +4508,11 @@ class _HeartbeatPriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement actif : le battement de cœur est gratuit et illimité
+    // (voir HeartbeatController côté backend, aucun débit pour un abonné)
+    // — plus aucune raison d'afficher son prix (voir demande utilisateur :
+    // "rien ne doit apparaître").
+    if (SubscriptionStatusNotifier.instance.isActive) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(

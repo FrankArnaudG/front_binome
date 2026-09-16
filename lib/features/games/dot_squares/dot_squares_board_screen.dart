@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -15,18 +16,45 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/dot_squares_match_scoreboard.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'dot_squares_engine.dart';
 import 'dot_squares_transport.dart';
 import 'dot_squares_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général) — voir demande
+/// utilisateur : "propose un exemple... jusqu'à ce que je comprenne que
+/// mon objectif est de former un carré ou rectangle" — corner1..corner4
+/// font poser 4 VRAIS points (simulation locale, voir _guideCorners) aux
+/// coins d'un rectangle, sur la feuille CustomPaint elle-même (pas une
+/// grille de tuiles, voir _kCellSize/_kGridPadding), jusqu'à ce que le
+/// rectangle se forme sous les yeux de l'utilisateur.
+enum _DotSquaresGuideStep {
+  turn,
+  activeName,
+  corner1,
+  corner2,
+  corner3,
+  corner4,
+  rectangleFormed,
+  coins,
+  pause,
+  chat,
+  micJoin,
+  micReady,
+  cameraReady,
+}
 
 const _kCellSize = 26.0;
 const _kGridPadding = 18.0;
@@ -103,11 +131,37 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   int? _notifyPosition;
   String? _notifyByUserId;
 
+  // Guide pas-à-pas (voir doc de classe de _DotSquaresGuideStep et
+  // demande utilisateur : "prends le même soin pour les autres jeux").
+  final _turnGuideKey = GlobalKey();
+  final _activeNameGuideKey = GlobalKey();
+  final _cornerGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'dot_squares_board';
+  _DotSquaresGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo "former un carré" du guide (voir demande utilisateur : "propose
+  // un exemple... jusqu'à ce que je comprenne que mon objectif est de
+  // former un carré ou rectangle") — 4 positions RÉELLES du plateau
+  // (voir _pickGuideRectangleCorners), posées une à une par de VRAIS taps
+  // (voir _onGuideCornerTap), purement en LOCAL : jamais
+  // widget.transport.place(), même principe que _guideFakeFlipped dans
+  // memory_game_board_screen.dart.
+  List<int>? _guideCorners;
+  int _guideCornersPlaced = 0;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -116,6 +170,192 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_DotSquaresGuideStep.turn);
+  }
+
+  /// Cherche 4 positions RÉELLES du plateau, encore vides et jamais
+  /// bloquées, formant les coins d'un petit carré — voir demande
+  /// utilisateur : la démo doit vraiment poser des points sur de vraies
+  /// cases, jamais des cases fictives hors grille. Cherche à partir du
+  /// coin haut-gauche pour rester dans le viewport visible au tout début
+  /// (avant tout défilement).
+  List<int>? _pickGuideRectangleCorners() {
+    const span = 3;
+    for (var r1 = 1; r1 <= DotSquaresEngine.gridRows - 1 - span; r1++) {
+      for (var c1 = 1; c1 <= _state.gridCols - 1 - span; c1++) {
+        final r2 = r1 + span;
+        final c2 = c1 + span;
+        final corners = [
+          r1 * _state.gridCols + c1, // haut-gauche
+          r1 * _state.gridCols + c2, // haut-droite
+          r2 * _state.gridCols + c2, // bas-droite
+          r2 * _state.gridCols + c1, // bas-gauche
+        ];
+        if (corners.any((p) => _state.points[p] != null)) continue;
+        if (DotSquaresEngine.isPositionBlocked(_state.rectangles, r1, c1)) continue;
+        if (DotSquaresEngine.isPositionBlocked(_state.rectangles, r1, c2)) continue;
+        if (DotSquaresEngine.isPositionBlocked(_state.rectangles, r2, c2)) continue;
+        if (DotSquaresEngine.isPositionBlocked(_state.rectangles, r2, c1)) continue;
+        return corners;
+      }
+    }
+    return null;
+  }
+
+  void _startGuideStep(_DotSquaresGuideStep step) {
+    if (!mounted) return;
+    if (step == _DotSquaresGuideStep.corner1) {
+      _guideCornersPlaced = 0;
+      _guideCorners = _pickGuideRectangleCorners();
+      if (_guideCorners == null) {
+        _startGuideStep(_DotSquaresGuideStep.coins);
+        return;
+      }
+    }
+    setState(() {
+      _guideStep = step;
+      if (step == _DotSquaresGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  /// Tap RÉEL sur le [cornerIndex]-ième coin désigné (0..3) — pose le
+  /// point localement (voir _guideCornersPlaced) et enchaîne l'étape
+  /// suivante ; le 4e tap complète le carré (voir _DotSquaresPainter,
+  /// nourri par _displayPointsWithGuide/_displayRectanglesWithGuide).
+  void _onGuideCornerTap(int cornerIndex) {
+    setState(() => _guideCornersPlaced = cornerIndex + 1);
+    const nextSteps = [
+      _DotSquaresGuideStep.corner2,
+      _DotSquaresGuideStep.corner3,
+      _DotSquaresGuideStep.corner4,
+      _DotSquaresGuideStep.rectangleFormed,
+    ];
+    _startGuideStep(nextSteps[cornerIndex]);
+  }
+
+  GlobalKey _guideKeyFor(_DotSquaresGuideStep step) {
+    switch (step) {
+      case _DotSquaresGuideStep.turn:
+        return _turnGuideKey;
+      case _DotSquaresGuideStep.activeName:
+        return _activeNameGuideKey;
+      case _DotSquaresGuideStep.corner1:
+      case _DotSquaresGuideStep.corner2:
+      case _DotSquaresGuideStep.corner3:
+      case _DotSquaresGuideStep.corner4:
+      case _DotSquaresGuideStep.rectangleFormed:
+        return _cornerGuideKey;
+      case _DotSquaresGuideStep.coins:
+        return _coinsGuideKey;
+      case _DotSquaresGuideStep.pause:
+        return _pauseGuideKey;
+      case _DotSquaresGuideStep.chat:
+        return _chatGuideKey;
+      case _DotSquaresGuideStep.micJoin:
+      case _DotSquaresGuideStep.micReady:
+        return _micGuideKey;
+      case _DotSquaresGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  /// Appelé au tap sur la bulle elle-même — ne fait avancer que les
+  /// étapes purement informatives ; corner1..corner4 ont leurs gestes de
+  /// cible désactivés (voir disableDefaultTargetGestures) et n'avancent
+  /// QUE via un vrai tap sur le coin désigné (voir _onGuideCornerTap).
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _DotSquaresGuideStep.turn:
+        _startGuideStep(_DotSquaresGuideStep.activeName);
+        break;
+      case _DotSquaresGuideStep.activeName:
+        _startGuideStep(_DotSquaresGuideStep.corner1);
+        break;
+      case _DotSquaresGuideStep.corner1:
+      case _DotSquaresGuideStep.corner2:
+      case _DotSquaresGuideStep.corner3:
+      case _DotSquaresGuideStep.corner4:
+        break;
+      case _DotSquaresGuideStep.rectangleFormed:
+        setState(() {
+          _guideCorners = null;
+          _guideCornersPlaced = 0;
+        });
+        _startGuideStep(_DotSquaresGuideStep.coins);
+        break;
+      case _DotSquaresGuideStep.coins:
+        _startGuideStep(_DotSquaresGuideStep.pause);
+        break;
+      case _DotSquaresGuideStep.pause:
+        _startGuideStep(_DotSquaresGuideStep.chat);
+        break;
+      case _DotSquaresGuideStep.chat:
+        _startGuideStep(_DotSquaresGuideStep.micJoin);
+        break;
+      case _DotSquaresGuideStep.micJoin:
+        _startGuideStep(_DotSquaresGuideStep.micReady);
+        break;
+      case _DotSquaresGuideStep.micReady:
+        _startGuideStep(_DotSquaresGuideStep.cameraReady);
+        break;
+      case _DotSquaresGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guideCorners = null;
+      _guideCornersPlaced = 0;
+    });
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _DotSquaresGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _DotSquaresGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _DotSquaresGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -203,6 +443,8 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané".
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -380,6 +622,8 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     _pulseTimer?.cancel();
     _horizontalController.dispose();
@@ -409,6 +653,8 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -429,6 +675,8 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -457,23 +705,30 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           if (!_state.finished)
             IconButton(
               icon: const Icon(Icons.outlined_flag_rounded),
@@ -491,6 +746,8 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
+          if (!_state.finished)
+            IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
       body: ThemedBackground(
@@ -503,40 +760,54 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Flexible(
-                      child: Text(
-                        _state.finished
-                            ? LocaleScope.t(context, 'game_board_finished_label')
-                            : (widget.transport.requiresTurnToPlay
-                                ? (_state.isMyTurn
-                                    ? LocaleScope.t(context, 'memory_board_your_turn')
-                                    : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                        'name': widget.playerNames[_state.currentTurnUserId] ??
-                                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                      }))
-                                : LocaleScope.t(context, 'memory_board_partner_turn', {
-                                    'name': widget.playerNames[_state.currentTurnUserId] ?? '...',
-                                  })),
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
-                        overflow: TextOverflow.ellipsis,
+                      child: Showcase(
+                        key: _turnGuideKey,
+                        title: 'À qui de jouer ?',
+                        description: 'Ce texte indique à qui c\'est le tour de jouer.',
+                        targetBorderRadius: BorderRadius.circular(8),
+                        child: Text(
+                          _state.finished
+                              ? LocaleScope.t(context, 'game_board_finished_label')
+                              : (widget.transport.requiresTurnToPlay
+                                  ? (_state.isMyTurn
+                                      ? LocaleScope.t(context, 'memory_board_your_turn')
+                                      : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                          'name': widget.playerNames[_state.currentTurnUserId] ??
+                                              LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                        }))
+                                  : LocaleScope.t(context, 'memory_board_partner_turn', {
+                                      'name': widget.playerNames[_state.currentTurnUserId] ?? '...',
+                                    })),
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.primary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                    Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                        const SizedBox(width: 4),
-                        Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                        if (commentsBoxId != null) ...[
-                          const SizedBox(width: 8),
-                          CoinBillingRing(theme: theme, progress: _coinProgress()),
-                          if (_coinsConsumed() != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                            ),
+                    Showcase(
+                      key: _coinsGuideKey,
+                      title: 'Temps et Tokens',
+                      description: commentsBoxId != null
+                          ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                          : 'Le temps écoulé depuis le début de la partie.',
+                      targetBorderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                          const SizedBox(width: 4),
+                          Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                          if (commentsBoxId != null) ...[
+                            const SizedBox(width: 8),
+                            CoinBillingRing(theme: theme, progress: _coinProgress()),
+                            if (_coinsConsumed() != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                              ),
+                            ],
                           ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -548,14 +819,24 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                     for (final userId in widget.playerNames.keys) ...[
                       if (userId != widget.playerNames.keys.first) const SizedBox(width: 10),
                       Expanded(
-                        child: _DotSquaresPlayerChip(
-                          theme: theme,
-                          name: widget.playerNames[userId] ?? '',
-                          avatar: widget.playerAvatars[userId],
-                          color: _colorFor(userId),
-                          active: _state.currentTurnUserId == userId,
-                          score: _state.scoreFor(userId),
-                        ),
+                        child: Builder(builder: (context) {
+                          final chip = _DotSquaresPlayerChip(
+                            theme: theme,
+                            name: widget.playerNames[userId] ?? '',
+                            avatar: widget.playerAvatars[userId],
+                            color: _colorFor(userId),
+                            active: _state.currentTurnUserId == userId,
+                            score: _state.scoreFor(userId),
+                          );
+                          if (_state.currentTurnUserId != userId) return chip;
+                          return Showcase(
+                            key: _activeNameGuideKey,
+                            title: 'Le nom en surbrillance',
+                            description: 'Le nom coloré indique le joueur dont c\'est le tour en ce moment.',
+                            targetBorderRadius: BorderRadius.circular(14),
+                            child: chip,
+                          );
+                        }),
                       ),
                     ],
                   ],
@@ -605,6 +886,13 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                 // n'importe où selon la position du défilement. Sorti ici
                 // dans un Stack englobant tout le viewport (Expanded), pour
                 // que `Positioned.fill` corresponde enfin à l'écran visible.
+                //
+                // Le guide (voir _guideCorners/_onGuideCornerTap) pointe
+                // désormais directement sur de VRAIS points de la feuille,
+                // aux coordonnées exactes calculées par _vertex/_handleTap
+                // — jamais une bulle générique sur tout le CustomPaint
+                // (voir demande utilisateur : "propose un exemple... que
+                // tu vas cliquer toi aussi, jusqu'à ce que je comprenne").
                 child: Stack(
                   children: [
                     SingleChildScrollView(
@@ -613,27 +901,32 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
                         child: SingleChildScrollView(
                           controller: _horizontalController,
                           scrollDirection: Axis.horizontal,
-                          child: GestureDetector(
-                            onTapUp: (details) => _handleTap(details.localPosition),
-                            child: CustomPaint(
-                              size: Size(gridWidth, gridHeight),
-                              painter: _DotSquaresPainter(
-                                points: _state.points,
-                                rectangles: _state.rectangles,
-                                gridCols: _state.gridCols,
-                                colorFor: _colorFor,
-                                mutedColor: theme.textOnBackgroundMuted,
-                                gridLineColor: theme.primary.withValues(alpha: 0.08),
-                                backgroundColor: theme.background,
-                                pulsePosition: _pulsePosition,
-                                pulseColor: theme.primary,
+                          child: Stack(
+                            children: [
+                              GestureDetector(
+                                onTapUp: (details) => _handleTap(details.localPosition),
+                                child: CustomPaint(
+                                  size: Size(gridWidth, gridHeight),
+                                  painter: _DotSquaresPainter(
+                                    points: _displayPointsWithGuide,
+                                    rectangles: _displayRectanglesWithGuide,
+                                    gridCols: _state.gridCols,
+                                    colorFor: _colorFor,
+                                    mutedColor: theme.textOnBackgroundMuted,
+                                    gridLineColor: theme.primary.withValues(alpha: 0.08),
+                                    backgroundColor: theme.background,
+                                    pulsePosition: _pulsePosition,
+                                    pulseColor: theme.primary,
+                                  ),
+                                ),
                               ),
-                            ),
+                              _buildGuideCornerOverlay(),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                    if (_state.isPaused)
+                    if (_state.isPaused && _guideStep == null)
                       Positioned.fill(
                         child: Container(
                           color: theme.background,
@@ -684,13 +977,14 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -703,6 +997,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'dot_squares',
@@ -726,6 +1021,119 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
     if (distance > _kCellSize * 0.5) return;
 
     _onTapPoint(row * _state.gridCols + col);
+  }
+
+  /// Points RÉELS + points "posés" par le guide (voir _guideCorners) —
+  /// jamais écrit dans `_state`, uniquement pour que _DotSquaresPainter
+  /// dessine la démo comme si c'étaient de vrais points.
+  List<String?> get _displayPointsWithGuide {
+    final corners = _guideCorners;
+    if (corners == null || _guideCornersPlaced == 0) return _state.points;
+    final points = List<String?>.of(_state.points);
+    for (var i = 0; i < _guideCornersPlaced; i++) {
+      points[corners[i]] = widget.user.id;
+    }
+    return points;
+  }
+
+  /// Rectangle formé par la démo une fois les 4 coins posés (voir
+  /// _onGuideCornerTap) — ajouté seulement pour l'AFFICHAGE (voir
+  /// _DotSquaresPainter), jamais transmis à widget.transport.
+  List<DotSquareRectangle> get _displayRectanglesWithGuide {
+    final corners = _guideCorners;
+    if (corners == null || _guideCornersPlaced < 4) return _state.rectangles;
+    final r1 = corners[0] ~/ _state.gridCols;
+    final c1 = corners[0] % _state.gridCols;
+    final r2 = corners[2] ~/ _state.gridCols;
+    final c2 = corners[2] % _state.gridCols;
+    return [
+      ..._state.rectangles,
+      DotSquareRectangle(number: 0, ownerUserId: widget.user.id, r1: r1, c1: c1, r2: r2, c2: c2),
+    ];
+  }
+
+  /// Cible tapable du guide, positionnée aux coordonnées EXACTES d'un
+  /// vrai sommet de la feuille (voir _vertex/_handleTap) — inerte tant
+  /// que _guideCorners est nul (voir _pickGuideRectangleCorners).
+  Widget _buildGuideCornerOverlay() {
+    final corners = _guideCorners;
+    if (corners == null) return const SizedBox.shrink();
+
+    int cornerIndex;
+    String title;
+    String description;
+    switch (_guideStep) {
+      case _DotSquaresGuideStep.corner1:
+        cornerIndex = 0;
+        title = 'Pose ton premier point';
+        description = 'Tape ici pour poser un point — ce sera le premier coin de ton carré.';
+        break;
+      case _DotSquaresGuideStep.corner2:
+        cornerIndex = 1;
+        title = 'Pose le deuxième coin';
+        description = 'Tape ici pour poser un autre point, aligné avec le premier.';
+        break;
+      case _DotSquaresGuideStep.corner3:
+        cornerIndex = 2;
+        title = 'Pose le troisième coin';
+        description = 'Encore un point, juste en face du premier.';
+        break;
+      case _DotSquaresGuideStep.corner4:
+        cornerIndex = 3;
+        title = 'Ferme le carré';
+        description = 'Un dernier point ici referme ton carré et le fait gagner !';
+        break;
+      case _DotSquaresGuideStep.rectangleFormed:
+        // Bulle informative une fois le carré formé (voir
+        // _onGuideStepTapped) — pointe sur le dernier coin posé, la
+        // figure entière étant déjà visible juste à côté.
+        final position = corners[3];
+        final row = position ~/ _state.gridCols;
+        final col = position % _state.gridCols;
+        final x = _kGridPadding + col * _kCellSize;
+        final y = _kGridPadding + row * _kCellSize;
+        const hit = _kCellSize;
+        return Positioned(
+          left: x - hit / 2,
+          top: y - hit / 2,
+          width: hit,
+          height: hit,
+          child: Showcase(
+            key: _cornerGuideKey,
+            title: 'Carré complété !',
+            description:
+                "Bravo, ton carré est marqué et gagné. Comme c'est toi qui l'as complété, tu rejoues aussitôt — si ça avait été ton binôme, ce serait passé à son tour.",
+            targetShapeBorder: const CircleBorder(),
+            child: const SizedBox.expand(),
+          ),
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+
+    final position = corners[cornerIndex];
+    final row = position ~/ _state.gridCols;
+    final col = position % _state.gridCols;
+    final x = _kGridPadding + col * _kCellSize;
+    final y = _kGridPadding + row * _kCellSize;
+    const hit = _kCellSize;
+    return Positioned(
+      left: x - hit / 2,
+      top: y - hit / 2,
+      width: hit,
+      height: hit,
+      child: Showcase(
+        key: _cornerGuideKey,
+        title: title,
+        description: description,
+        targetShapeBorder: const CircleBorder(),
+        disableDefaultTargetGestures: true,
+        child: GestureDetector(
+          onTap: () => _onGuideCornerTap(cornerIndex),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
   }
 }
 

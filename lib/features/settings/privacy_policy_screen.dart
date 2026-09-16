@@ -72,6 +72,8 @@ class PrivacyPolicyScreen extends StatelessWidget {
               body(t('privacy_s2_sub4_body')),
               subTitle(t('privacy_s2_sub5_title')),
               body(t('privacy_s2_sub5_body')),
+              subTitle(t('privacy_s2_sub6_title')),
+              body(t('privacy_s2_sub6_body')),
 
               sectionTitle(t('privacy_s3_title')),
               body(t('privacy_s3_bullet1')),

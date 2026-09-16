@@ -104,9 +104,9 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: theme.surface,
-        title: Text('Solde de pièces épuisé', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
+        title: Text('Solde de Tokens épuisé', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
         content: Text(
-          "Votre couple n'a plus de pièces pour continuer cette partie. Rechargez pour poursuivre, ou terminez la partie ici.",
+          "Votre couple n'a plus de Tokens pour continuer cette partie. Rechargez pour poursuivre, ou terminez la partie ici.",
           style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
         ),
         actions: [

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
@@ -13,17 +14,29 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
+import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
+import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/number_hunt_match_scoreboard.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/wallet_balance_notifier.dart';
 import 'number_hunt_transport.dart';
 import 'number_hunt_transport_remote.dart';
+
+/// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
+/// memory_game_board_screen.dart pour le principe général) — pas de tour
+/// par tour ici (voir doc de classe de NumberHuntBoardScreen), donc pas
+/// d'étape "à qui de jouer" ; [tapNumber] désigne la vraie case du
+/// nombre-cible pour un vrai tap (voir demande utilisateur : "guider le
+/// user vers quelque action pour qu'il comprenne le mécanisme"), jamais
+/// une bulle générique sur toute la grille.
+enum _NumberHuntGuideStep { target, tapNumber, numberFound, coins, pause, chat, micJoin, micReady, cameraReady }
 
 const _kRedColor = Color(0xFFE5484D);
 const _kBlueColor = Color(0xFF2F6FED);
@@ -115,11 +128,34 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   int? _lastFoundNumber;
   Timer? _highlightTimer;
 
+  // Guide pas-à-pas (voir doc de classe de _NumberHuntGuideStep et
+  // demande utilisateur : "prends le même soin pour les autres jeux").
+  final _targetGuideKey = GlobalKey();
+  final _numberGuideKey = GlobalKey();
+  final _coinsGuideKey = GlobalKey();
+  final _pauseGuideKey = GlobalKey();
+  final _chatGuideKey = GlobalKey();
+  final _micGuideKey = GlobalKey();
+  final _cameraGuideKey = GlobalKey();
+  static const _boardGuideKey = 'number_hunt_board';
+  _NumberHuntGuideStep? _guideStep;
+  bool _guideMicConnecting = false;
+  // Démo "trouve le nombre" du guide (voir demande utilisateur : "guider
+  // le user vers quelque action pour qu'il comprenne le mécanisme") —
+  // l'indice de la VRAIE case portant le nombre-cible actuel (voir
+  // _pickGuideTargetIndex), marquée localement comme "trouvée par moi"
+  // au tap (voir _onGuideNumberTap), jamais widget.transport.attempt().
+  int? _guideTargetIndex;
+  bool _guideNumberFound = false;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
     _subscription = widget.transport.stateStream.listen(_onState);
+    ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
+    _maybeStartGuide();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -139,6 +175,154 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
       AppRouter.showGlobalNavBar.value = false;
     });
     if (_commentsBoxId != null) _loadEconomyRate();
+  }
+
+  Future<void> _maybeStartGuide() async {
+    final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
+    if (seen || !mounted) return;
+    GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
+    _startGuide();
+  }
+
+  void _startGuide() {
+    if (!_state.isPaused && !_state.finished) {
+      widget.transport.pause();
+    }
+    _startGuideStep(_NumberHuntGuideStep.target);
+  }
+
+  /// Indice de la case du plateau RÉEL portant le nombre-cible actuel —
+  /// `null` si la cible n'a pas encore été reçue ou n'existe plus sur le
+  /// plateau.
+  int? _pickGuideTargetIndex() {
+    final target = _state.currentTarget;
+    if (target == null) return null;
+    final index = _state.board.indexOf(target);
+    return index == -1 ? null : index;
+  }
+
+  void _startGuideStep(_NumberHuntGuideStep step) {
+    if (!mounted) return;
+    if (step == _NumberHuntGuideStep.tapNumber) {
+      _guideNumberFound = false;
+      _guideTargetIndex = _pickGuideTargetIndex();
+      if (_guideTargetIndex == null) {
+        _startGuideStep(_NumberHuntGuideStep.coins);
+        return;
+      }
+    }
+    setState(() {
+      _guideStep = step;
+      if (step == _NumberHuntGuideStep.micReady) _guideMicConnecting = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _guideKeyFor(step);
+      if (!ShowcaseView.get().isTargetRendered(key)) {
+        setState(() => _guideStep = null);
+        return;
+      }
+      ShowcaseView.get().startShowCase([key]);
+    });
+  }
+
+  /// Tap RÉEL sur la case du nombre-cible désignée (voir
+  /// _NumberHuntTile.onGuideTap) — la marque localement comme trouvée par
+  /// moi, jamais widget.transport.attempt() (bloqué de toute façon
+  /// pendant la pause du guide, voir _startGuide).
+  void _onGuideNumberTap() {
+    setState(() => _guideNumberFound = true);
+    _startGuideStep(_NumberHuntGuideStep.numberFound);
+  }
+
+  GlobalKey _guideKeyFor(_NumberHuntGuideStep step) {
+    switch (step) {
+      case _NumberHuntGuideStep.target:
+        return _targetGuideKey;
+      case _NumberHuntGuideStep.tapNumber:
+      case _NumberHuntGuideStep.numberFound:
+        return _numberGuideKey;
+      case _NumberHuntGuideStep.coins:
+        return _coinsGuideKey;
+      case _NumberHuntGuideStep.pause:
+        return _pauseGuideKey;
+      case _NumberHuntGuideStep.chat:
+        return _chatGuideKey;
+      case _NumberHuntGuideStep.micJoin:
+      case _NumberHuntGuideStep.micReady:
+        return _micGuideKey;
+      case _NumberHuntGuideStep.cameraReady:
+        return _cameraGuideKey;
+    }
+  }
+
+  void _onGuideStepTapped(int? index, GlobalKey key) {
+    switch (_guideStep) {
+      case _NumberHuntGuideStep.target:
+        _startGuideStep(_NumberHuntGuideStep.tapNumber);
+        break;
+      case _NumberHuntGuideStep.tapNumber:
+        // N'avance PAS ici (gestes de cible désactivés) — seul un vrai
+        // tap sur la case désignée fait avancer (voir _onGuideNumberTap).
+        break;
+      case _NumberHuntGuideStep.numberFound:
+        setState(() {
+          _guideNumberFound = false;
+          _guideTargetIndex = null;
+        });
+        _startGuideStep(_NumberHuntGuideStep.coins);
+        break;
+      case _NumberHuntGuideStep.coins:
+        _startGuideStep(_NumberHuntGuideStep.pause);
+        break;
+      case _NumberHuntGuideStep.pause:
+        _startGuideStep(_NumberHuntGuideStep.chat);
+        break;
+      case _NumberHuntGuideStep.chat:
+        _startGuideStep(_NumberHuntGuideStep.micJoin);
+        break;
+      case _NumberHuntGuideStep.micJoin:
+        _startGuideStep(_NumberHuntGuideStep.micReady);
+        break;
+      case _NumberHuntGuideStep.micReady:
+        _startGuideStep(_NumberHuntGuideStep.cameraReady);
+        break;
+      case _NumberHuntGuideStep.cameraReady:
+        setState(() {
+          _guideStep = null;
+          _guideMicConnecting = false;
+        });
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _onGuideDismissed(GlobalKey? key) {
+    if (!mounted) return;
+    setState(() {
+      _guideStep = null;
+      _guideMicConnecting = false;
+      _guideNumberFound = false;
+      _guideTargetIndex = null;
+    });
+  }
+
+  Widget _buildGuideVoiceDemo() {
+    final phase = switch (_guideStep) {
+      _NumberHuntGuideStep.micJoin => GameGuideVoicePhase.micJoin,
+      _NumberHuntGuideStep.micReady => GameGuideVoicePhase.micReady,
+      _NumberHuntGuideStep.cameraReady => GameGuideVoicePhase.cameraReady,
+      _ => null,
+    };
+    if (phase == null) return const SizedBox.shrink();
+    return GameGuideVoiceDemo(
+      micKey: _micGuideKey,
+      cameraKey: _cameraGuideKey,
+      phase: phase,
+      connecting: _guideMicConnecting,
+      onMicTapToConnect: () => setState(() => _guideMicConnecting = true),
+    );
   }
 
   Future<void> _loadEconomyRate() async {
@@ -210,6 +394,8 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
+      // Voir demande utilisateur : "ça doit être instantané".
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
       if (state.abandoned && !_leavingMyself) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
       } else {
@@ -318,6 +504,8 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    ShowcaseView.get().removeOnCompleteCallback(_onGuideStepTapped);
+    ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     _highlightTimer?.cancel();
     widget.transport.dispose();
@@ -345,6 +533,8 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   Future<void> _endGameFromWalletDepletion() async {
     _leavingMyself = true;
     await widget.transport.abandon();
+    // Voir demande utilisateur : "ça doit être instantané".
+    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -363,6 +553,8 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
         if (await _confirmAbandon()) {
           _leavingMyself = true;
           await widget.transport.abandon();
+          // Voir demande utilisateur : "ça doit être instantané".
+          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
           if (context.mounted) Navigator.of(context).pop();
         }
       },
@@ -391,23 +583,30 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
         ),
         actions: [
           if (!_state.finished)
-            if (_state.isPaused)
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline),
-                tooltip: _state.pausedByMe
-                    ? LocaleScope.t(context, 'memory_board_resume_tooltip')
-                    : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
-                        'name': widget.playerNames[_state.pausedByUserId] ??
-                            LocaleScope.t(context, 'memory_board_partner_fallback'),
-                      }),
-                onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.pause_circle_outline),
-                tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
-                onPressed: () => widget.transport.pause(),
-              ),
+            Showcase(
+              key: _pauseGuideKey,
+              title: _state.isPaused ? 'Reprends la partie' : 'Mets en pause',
+              description: _state.isPaused
+                  ? "Ce bouton reprend la partie quand tu es prêt·e — tant qu'elle est en pause, le chrono et les Tokens ne bougent pas."
+                  : "Tu peux mettre la partie en pause à tout moment si tu dois t'absenter.",
+              targetShapeBorder: const CircleBorder(),
+              child: _state.isPaused
+                  ? IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      tooltip: _state.pausedByMe
+                          ? LocaleScope.t(context, 'memory_board_resume_tooltip')
+                          : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
+                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                            }),
+                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.pause_circle_outline),
+                      tooltip: LocaleScope.t(context, 'memory_board_pause_tooltip'),
+                      onPressed: () => widget.transport.pause(),
+                    ),
+            ),
           if (!_state.finished)
             IconButton(
               icon: const Icon(Icons.flag_outlined),
@@ -425,6 +624,8 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
+          if (!_state.finished)
+            IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
       body: ThemedBackground(
@@ -436,29 +637,43 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      _state.finished
-                          ? LocaleScope.t(context, 'game_board_finished_label')
-                          : LocaleScope.t(context, 'number_hunt_find_target', {'number': '${_state.currentTarget ?? '-'}'}),
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20, color: theme.primary),
+                    Showcase(
+                      key: _targetGuideKey,
+                      title: 'Le nombre à trouver',
+                      description: "N'importe lequel des deux peut taper ce nombre en premier sur la grille, pas besoin d'attendre son tour.",
+                      targetBorderRadius: BorderRadius.circular(8),
+                      child: Text(
+                        _state.finished
+                            ? LocaleScope.t(context, 'game_board_finished_label')
+                            : LocaleScope.t(context, 'number_hunt_find_target', {'number': '${_state.currentTarget ?? '-'}'}),
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20, color: theme.primary),
+                      ),
                     ),
-                    Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
-                        const SizedBox(width: 4),
-                        Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                        if (commentsBoxId != null) ...[
-                          const SizedBox(width: 8),
-                          CoinBillingRing(theme: theme, progress: _coinProgress()),
-                          if (_coinsConsumed() != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '-${_coinsConsumed()!.toStringAsFixed(2)}',
-                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
-                            ),
+                    Showcase(
+                      key: _coinsGuideKey,
+                      title: 'Temps et Tokens',
+                      description: commentsBoxId != null
+                          ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
+                          : 'Le temps écoulé depuis le début de la partie.',
+                      targetBorderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
+                          const SizedBox(width: 4),
+                          Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+                          if (commentsBoxId != null) ...[
+                            const SizedBox(width: 8),
+                            CoinBillingRing(theme: theme, progress: _coinProgress()),
+                            if (_coinsConsumed() != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${_coinsConsumed()!.toStringAsFixed(2)}',
+                                style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.primary),
+                              ),
+                            ],
                           ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -498,18 +713,32 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                         itemCount: _state.board.length,
                         itemBuilder: (context, index) {
                           final number = _state.board[index];
-                          final foundBy = _state.found['$number'];
-                          return _NumberHuntTile(
+                          final isGuideTarget = index == _guideTargetIndex;
+                          final foundBy = isGuideTarget && _guideNumberFound ? widget.user.id : _state.found['$number'];
+                          final tile = _NumberHuntTile(
                             theme: theme,
                             number: number,
                             color: foundBy != null ? _colorFor(foundBy) : null,
                             justFound: _lastFoundNumber == number,
-                            onTap: () => _onTapNumber(number),
+                            onTap: isGuideTarget && _guideStep == _NumberHuntGuideStep.tapNumber
+                                ? _onGuideNumberTap
+                                : () => _onTapNumber(number),
+                          );
+                          if (!isGuideTarget || _guideStep == null) return tile;
+                          return Showcase(
+                            key: _numberGuideKey,
+                            title: _guideNumberFound ? 'Trouvé !' : 'Tape le bon nombre',
+                            description: _guideNumberFound
+                                ? "Bravo, tu marques un point. Le nombre change aussitôt pour le suivant — le premier des deux à taper le bon nombre marque le point à chaque fois."
+                                : 'Cette case porte le nombre affiché plus haut — tape-la pour la trouver.',
+                            targetBorderRadius: BorderRadius.circular(8),
+                            disableDefaultTargetGestures: _guideStep == _NumberHuntGuideStep.tapNumber,
+                            child: tile,
                           );
                         },
                       ),
                     ),
-                    if (_state.isPaused)
+                    if (_state.isPaused && _guideStep == null)
                       Positioned.fill(
                         child: Container(
                           color: theme.background,
@@ -560,13 +789,14 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
     ),
         ),
         if (commentsBoxId != null)
-          GameCommentOverlay(boxId: commentsBoxId, enabled: true)
+          GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
             enabled: true,
             myName: widget.nearbyMyName ?? '',
             partnerName: widget.nearbyPartnerName ?? '',
+            guideKey: _chatGuideKey,
           ),
         if (commentsBoxId != null)
           VoiceCallOverlay(
@@ -579,6 +809,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
           )
         else if (widget.nearbyComms != null)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,
           sessionType: 'number_hunt',

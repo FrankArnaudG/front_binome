@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/api_client.dart';
 import '../../../core/feature_flags_service.dart';
 import '../../../core/timeline_refresh_signal.dart';
+import '../../../core/usage_service.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../theme/theme_palette.dart';
@@ -18,8 +19,9 @@ import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
 import '../../doodle/doodle_history_screen.dart';
 import '../../content/gifts_screen.dart';
-import '../../mood/mood_screen.dart';
-import '../../shop/shop_screen.dart';
+import '../../games/games_menu_screen.dart';
+import '../../shop/monetization_hub_screen.dart';
+import '../../shop/subscription_status_notifier.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import '../../roman_photo/roman_photo_library_screen.dart';
 import '../../sounds/shared_sounds_screen.dart';
@@ -48,8 +50,16 @@ class DarkActionItem {
 class DarkQuickActionsGrid extends StatefulWidget {
   final AppUser user;
   final void Function(int tabIndex)? onNavigateToTab;
+  // Passe par DashboardTab._openMoodScreen plutôt que de pousser
+  // MoodScreen ici directement (voir demande utilisateur : l'humeur
+  // partagée depuis CETTE tuile ne se reflétait pas sur la carte "Météo du
+  // couple" au retour, sans actualiser la page à la main) — cette méthode
+  // attend déjà le résultat du push et rafraîchit _myMood si besoin,
+  // contrairement à ce que faisait cette tuile en poussant l'écran toute
+  // seule, sans jamais regarder ce qu'il retournait.
+  final VoidCallback? onOpenMood;
 
-  const DarkQuickActionsGrid({super.key, required this.user, this.onNavigateToTab});
+  const DarkQuickActionsGrid({super.key, required this.user, this.onNavigateToTab, this.onOpenMood});
 
   @override
   State<DarkQuickActionsGrid> createState() => _DarkQuickActionsGridState();
@@ -113,6 +123,10 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
 
   Future<void> _sendHeartbeat({String? message}) async {
     if (_sendingHeartbeat) return;
+    // "Fonctionnalité la plus utilisée" (voir demande utilisateur) — pas
+    // couverte par la grille ci-dessus (le battement de cœur a son propre
+    // geste double-tap, hors de `items`).
+    UsageService.instance.logFeature('heartbeat');
     // Joue instantanément, indépendamment du temps que prendra l'appel
     // réseau ci-dessous — le retour tactile ne doit jamais attendre le serveur.
     _burstKey.currentState?.trigger();
@@ -320,14 +334,10 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         tr('action_mood'),
         Icons.emoji_emotions_rounded,
         (t) => t.secondary,
-        (ctx) => Navigator.of(ctx).push(
-          MaterialPageRoute(
-            builder: (_) {
-              final partner = BoxScope.of(ctx).currentBox?.partnerOf(widget.user.id);
-              return MoodScreen(user: widget.user, partnerName: partner?.prenom, partnerGender: partner?.gender);
-            },
-          ),
-        ),
+        // Voir DarkQuickActionsGrid.onOpenMood — passe par DashboardTab pour
+        // que l'humeur tout juste partagée se reflète instantanément sur la
+        // carte "Météo du couple" au retour, sans actualiser la page.
+        (ctx) => widget.onOpenMood?.call(),
         'mood',
       ),
       DarkActionItem(
@@ -341,7 +351,11 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         tr('action_shop'),
         Icons.monetization_on_rounded,
         (t) => t.primaryDeep,
-        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const ShopScreen())),
+        // Ouvre le choix abonnement/pièces (voir demande utilisateur : les
+        // deux options doivent être vues dès l'ouverture, pas seulement
+        // l'une d'elles avec l'autre reléguée à une bannière) plutôt que
+        // ShopScreen (les packs de pièces) directement.
+        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const MonetizationHubScreen())),
         'shop',
         iconBuilder: (color) => CoinIcon(size: 26, fallbackColor: color),
       ),
@@ -350,6 +364,23 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         Icons.sports_esports_rounded,
         (t) => t.secondary,
         (ctx) => widget.onNavigateToTab?.call(2),
+        'games',
+      ),
+      // Raccourci direct vers la catégorie "Jeu classique" du catalogue
+      // (voir demande utilisateur : "creer donc un racoursi Cœur à Cœur qui
+      // ouvre les jeu classic") — pousse GamesMenuScreen avec son onglet
+      // "classic" déjà sélectionné, plutôt que de forcer un second tap une
+      // fois sur l'onglet Jeux. Même flag ('games') que la tuile Jeux
+      // ci-dessus : ce n'est qu'un raccourci vers la même fonctionnalité.
+      DarkActionItem(
+        tr('action_classic_games'),
+        Icons.style_rounded,
+        (t) => t.primary,
+        (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute(
+            builder: (_) => GamesMenuScreen(user: widget.user, initialCategory: 'classic'),
+          ),
+        ),
         'games',
       ),
       DarkActionItem(
@@ -400,6 +431,28 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
       ),
     ];
 
+    // Une tuile dont le flag est désactivé côté admin n'apparaît plus du
+    // tout dans la grille (voir demande utilisateur : "au lieu de griser
+    // est possible que ca napparaisse meme pas ?") plutôt que d'afficher
+    // une icône grisée avec un message "Bientôt disponible" au tap — ne
+    // concerne QUE ces tuiles génériques (voir `items`), pas le battement
+    // de cœur ci-dessous qui garde son affichage verrouillé habituel (elle
+    // reste toujours en première position, avec son propre geste double-tap
+    // même verrouillée).
+    //
+    // Tant que flags.isLoaded est faux (le tout premier refresh() lancé
+    // depuis DashboardTab.initState n'est pas encore revenu), isEnabled()
+    // répond `true` par défaut pour tout — sans cette garde, une tuile
+    // désactivée apparaîtrait quand même le temps de cet aller-retour
+    // réseau avant de disparaître au rebuild suivant (voir demande
+    // utilisateur, constaté en réel : "meme celle desactiver apparessent
+    // quelque seconde avant de disparetre"). On préfère donc ne montrer
+    // aucune tuile optionnelle tant que l'état réel n'est pas connu,
+    // plutôt que de les afficher de façon optimiste puis les retirer.
+    final visibleItems = flags.isLoaded
+        ? items.where((item) => flags.isEnabled(item.featureKey)).toList()
+        : <DarkActionItem>[];
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -409,7 +462,7 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         crossAxisSpacing: 12,
         childAspectRatio: 0.85,
       ),
-      itemCount: items.length + 1,
+      itemCount: visibleItems.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
           final heartbeatLocked = !flags.isEnabled('heartbeat');
@@ -443,16 +496,20 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
             ),
           );
         }
-        final item = items[index - 1];
-        final locked = !flags.isEnabled(item.featureKey);
+        final item = visibleItems[index - 1];
         return _DarkTile(
           theme: theme,
           icon: item.icon,
           iconColor: item.color(theme),
           iconBuilder: item.iconBuilder,
           label: item.label,
-          locked: locked,
-          onTap: locked ? () => _showLocked(context) : () => item.onTap(context),
+          onTap: () {
+            // "Fonctionnalité la plus utilisée" (voir demande utilisateur,
+            // UsageService) — un seul point de passage pour toutes les
+            // tuiles de cette grille.
+            UsageService.instance.logFeature(item.featureKey);
+            item.onTap(context);
+          },
         );
       },
     );
@@ -590,6 +647,11 @@ class _PriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement actif : le battement de cœur est gratuit et illimité
+    // (voir HeartbeatController côté backend, aucun débit pour un abonné)
+    // — plus aucune raison d'afficher son prix (voir demande utilisateur :
+    // "rien ne doit apparaître").
+    if (SubscriptionStatusNotifier.instance.isActive) return const SizedBox.shrink();
     return Container(
       padding: EdgeInsets.symmetric(horizontal: coinSize * 0.65, vertical: coinSize * 0.35),
       decoration: BoxDecoration(
