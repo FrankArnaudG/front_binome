@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:showcaseview/showcaseview.dart';
 
 import 'core/app_router.dart';
+import 'core/app_update_checker.dart';
 import 'core/pin_storage.dart';
 import 'core/ritual_reminder_service.dart';
 import 'features/box/box_scope.dart';
@@ -153,6 +154,11 @@ class _AppGateState extends State<_AppGate> {
     _checkLock();
     ThemeController.instance.load();
     LocaleController.instance.load();
+    // Après le premier frame seulement : AppRouter.navigatorKey n'a pas
+    // encore d'overlay attaché tant que MaterialApp n'a pas fini de
+    // construire (nécessaire pour afficher la bannière/le dialogue de mise
+    // à jour, voir AppUpdateChecker).
+    WidgetsBinding.instance.addPostFrameCallback((_) => AppUpdateChecker.instance.checkAndPrompt());
   }
 
   Future<void> _checkLock() async {

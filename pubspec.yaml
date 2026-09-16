@@ -72,6 +72,10 @@ dependencies:
   # bloque explicitement l'affichage en iframe/WebView, voir ShopScreen/
   # SubscriptionScreen._openPurchase).
   url_launcher: ^6.3.1
+  # Lit le build number local (versionCode Android) pour le comparer à celui
+  # publié côté serveur — voir AppUpdateChecker (demande utilisateur :
+  # "comment fonctionne WhatsApp... mettre en place", même mécanisme).
+  package_info_plus: ^8.1.2
   # Voix en direct en mode présentiel connecté (Nearby) — capture micro brute
   # (PCM16) envoyée directement sur le canal Bluetooth/Wifi Direct du jeu
   # (voir NearbyComms), jamais via WebRTC/serveur (contrairement au mode à
