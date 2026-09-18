@@ -162,7 +162,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: () => Navigator.of(context).pop(),
                             child: const Padding(
                               padding: EdgeInsets.all(8),
-                              child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+                              child: Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -184,175 +188,202 @@ class _LoginScreenState extends State<LoginScreen> {
                   topRight: Radius.circular(32),
                 ),
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text.rich(
-                      TextSpan(
-                        style: GoogleFonts.poppins(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textOnBlush,
-                          height: 1.25,
-                        ),
-                        children: [
-                          TextSpan(text: t('login_tagline_part1')),
-                          TextSpan(
-                            text: t('login_tagline_highlight1'),
-                            style: const TextStyle(color: AppColors.primary),
+              // top: false — la zone protégée en haut de l'écran est déjà
+              // gérée par le SafeArea du bloc photo au-dessus ; seule la
+              // marge basse manquait, laissant le texte des conditions
+              // légèrement recouvert par la barre de gestes sur certains
+              // téléphones (voir demande utilisateur).
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          style: GoogleFonts.poppins(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textOnBlush,
+                            height: 1.25,
                           ),
-                          TextSpan(text: t('login_tagline_part2')),
-                          const TextSpan(
-                            text: 'Binomes',
-                            style: TextStyle(color: AppColors.primary),
-                          ),
-                          TextSpan(text: t('login_tagline_part3')),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    if (_showPromoField) ...[
-                      TextField(
-                        controller: _promoCodeController,
-                        textCapitalization: TextCapitalization.characters,
-                        onChanged: _onPromoCodeChanged,
-                        decoration: InputDecoration(
-                          labelText: t('login_promo_hint'),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          suffixIcon: switch (_promoCodeState) {
-                            _PromoCodeState.checking => const Padding(
-                              padding: EdgeInsets.all(14),
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
+                          children: [
+                            TextSpan(text: t('login_tagline_part1')),
+                            TextSpan(
+                              text: t('login_tagline_highlight1'),
+                              // Manuscrite (voir demande utilisateur) — même
+                              // signature que le logo et "À vous deux."
+                              // (onboarding), réservée à ce seul mot pour ne
+                              // pas casser le rythme du reste de la phrase.
+                              style: GoogleFonts.dancingScript(
+                                color: AppColors.primary,
+                                fontSize: 34,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            _PromoCodeState.valid => const Icon(
-                              Icons.check_circle,
-                              color: Color(0xFF2E9E5B),
+                            TextSpan(text: t('login_tagline_part2')),
+                            const TextSpan(
+                              text: 'Binomes',
+                              style: TextStyle(color: AppColors.primary),
                             ),
-                            _PromoCodeState.invalid => const Icon(
-                              Icons.cancel,
-                              color: Color(0xFFC0294A),
-                            ),
-                            _PromoCodeState.idle => null,
-                          },
+                            TextSpan(text: t('login_tagline_part3')),
+                          ],
                         ),
                       ),
-                      if (_promoCodeState == _PromoCodeState.invalid) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          t('login_promo_invalid'),
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            color: const Color(0xFFC0294A),
+                      const SizedBox(height: 28),
+                      if (_showPromoField) ...[
+                        TextField(
+                          controller: _promoCodeController,
+                          textCapitalization: TextCapitalization.characters,
+                          onChanged: _onPromoCodeChanged,
+                          decoration: InputDecoration(
+                            labelText: t('login_promo_hint'),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            suffixIcon: switch (_promoCodeState) {
+                              _PromoCodeState.checking => const Padding(
+                                padding: EdgeInsets.all(14),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                              _PromoCodeState.valid => const Icon(
+                                Icons.check_circle,
+                                color: Color(0xFF2E9E5B),
+                              ),
+                              _PromoCodeState.invalid => const Icon(
+                                Icons.cancel,
+                                color: Color(0xFFC0294A),
+                              ),
+                              _PromoCodeState.idle => null,
+                            },
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 12),
-                    ] else ...[
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: () =>
-                              setState(() => _showPromoField = true),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(
-                            t('login_promo_link'),
+                        if (_promoCodeState == _PromoCodeState.invalid) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            t('login_promo_invalid'),
                             style: GoogleFonts.nunito(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
+                              fontSize: 13,
+                              color: const Color(0xFFC0294A),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                      ] else ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () =>
+                                setState(() => _showPromoField = true),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              t('login_promo_link'),
+                              style: GoogleFonts.nunito(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    if (_error != null) ...[
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: Color(0xFFC0294A)),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _canSignIn ? _handleGoogleSignIn : null,
-                        child: _loading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.white,
-                                    ),
-                                    child: const GoogleLogo(size: 16),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(t('login_google_button')),
-                                ],
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text.rich(
-                      TextSpan(
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          color: AppColors.textOnBlushMuted,
-                          height: 1.4,
+                        const SizedBox(height: 16),
+                      ],
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: Color(0xFFC0294A)),
                         ),
-                        children: [
-                          TextSpan(text: t('login_terms_prefix')),
-                          TextSpan(
-                            text: t('login_terms_privacy_label'),
-                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () => Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+                        const SizedBox(height: 12),
+                      ],
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _canSignIn ? _handleGoogleSignIn : null,
+                          child: _loading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
                                   ),
-                          ),
-                          TextSpan(text: t('login_terms_middle')),
-                          TextSpan(
-                            text: t('login_terms_terms_label'),
-                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () => Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => const TermsOfServiceScreen()),
-                                  ),
-                          ),
-                          TextSpan(text: t('login_terms_suffix')),
-                        ],
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white,
+                                      ),
+                                      child: const GoogleLogo(size: 16),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(t('login_google_button')),
+                                  ],
+                                ),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 18),
+                      Text.rich(
+                        TextSpan(
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            color: AppColors.textOnBlushMuted,
+                            height: 1.4,
+                          ),
+                          children: [
+                            TextSpan(text: t('login_terms_prefix')),
+                            TextSpan(
+                              text: t('login_terms_privacy_label'),
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const PrivacyPolicyScreen(),
+                                  ),
+                                ),
+                            ),
+                            TextSpan(text: t('login_terms_middle')),
+                            TextSpan(
+                              text: t('login_terms_terms_label'),
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const TermsOfServiceScreen(),
+                                  ),
+                                ),
+                            ),
+                            TextSpan(text: t('login_terms_suffix')),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

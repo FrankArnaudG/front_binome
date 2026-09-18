@@ -72,6 +72,13 @@ class _PacksScreenState extends State<PacksScreen> {
   /// démarre au milieu de la plage "infinie" pour pouvoir défiler très
   /// longtemps aussi bien vers le haut que vers le bas.
   ScrollController _scrollControllerFor(int categoryCount) {
+    // Avec une seule catégorie non vide, boucler n'a aucun sens : ça
+    // remplit l'écran de cartes identiques (voir demande utilisateur,
+    // capture montrant "Séduction" répétée 4 fois) plutôt que de donner
+    // l'illusion d'un défilement infini entre plusieurs catégories.
+    if (categoryCount <= 1) {
+      return _scrollController ??= ScrollController();
+    }
     return _scrollController ??= ScrollController(
       initialScrollOffset: (categoryCount * (_kLoopCount ~/ 2)) * _kItemExtent,
     );
@@ -79,7 +86,9 @@ class _PacksScreenState extends State<PacksScreen> {
 
   Future<void> _refresh() async {
     final future = _load();
-    setState(() { _future = future; });
+    setState(() {
+      _future = future;
+    });
     await future;
   }
 
@@ -119,7 +128,10 @@ class _PacksScreenState extends State<PacksScreen> {
             icon: const Icon(Icons.star_rounded),
             tooltip: t('favorite_packs_tooltip'),
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => FavoritePacksScreen(replyToSendId: widget.replyToSendId)),
+              MaterialPageRoute(
+                builder: (_) =>
+                    FavoritePacksScreen(replyToSendId: widget.replyToSendId),
+              ),
             ),
           ),
         ],
@@ -146,7 +158,8 @@ class _PacksScreenState extends State<PacksScreen> {
                     ],
                   );
                 }
-                final (packs, categories) = snapshot.data ?? (const <Pack>[], const <PackCategory>[]);
+                final (packs, categories) =
+                    snapshot.data ?? (const <Pack>[], const <PackCategory>[]);
                 if (packs.isEmpty) {
                   return ListView(
                     children: [
@@ -163,11 +176,15 @@ class _PacksScreenState extends State<PacksScreen> {
                 // référencée par un pack mais introuvable côté admin (ex.
                 // supprimée depuis) part en fin de liste plutôt que de
                 // planter.
-                final categorySlugOrder = categories.map((c) => c.slug).toList();
+                final categorySlugOrder = categories
+                    .map((c) => c.slug)
+                    .toList();
                 final categoryBySlug = {for (final c in categories) c.slug: c};
                 final presentCategories =
                     packs.map((p) => p.category).toSet().toList()..sort(
-                      (a, b) => categorySlugOrder.indexOf(a).compareTo(categorySlugOrder.indexOf(b)),
+                      (a, b) => categorySlugOrder
+                          .indexOf(a)
+                          .compareTo(categorySlugOrder.indexOf(b)),
                     );
                 final categoryCount = presentCategories.length;
                 final scrollController = _scrollControllerFor(categoryCount);
@@ -222,16 +239,31 @@ class _PacksScreenState extends State<PacksScreen> {
                             // _kLoopCount) plutôt qu'un vrai "infini" — Flutter
                             // n'accepte pas itemCount: null avec itemExtent ;
                             // l'index réel boucle sur les vraies catégories.
-                            itemCount: categoryCount * _kLoopCount,
+                            // Pas de boucle avec une seule catégorie (voir
+                            // _scrollControllerFor) : une carte, pas de
+                            // répétition à l'écran.
+                            itemCount: categoryCount <= 1
+                                ? categoryCount
+                                : categoryCount * _kLoopCount,
                             itemBuilder: (context, index) {
                               final category =
                                   presentCategories[index % categoryCount];
                               final count = packs
                                   .where((p) => p.category == category)
                                   .length;
-                              final localeCode = LocaleScope.of(context).current.code;
-                              final categoryLabel = categoryBySlug[category]?.labelFor(localeCode) ?? category;
-                              final categoryTagline = categoryBySlug[category]?.taglineFor(localeCode) ?? '';
+                              final localeCode = LocaleScope.of(
+                                context,
+                              ).current.code;
+                              final categoryLabel =
+                                  categoryBySlug[category]?.labelFor(
+                                    localeCode,
+                                  ) ??
+                                  category;
+                              final categoryTagline =
+                                  categoryBySlug[category]?.taglineFor(
+                                    localeCode,
+                                  ) ??
+                                  '';
 
                               return AnimatedBuilder(
                                 animation: scrollController,
@@ -280,7 +312,8 @@ class _PacksScreenState extends State<PacksScreen> {
                                     tagline: categoryTagline,
                                     theme: theme,
                                     packCount: count,
-                                    onTap: () => _openCategory(category, categoryLabel),
+                                    onTap: () =>
+                                        _openCategory(category, categoryLabel),
                                   ),
                                 ),
                               );
@@ -438,7 +471,12 @@ class _CategoryCardState extends State<_CategoryCard> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      t(packCount > 1 ? 'pack_count_other' : 'pack_count_one', {'count': '$packCount'}),
+                                      t(
+                                        packCount > 1
+                                            ? 'pack_count_other'
+                                            : 'pack_count_one',
+                                        {'count': '$packCount'},
+                                      ),
                                       style: GoogleFonts.nunito(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w700,

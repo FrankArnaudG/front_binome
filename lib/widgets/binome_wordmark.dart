@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 
-/// Logo texte "Binome" — le "i" est remplacé par un petit cœur pour garder
-/// une lecture claire du nom tout en signant la marque.
+/// Logo "Binome" — deux images superposées (voir demande utilisateur :
+/// remplacer le rendu par code, source d'un bug d'alignement récurrent, par
+/// l'image fournie), chacune teintée dynamiquement via [ColorFiltered] :
+/// [binome_wordmark_text.png] (silhouette des lettres) prend [color],
+/// [binome_wordmark_heart.png] (silhouette du cœur seul) prend [heartColor]
+/// — les deux images partagent exactement le même cadrage (issues du même
+/// fichier source découpé en deux), donc toujours parfaitement alignées,
+/// sans dépendre des métriques d'une police.
 class BinomeWordmark extends StatelessWidget {
   final double fontSize;
   final Color color;
@@ -26,18 +31,22 @@ class BinomeWordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = GoogleFonts.poppins(fontSize: fontSize, fontWeight: FontWeight.w700, color: color);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text('B', style: style),
-        Transform.translate(
-          offset: Offset(0, fontSize * 0.1),
-          child: Icon(Icons.favorite_rounded, color: heartColor, size: fontSize * 0.78),
-        ),
-        Text('nome', style: style),
-      ],
+    final height = fontSize * 1.1;
+    return SizedBox(
+      height: height,
+      child: Stack(
+        alignment: Alignment.centerLeft,
+        children: [
+          ColorFiltered(
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+            child: Image.asset('assets/logo/binome_wordmark_text.png', height: height, fit: BoxFit.contain),
+          ),
+          ColorFiltered(
+            colorFilter: ColorFilter.mode(heartColor, BlendMode.srcIn),
+            child: Image.asset('assets/logo/binome_wordmark_heart.png', height: height, fit: BoxFit.contain),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -54,10 +54,19 @@ class HeroPage extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   t('onboarding_hero_subtitle'),
-                  style: GoogleFonts.poppins(
+                  // Manuscrite plutôt que Poppins — reprend la même famille
+                  // que le nouveau logo cursif (voir demande utilisateur) et
+                  // que les Poèmes-Slides (voir SlideController::FONTS,
+                  // même police "Dancing Script"), pour une identité
+                  // cohérente plutôt qu'une police de plus.
+                  style: GoogleFonts.dancingScript(
                     color: AppColors.primary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
+                    // Une police manuscrite paraît plus petite qu'une
+                    // sans-serif grasse à taille égale (moins de masse
+                    // visuelle) — 30 semblait trop discret à côté de "VOTRE
+                    // MONDE" (voir capture utilisateur), remonté à 40.
+                    fontSize: 40,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 110),
