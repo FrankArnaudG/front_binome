@@ -106,6 +106,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     super.initState();
     _send = widget.send;
     if (_send.isPack && _send.pack != null) {
+      // Slides déjà connues (cache mémoire) : affichées dès la première image,
+      // sans chargement — le rafraîchissement se fait ensuite en silence.
+      _packSlides = ContentService.instance.cachedPackSync(_send.pack!.id)?.slides;
       _loadPackSlides();
     }
     _loadCachedRepliesThenRefresh();
@@ -356,7 +359,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   }
 
   Future<void> _loadPackSlides() async {
-    setState(() => _loadingPackSlides = true);
+    // Pas de rond de chargement si on a déjà de quoi afficher.
+    if (_packSlides == null) setState(() => _loadingPackSlides = true);
     try {
       final pack = await ContentService.instance.fetchPack(_send.pack!.id);
       if (mounted) setState(() => _packSlides = pack.slides);

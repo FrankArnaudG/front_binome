@@ -137,6 +137,31 @@ class ContentService {
     await LocalCache.instance.writeJson(_packIndexKey, index);
   }
 
+  /// Copie déjà en mémoire d'un poème (avec ses slides), sans attente — permet
+  /// à un écran d'afficher tout de suite au lieu de passer par un chargement.
+  Pack? cachedPackSync(String id) => _memoryPack[id];
+
+  /// Précharge discrètement, en arrière-plan, les slides des poèmes des
+  /// dernières discussions : leur ouverture est alors instantanée, même la
+  /// première fois. N'appelle le serveur que pour ce qui n'est pas déjà en
+  /// cache, et jamais plus de [max] poèmes à la fois.
+  void _prefetchPacksOf(List<Send> sends, {int max = 8}) {
+    final ids = <String>{};
+    for (final send in sends) {
+      final pack = send.isPack ? send.pack : null;
+      if (pack != null && !_memoryPack.containsKey(pack.id)) ids.add(pack.id);
+      if (ids.length >= max) break;
+    }
+    if (ids.isEmpty) return;
+    unawaited(() async {
+      for (final id in ids) {
+        try {
+          await fetchPack(id);
+        } catch (_) {}
+      }
+    }());
+  }
+
   Future<Pack> fetchPack(String id, {bool refresh = false}) async {
     var cached = _memoryPack[id];
     if (cached == null) {
@@ -349,7 +374,9 @@ class ContentService {
       final data = await ApiClient.instance.get(uri.toString()) as Map<String, dynamic>;
       final items = data['data'] as List;
       if (cacheable) await LocalCache.instance.writeJson(cacheKey, items);
-      return items.map((e) => Send.fromJson(e as Map<String, dynamic>)).toList();
+      final sends = items.map((e) => Send.fromJson(e as Map<String, dynamic>)).toList();
+      if (cacheable) _prefetchPacksOf(sends);
+      return sends;
     } catch (e) {
       if (cacheable) {
         final cached = await LocalCache.instance.readJson<List<dynamic>>(cacheKey);
