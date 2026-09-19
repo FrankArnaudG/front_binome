@@ -12,6 +12,10 @@ class SlidePackViewer extends StatefulWidget {
   final ThemePalette theme;
   final String? category;
 
+  /// Répercuté sur [SlideVisualCard.senderGender] (variante genrée de
+  /// l'image de catégorie, selon la personne qui a envoyé le poème).
+  final String? senderGender;
+
   /// Espace autour de chaque carte pendant le swipe — utile en plein écran
   /// (pour ne pas coller les cartes entre elles), mais à mettre à zéro
   /// quand la visionneuse est déjà contenue dans un cadre serré (ex. la
@@ -28,6 +32,7 @@ class SlidePackViewer extends StatefulWidget {
     required this.slides,
     required this.theme,
     this.category,
+    this.senderGender,
     this.slideMargin = const EdgeInsets.all(16),
     this.scale = 1,
   });
@@ -53,6 +58,7 @@ class _SlidePackViewerState extends State<SlidePackViewer> {
               slide: widget.slides[i],
               theme: widget.theme,
               category: widget.category,
+              senderGender: widget.senderGender,
               scale: widget.scale,
             ),
           ),

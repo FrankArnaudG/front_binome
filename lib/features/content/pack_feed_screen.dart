@@ -94,7 +94,10 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
     final userJson = await TokenStorage.instance.readUserJson();
     if (!mounted || userJson == null) return;
     final user = AppUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
-    final isFavorite = await PackFavoriteStorage.instance.isFavorite(user.id, widget.packId);
+    final isFavorite = await PackFavoriteStorage.instance.isFavorite(
+      user.id,
+      widget.packId,
+    );
     if (!mounted) return;
     setState(() {
       _userId = user.id;
@@ -105,7 +108,10 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
   Future<void> _toggleFavorite() async {
     final userId = _userId;
     if (userId == null) return;
-    final nowFavorite = await PackFavoriteStorage.instance.toggleFavorite(userId, widget.packId);
+    final nowFavorite = await PackFavoriteStorage.instance.toggleFavorite(
+      userId,
+      widget.packId,
+    );
     if (!mounted) return;
     setState(() => _isFavorite = nowFavorite);
   }
@@ -162,17 +168,22 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
         _packJustSent = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('pack_feed_sent_snackbar'))),
+        SnackBar(
+          content: Text(LocaleScope.of(context).t('pack_feed_sent_snackbar')),
+        ),
       );
       // Redirige directement vers la discussion concernée par cet envoi
       // (même écran que le Carnet de bord, voir TimelineScreen._openSend)
       // plutôt que de laisser l'utilisateur sur le feed déjà envoyé.
       final userJson = await TokenStorage.instance.readUserJson();
       if (!mounted || userJson == null) return;
-      final user = AppUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+      final user = AppUser.fromJson(
+        jsonDecode(userJson) as Map<String, dynamic>,
+      );
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => SlideDetailScreen(send: send, isMine: true, user: user),
+          builder: (_) =>
+              SlideDetailScreen(send: send, isMine: true, user: user),
         ),
       );
       if (mounted) _pop();
@@ -276,6 +287,8 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
                 slide: slide,
                 theme: theme,
                 category: pack.category,
+                // La personne qui parcourt le pack est celle qui l'enverra.
+                senderGender: TokenStorage.currentGender,
                 // Laisse de la place à droite pour la barre d'actions
                 // verticale empilée par-dessus.
                 captionRightPadding: 96,
@@ -347,7 +360,8 @@ class _FixedPriceBadge extends StatelessWidget {
     // (voir SendController côté backend, aucun débit pour un abonné) —
     // plus aucune raison d'afficher son prix (voir demande utilisateur :
     // "rien ne doit apparaître").
-    if (SubscriptionStatusNotifier.instance.isActive) return const SizedBox.shrink();
+    if (SubscriptionStatusNotifier.instance.isActive)
+      return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -361,7 +375,11 @@ class _FixedPriceBadge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             '$coinPrice',
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -407,7 +425,9 @@ class _ActionRail extends StatelessWidget {
         const SizedBox(height: 18),
         _RailButton(
           onTap: onFavorite,
-          background: favorite ? const Color(0xFFFFB020) : Colors.white.withValues(alpha: 0.18),
+          background: favorite
+              ? const Color(0xFFFFB020)
+              : Colors.white.withValues(alpha: 0.18),
           icon: favorite ? Icons.star_rounded : Icons.star_border_rounded,
           label: t('pack_feed_favorite'),
         ),

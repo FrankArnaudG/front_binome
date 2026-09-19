@@ -4,10 +4,22 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/pack.dart';
 import '../../../theme/theme_palette.dart';
+import '../../../core/token_storage.dart';
 import '../pack_categories.dart';
 
 bool _isNetworkPath(String? path) =>
     path != null && (path.startsWith('http://') || path.startsWith('https://'));
+
+/// Image par défaut de la catégorie du pack ; si elle n'est pas encore
+/// packagée dans l'app, repli sur l'illustration générique (hero).
+///
+/// Sur la grille de packs, la personne qui parcourt est celle qui enverra le
+/// poème : on utilise donc son propre genre pour choisir la variante.
+Widget _categoryOrHeroImage(String category) => categoryImage(
+  category,
+  gender: TokenStorage.currentGender,
+  fallback: Image.asset('assets/images/hero_couple.jpg', fit: BoxFit.cover),
+);
 
 /// Tuile d'un pack dans une grille de packs — extraite de
 /// CategoryPacksScreen (voir demande utilisateur : réutilisée telle
@@ -17,7 +29,12 @@ class PackTile extends StatelessWidget {
   final ThemePalette theme;
   final VoidCallback onTap;
 
-  const PackTile({super.key, required this.pack, required this.theme, required this.onTap});
+  const PackTile({
+    super.key,
+    required this.pack,
+    required this.theme,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -46,23 +63,19 @@ class PackTile extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       // Cover choisie dans l'admin (hébergée sur le serveur)
-                      // si elle existe, sinon repli sur l'illustration
-                      // provisoire générique en attendant un visuel dédié.
+                      // si elle existe, sinon image par défaut de la
+                      // catégorie (packagée dans l'app), sinon l'illustration
+                      // générique tant que celle de la catégorie n'est pas
+                      // livrée.
                       if (_isNetworkPath(pack.coverPath))
                         Image.network(
                           pack.coverPath!,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
-                              Image.asset(
-                                'assets/images/hero_couple.jpg',
-                                fit: BoxFit.cover,
-                              ),
+                              _categoryOrHeroImage(pack.category),
                         )
                       else
-                        Image.asset(
-                          'assets/images/hero_couple.jpg',
-                          fit: BoxFit.cover,
-                        ),
+                        _categoryOrHeroImage(pack.category),
                       DecoratedBox(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(

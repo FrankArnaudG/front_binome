@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/api_client.dart';
+import '../../../core/token_storage.dart';
 import '../../../models/pack.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
@@ -16,7 +17,10 @@ import 'slide_pack_viewer.dart';
 /// navigation. Taille volontairement contenue (pas plein écran) pour rester
 /// soigné — mêmes proportions que la bulle principale de la carte, juste un
 /// cran plus petites pour bien se distinguer du fond.
-Future<void> showPackReplyModal(BuildContext context, {required String packId}) {
+Future<void> showPackReplyModal(
+  BuildContext context, {
+  required String packId,
+}) {
   return showGeneralDialog(
     context: context,
     barrierLabel: 'Fermer',
@@ -26,7 +30,10 @@ Future<void> showPackReplyModal(BuildContext context, {required String packId}) 
     pageBuilder: (context, animation, secondaryAnimation) =>
         _PackReplyModal(packId: packId),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      );
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
@@ -131,7 +138,11 @@ class _PackReplyModalState extends State<_PackReplyModal> {
                       onTap: () => Navigator.of(context).pop(),
                       child: const Padding(
                         padding: EdgeInsets.all(8),
-                        child: Icon(Icons.close_rounded, size: 20, color: Colors.black87),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
                   ),
@@ -173,6 +184,9 @@ class _PackReplyModalState extends State<_PackReplyModal> {
       slides: pack.slides,
       theme: theme,
       category: pack.category,
+      // La réponse part de la personne connectée : c'est son genre qui
+      // détermine la variante d'image, comme chez son binôme à la réception.
+      senderGender: TokenStorage.currentGender,
       // Marge horizontale seulement : garde les cartes bord à bord en
       // hauteur (pas de liseré en haut/bas), mais les sépare bien l'une de
       // l'autre pendant le swipe plutôt que de les laisser se toucher.

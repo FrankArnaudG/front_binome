@@ -9,9 +9,27 @@ import '../../../theme/handwritten_fonts.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../widgets/asset_or_fallback.dart';
 import '../content_service.dart';
+import '../pack_categories.dart';
 
 bool isNetworkMediaPath(String? path) =>
     path != null && (path.startsWith('http://') || path.startsWith('https://'));
+
+/// Fond d'une carte de slide sans image propre : image par défaut de la
+/// catégorie (packagée dans l'app), sinon ambiance historique `mood_<slug>`,
+/// sinon l'illustration générique (hero), comme sur les cartes de pack.
+Widget _categoryBackground(String category, String? senderGender) =>
+    categoryImage(
+      category,
+      gender: senderGender,
+      fallback: AssetOrFallback(
+        assetPath: 'assets/images/mood_$category.png',
+        fit: BoxFit.cover,
+        fallback: Image.asset(
+          'assets/images/hero_couple.jpg',
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
 
 /// Le même habillage visuel que le feed "Envoyer une pensée" (voir
 /// PackFeedScreen) : image ou ambiance de catégorie en fond, voile sombre en
@@ -23,6 +41,12 @@ class SlideVisualCard extends StatelessWidget {
   final Slide slide;
   final ThemePalette theme;
   final String? category;
+
+  /// Genre ("Homme"/"Femme") de la personne qui ENVOIE le poème — sert à
+  /// choisir la variante genrée de l'image de catégorie (ex. "Manque de toi" :
+  /// on voit la personne qui est en manque, donc l'expéditeur, pour lui comme
+  /// pour son binôme qui reçoit).
+  final String? senderGender;
   final double borderRadius;
   final double captionRightPadding;
   final Widget? overlay;
@@ -39,6 +63,7 @@ class SlideVisualCard extends StatelessWidget {
     required this.slide,
     required this.theme,
     this.category,
+    this.senderGender,
     this.borderRadius = 24,
     this.captionRightPadding = 24,
     this.overlay,
@@ -49,7 +74,8 @@ class SlideVisualCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final localeCode = LocaleScope.of(context).current.code;
     final categoryLabel = category != null
-        ? ContentService.instance.categoryLabelSync(category!, localeCode) ?? category!.toUpperCase()
+        ? ContentService.instance.categoryLabelSync(category!, localeCode) ??
+              category!.toUpperCase()
         : null;
     final slideText = slide.textFor(localeCode) ?? '';
 
@@ -67,26 +93,19 @@ class SlideVisualCard extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           // Image propre à la slide (choisie dans le studio admin, hébergée
-          // sur le serveur) si elle existe, sinon repli sur l'ambiance de
-          // catégorie packagée dans l'app.
+          // sur le serveur) si elle existe, sinon image par défaut de la
+          // catégorie packagée dans l'app (une par catégorie), sinon
+          // l'ambiance historique, sinon le dégradé du thème.
           if (isNetworkMediaPath(slide.mediaPath))
             Image.network(
               slide.mediaPath!,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => category != null
-                  ? AssetOrFallback(
-                      assetPath: 'assets/images/mood_$category.png',
-                      fit: BoxFit.cover,
-                      fallback: const SizedBox.shrink(),
-                    )
+                  ? _categoryBackground(category!, senderGender)
                   : const SizedBox.shrink(),
             )
           else if (category != null)
-            AssetOrFallback(
-              assetPath: 'assets/images/mood_$category.png',
-              fit: BoxFit.cover,
-              fallback: const SizedBox.shrink(),
-            ),
+            _categoryBackground(category!, senderGender),
           // Voile sombre en bas pour garder la légende (et une éventuelle
           // barre d'actions) lisible par-dessus une éventuelle photo chargée.
           const DecoratedBox(
@@ -113,16 +132,21 @@ class SlideVisualCard extends StatelessWidget {
                 child: Text(
                   slideText,
                   textAlign: TextAlign.left,
-                  style: handwrittenFont(
-                    slide.design!.fontFamily,
-                    color: slide.design!.textColor,
-                    fontSize: 20 * scale,
-                  ).copyWith(
-                    height: 1.4,
-                    shadows: const [
-                      Shadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 2)),
-                    ],
-                  ),
+                  style:
+                      handwrittenFont(
+                        slide.design!.fontFamily,
+                        color: slide.design!.textColor,
+                        fontSize: 20 * scale,
+                      ).copyWith(
+                        height: 1.4,
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black45,
+                            blurRadius: 10,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
                 ),
               ),
             )
@@ -153,7 +177,11 @@ class SlideVisualCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.2 * scale,
                         shadows: const [
-                          Shadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 1)),
+                          Shadow(
+                            color: Colors.black45,
+                            blurRadius: 6,
+                            offset: Offset(0, 1),
+                          ),
                         ],
                       ),
                     ),
@@ -170,7 +198,11 @@ class SlideVisualCard extends StatelessWidget {
                       height: 1.4,
                       letterSpacing: 0.3 * scale,
                       shadows: const [
-                        Shadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 2)),
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 10,
+                          offset: Offset(0, 2),
+                        ),
                       ],
                     ),
                   ),

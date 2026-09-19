@@ -854,6 +854,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                 slides: _packSlides!,
                 theme: theme,
                 category: _send.pack?.category,
+                senderGender: _send.sender?.gender,
                 // Même correctif que la modale de réponse : marge
                 // horizontale seulement (espace propre entre les cartes en
                 // swipant), pas de marge verticale qui laisserait voir le
@@ -870,6 +871,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
           slide: _send.slide!,
           theme: theme,
           category: _send.slide!.category,
+          senderGender: _send.sender?.gender,
         ),
       );
     }
@@ -1788,6 +1790,7 @@ class _ThreadReplyBubble extends StatelessWidget {
               slide: slide,
               theme: theme,
               category: reply.pack?.category,
+              senderGender: reply.sender?.gender,
               borderRadius: 12,
               scale: 0.5,
             ),

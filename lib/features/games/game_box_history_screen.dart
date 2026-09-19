@@ -4820,6 +4820,7 @@ class _PoemReplyBubbleState extends State<_PoemReplyBubble> {
         slides: _slides!,
         theme: theme,
         category: widget.reply.pack?.category,
+        senderGender: widget.reply.sender?.gender,
         // Même correctif que la modale de réponse/SlideDetailScreen : marge
         // horizontale seulement, pas de marge verticale (sinon le fond de
         // la bulle apparaît en bordure comme un cadre).
