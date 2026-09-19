@@ -19,12 +19,11 @@ import '../nearby/nearby_comms.dart';
 ///   uniquement par la connexion Bluetooth/Wifi Direct du jeu (voir
 ///   NearbyComms), jamais par le serveur ni la base de données (voir
 ///   demande utilisateur).
-/// Dans les deux cas, gardée en mémoire côté client tant que l'écran de
-/// jeu reste ouvert (voir demande utilisateur : "il remonte mais ne
-/// disparaît pas automatiquement... si y'a trop de commentaires ils
-/// seront progressivement cachés" — pas de suppression après un délai, les
-/// plus anciens sortent juste du cadre visible en défilant, toujours en
-/// mémoire jusqu'à un tap sur la croix qui vide tout). N'affiche/n'écoute
+/// Dans les deux cas, façon commentaires en direct de TikTok (voir demande
+/// utilisateur : "ca devait defiler vers le haut et disparaitre") : un
+/// message apparaît en bas, remonte quand d'autres arrivent, puis s'estompe
+/// et disparaît tout seul après [_commentLifetime] (un tap sur la croix
+/// vide tout d'un coup). Rien n'est conservé au-delà. N'affiche/n'écoute
 /// rien tant que [enabled] est faux (pass-and-play sur un seul appareil :
 /// les deux joueurs regardent déjà le même écran).
 class GameCommentOverlay extends StatefulWidget {
@@ -52,6 +51,9 @@ class GameCommentOverlay extends StatefulWidget {
   State<GameCommentOverlay> createState() => _GameCommentOverlayState();
 }
 
+/// Durée pendant laquelle un message reste visible avant de disparaître.
+const _commentLifetime = Duration(seconds: 5);
+
 class _LiveComment {
   final int id;
   final String prenom;
@@ -68,6 +70,7 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
   StreamSubscription<NearbyChatMessage>? _nearbySubscription;
+  final Map<int, Timer> _expiryTimers = {};
 
   @override
   void initState() {
@@ -89,6 +92,9 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
       } else if (widget.boxId != null) {
         RealtimeClient.instance.unsubscribeFromBox(widget.boxId!, onEvent: _onRealtimeEvent);
       }
+    }
+    for (final timer in _expiryTimers.values) {
+      timer.cancel();
     }
     _controller.dispose();
     _focusNode.dispose();
@@ -116,8 +122,16 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
 
   void _appendComment(String prenom, String text) {
     if (!mounted) return;
+    final id = _nextId++;
     setState(() {
-      _comments.add(_LiveComment(id: _nextId++, prenom: prenom, text: text));
+      _comments.add(_LiveComment(id: id, prenom: prenom, text: text));
+    });
+    // Disparaît tout seul (la bulle s'estompe elle-même juste avant, voir
+    // _CommentBubble) — retirée de la liste une fois complètement invisible.
+    _expiryTimers[id] = Timer(_commentLifetime, () {
+      _expiryTimers.remove(id);
+      if (!mounted) return;
+      setState(() => _comments.removeWhere((c) => c.id == id));
     });
     // La zone défilante est en `reverse: true` (voir _buildBubbleLog) :
     // l'offset 0 correspond déjà au dernier message (visuellement en bas),
@@ -135,6 +149,10 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
 
   void _clearAll() {
     if (!mounted) return;
+    for (final timer in _expiryTimers.values) {
+      timer.cancel();
+    }
+    _expiryTimers.clear();
     setState(() => _comments.clear());
   }
 
@@ -326,11 +344,10 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
 }
 
 /// Une bulle de commentaire — apparaît EN BAS puis remonte en s'estompant
-/// vers son opacité finale (voir demande utilisateur : "il doit apparaître
-/// en bas et défiler/remonter comme dans la version précédente"), puis
-/// reste en place DÉFINITIVEMENT dans le journal défilant (voir
-/// [_GameCommentOverlayState]) — contrairement à la toute première version,
-/// plus de suppression automatique après un délai.
+/// vers son opacité finale, glisse lentement vers le haut pendant toute sa
+/// durée de vie, s'estompe sur la fin et disparaît (voir demande utilisateur : "comme les
+/// commentaires live de TikTok" ; retrait de la liste par
+/// [_GameCommentOverlayState] à [_commentLifetime]).
 class _CommentBubble extends StatefulWidget {
   final String prenom;
   final String text;
@@ -341,7 +358,7 @@ class _CommentBubble extends StatefulWidget {
   State<_CommentBubble> createState() => _CommentBubbleState();
 }
 
-class _CommentBubbleState extends State<_CommentBubble> with SingleTickerProviderStateMixin {
+class _CommentBubbleState extends State<_CommentBubble> with TickerProviderStateMixin {
   // Décalage en PIXELS fixes (pas relatif à la taille de la bulle, voir
   // demande utilisateur : "j'ai testé, pas de défilement" — un décalage
   // relatif type SlideTransition(begin: Offset(0, 0.6)) donnait un
@@ -358,8 +375,33 @@ class _CommentBubbleState extends State<_CommentBubble> with SingleTickerProvide
     end: 0,
   ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
+  // Sortie : dans la dernière seconde et demie avant le retrait, la bulle
+  // s'estompe (elle glisse déjà vers le haut, voir [_drift]).
+  late final AnimationController _exit = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  );
+  // Glissement continu vers le haut pendant toute la durée de vie (voir
+  // demande utilisateur : "il va glisser vers le haut pendant 5 secondes").
+  late final AnimationController _drift = AnimationController(
+    vsync: this,
+    duration: _commentLifetime,
+  )..forward();
+  Timer? _exitTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _exitTimer = Timer(_commentLifetime - const Duration(milliseconds: 1500), () {
+      if (mounted) _exit.forward();
+    });
+  }
+
   @override
   void dispose() {
+    _exitTimer?.cancel();
+    _exit.dispose();
+    _drift.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -367,10 +409,10 @@ class _CommentBubbleState extends State<_CommentBubble> with SingleTickerProvide
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge([_controller, _exit, _drift]),
       builder: (context, child) => Transform.translate(
-        offset: Offset(0, _rise.value),
-        child: Opacity(opacity: _fade.value, child: child),
+        offset: Offset(0, _rise.value - 70 * _drift.value),
+        child: Opacity(opacity: (_fade.value * (1 - _exit.value)).clamp(0.0, 1.0), child: child),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
