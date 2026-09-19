@@ -112,6 +112,8 @@ dependencies:
   # Sélecteur de couleur libre pour le doodle (voir DoodleComposeScreen),
   # en plus des pastilles présets.
   flutter_colorpicker: ^1.1.0
+  crypto: ^3.0.7
+  firebase_crashlytics: ^4.3.10
 
 dev_dependencies:
   flutter_test:
