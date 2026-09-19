@@ -85,6 +85,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   late SuitBattleBoardState _state;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
+  // Instant de fin de partie vu par CET appareil : fige chrono et pièces.
+  DateTime? _finishedAt;
   // Distingue "c'est moi qui viens d'abandonner" (déjà géré par le pop
   // immédiat) de "le binôme vient d'abandonner à distance" — voir
   // WarCardBoardScreen._leavingMyself, même principe.
@@ -128,6 +130,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
+    if (_state.finished) _finishedAt = ServerClock.instance.now();
     _subscription = widget.transport.stateStream.listen(_onState);
     ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
     ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
@@ -299,7 +302,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
     final started = _state.startedAt;
     if (rate == null || started == null) return null;
     final graceSeconds = rate['grace_period_seconds'] ?? 0;
-    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
     final elapsed = now.difference(started).inSeconds - graceSeconds;
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
@@ -326,7 +329,10 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
 
   void _onState(SuitBattleBoardState state) {
     if (!mounted) return;
-    setState(() => _state = state);
+    setState(() {
+      _state = state;
+      if (state.finished) _finishedAt ??= ServerClock.instance.now();
+    });
 
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
@@ -406,7 +412,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
     // Le chrono attend la même période de grâce que l'anneau de pièce
     // (voir CoinBillingRing/demande utilisateur) — reste à 0:00 tant que
     // la grâce n'est pas écoulée, nul en dehors du mode à distance.
@@ -793,7 +799,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
               partnerName: widget.nearbyPartnerName ?? '',
               guideKey: _chatGuideKey,
             ),
-          if (commentsBoxId != null)
+          if (commentsBoxId != null && !_state.finished)
             VoiceCallOverlay(
               boxId: commentsBoxId,
               myUserId: widget.user.id,
@@ -802,7 +808,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
               paused: _state.isPaused,
               forceEnded: _walletDepleted || _state.isPaused,
             )
-          else if (widget.nearbyComms != null)
+          else if (widget.nearbyComms != null && !_state.finished)
             NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
           _buildGuideVoiceDemo(),
           GameWalletGuard(

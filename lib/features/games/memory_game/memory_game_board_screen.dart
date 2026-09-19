@@ -110,6 +110,9 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   Timer? _mismatchTimer;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
+  // Instant où la partie s'est terminée (vu par CET appareil) : fige le chrono
+  // et le compteur de pièces au lieu de les laisser tourner après la fin.
+  DateTime? _finishedAt;
   // Distingue "c'est moi qui viens d'abandonner" (voir _confirmAbandon,
   // déjà géré par le pop immédiat) de "le binôme vient d'abandonner à
   // distance" (voir _onState) — seul ce second cas doit afficher la
@@ -176,6 +179,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
+    if (_state.finished) _finishedAt = ServerClock.instance.now();
     _subscription = widget.transport.stateStream.listen(_onState);
     ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
     ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
@@ -457,7 +461,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     final started = _state.startedAt;
     if (rate == null || started == null) return null;
     final graceSeconds = rate['grace_period_seconds'] ?? 0;
-    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
     final elapsed = now.difference(started).inSeconds - graceSeconds;
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
@@ -490,6 +494,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     if (!mounted) return;
     setState(() {
       _state = state;
+      if (state.finished) _finishedAt ??= ServerClock.instance.now();
       if (state.mismatch != null) {
         _displayMismatch = state.mismatch;
         _mismatchTimer?.cancel();
@@ -630,7 +635,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     // Figé au moment où la pause a commencé (voir MemoryGameBoardState.
     // pausedAt) — sinon le chrono continuerait de tourner à l'écran pendant
     // la pause, alors que startedAt n'est décalé qu'à la reprise.
-    final now = _state.pausedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
     // Le chrono attend la même période de grâce que l'anneau de pièce
     // (voir CoinBillingRing/demande utilisateur : "les 10 secondes
     // doivent représenter le temps que doit patienter le chrono avant de
@@ -1106,7 +1111,9 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
             partnerName: widget.nearbyPartnerName ?? '',
             guideKey: _chatGuideKey,
           ),
-        if (commentsBoxId != null)
+        // Partie terminée : plus de micro ni de caméra (l'appel est coupé et
+        // ne peut pas être relancé).
+        if (commentsBoxId != null && !_state.finished)
           VoiceCallOverlay(
             boxId: commentsBoxId,
             myUserId: widget.user.id,
@@ -1119,7 +1126,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
             // solde épuisé.
             forceEnded: _walletDepleted || _state.isPaused,
           )
-        else if (widget.nearbyComms != null)
+        else if (widget.nearbyComms != null && !_state.finished)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
         // Démo micro/caméra du guide (voir doc de classe de
         // _BoardGuideStep) — volontairement SÉPARÉE des vrais boutons
