@@ -54,10 +54,10 @@ class _PacksScreenState extends State<PacksScreen> {
     _future = _load();
   }
 
-  Future<(List<Pack>, List<PackCategory>)> _load() async {
+  Future<(List<Pack>, List<PackCategory>)> _load({bool refresh = false}) async {
     final results = await Future.wait([
-      ContentService.instance.fetchPacks(),
-      ContentService.instance.fetchPackCategories(),
+      ContentService.instance.fetchPacks(refresh: refresh),
+      ContentService.instance.fetchPackCategories(refresh: refresh),
     ]);
     return (results[0] as List<Pack>, results[1] as List<PackCategory>);
   }
@@ -85,7 +85,7 @@ class _PacksScreenState extends State<PacksScreen> {
   }
 
   Future<void> _refresh() async {
-    final future = _load();
+    final future = _load(refresh: true);
     setState(() {
       _future = future;
     });

@@ -40,19 +40,19 @@ class _FavoritePacksScreenState extends State<FavoritePacksScreen> {
     _future = _fetch();
   }
 
-  Future<List<Pack>> _fetch() async {
+  Future<List<Pack>> _fetch({bool refresh = false}) async {
     final userJson = await TokenStorage.instance.readUserJson();
     if (userJson == null) return const [];
     final user = AppUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
     final favoriteIds = await PackFavoriteStorage.instance.getFavoriteIds(user.id);
     if (favoriteIds.isEmpty) return const [];
 
-    final packs = await ContentService.instance.fetchPacks();
+    final packs = await ContentService.instance.fetchPacks(refresh: refresh);
     return packs.where((p) => favoriteIds.contains(p.id)).toList();
   }
 
   Future<void> _refresh() async {
-    final future = _fetch();
+    final future = _fetch(refresh: true);
     setState(() {
       _future = future;
     });

@@ -63,6 +63,8 @@ class _DashboardTabState extends State<DashboardTab> {
     FeatureFlagsService.instance.refresh();
     GameCardInboxService.instance.refresh();
     UnreadTimelineService.instance.refresh(widget.user.id);
+    // Précharge les poèmes pour que Poèmes-Slides s'ouvre sans attente.
+    ContentService.instance.prewarm();
     _checkTodayActivity();
     // Peint la météo déjà connue immédiatement, avant même que le réseau
     // ait pu répondre (voir MoodService.cachedToday et demande

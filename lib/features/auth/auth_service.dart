@@ -11,6 +11,7 @@ import '../../core/local_cache.dart';
 import '../../core/push_notification_service.dart';
 import '../../core/token_storage.dart';
 import '../../models/app_user.dart';
+import '../content/content_service.dart';
 
 class AuthException implements Exception {
   final String message;
@@ -112,6 +113,7 @@ class AuthService {
     // même brièvement hors ligne, l'historique mis en cache du compte
     // précédent (voir LocalCache).
     await LocalCache.instance.clear();
+    ContentService.instance.clearMemoryCache();
     await _googleSignIn.signOut();
   }
 
@@ -221,6 +223,7 @@ class AuthService {
     }
     await TokenStorage.instance.clear();
     await LocalCache.instance.clear();
+    ContentService.instance.clearMemoryCache();
     await _googleSignIn.signOut();
   }
 }

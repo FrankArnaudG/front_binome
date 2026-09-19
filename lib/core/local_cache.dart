@@ -29,6 +29,11 @@ class LocalCache {
     }
   }
 
+  Future<void> remove(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(key);
+  }
+
   /// Vide tout le cache — appelé à la déconnexion pour qu'un compte suivant
   /// connecté sur le même appareil ne voie jamais, même brièvement hors
   /// ligne, l'historique d'un autre compte (voir AuthService.signOut).

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/api_client.dart';
 import '../../core/local_cache.dart';
 import '../../models/pack.dart';
@@ -12,14 +14,155 @@ class ContentService {
   ContentService._();
   static final ContentService instance = ContentService._();
 
-  Future<List<Pack>> fetchPacks() async {
-    final data = await ApiClient.instance.get('/packs') as List;
-    return data.map((e) => Pack.fromJson(e as Map<String, dynamic>)).toList();
+  // ---- Cache des poèmes ------------------------------------------------
+  //
+  // Principe "affiche tout de suite, actualise en arrière-plan" : si on
+  // connaît déjà la liste des packs (ou les slides d'un pack), on la rend
+  // immédiatement — mémoire d'abord, puis disque (LocalCache) — et on la
+  // rafraîchit discrètement depuis le serveur pour la prochaine ouverture.
+  // Seule la toute première ouverture (rien en cache) attend le réseau.
+  // `refresh: true` (pull-to-refresh) force un vrai appel serveur.
+
+  static const _packsCacheKey = 'cache_packs_list';
+  static const _packCachePrefix = 'cache_pack_';
+  static const _packIndexKey = 'cache_pack_index';
+  // Nombre de poèmes ouverts gardés sur disque (les plus récents) — évite de
+  // faire grossir sans limite le stockage de l'app.
+  static const _maxCachedPacks = 50;
+  // Pas plus d'un rafraîchissement d'arrière-plan par intervalle, même si
+  // l'utilisateur navigue vite entre les écrans.
+  static const _backgroundRefreshEvery = Duration(minutes: 2);
+
+  List<Pack>? _memoryPacks;
+  DateTime? _packsRefreshedAt;
+  final Map<String, Pack> _memoryPack = {};
+  final Map<String, DateTime> _packRefreshedAt = {};
+
+  /// À appeler à la déconnexion : les packs privés dépendent du compte, la
+  /// mémoire ne doit jamais passer d'un compte au suivant (le disque est vidé
+  /// par LocalCache.clear).
+  void clearMemoryCache() {
+    _memoryPacks = null;
+    _packsRefreshedAt = null;
+    _memoryPack.clear();
+    _packRefreshedAt.clear();
+    _memoryCategories = null;
+    _categoriesRefreshedAt = null;
   }
 
-  Future<Pack> fetchPack(String id) async {
-    final data = await ApiClient.instance.get('/packs/$id') as Map<String, dynamic>;
-    return Pack.fromJson(data);
+  /// Préchauffe les listes dès l'arrivée sur l'accueil, pour que l'écran
+  /// Poèmes-Slides s'ouvre sans attente. Silencieux : jamais d'erreur visible.
+  Future<void> prewarm() async {
+    try {
+      await Future.wait([fetchPacks(), fetchPackCategories()]);
+    } catch (_) {}
+  }
+
+  List<Pack> _parsePacks(List<dynamic> data) =>
+      data.map((e) => Pack.fromJson(e as Map<String, dynamic>)).toList();
+
+  Future<List<Pack>> _refreshPacks() async {
+    final data = await ApiClient.instance.get('/packs') as List;
+    final packs = _parsePacks(data);
+    _memoryPacks = packs;
+    _packsRefreshedAt = DateTime.now();
+    await LocalCache.instance.writeJson(_packsCacheKey, data);
+    return packs;
+  }
+
+  Future<List<Pack>> fetchPacks({bool refresh = false}) async {
+    var cached = _memoryPacks;
+    if (cached == null) {
+      final disk = await LocalCache.instance.readJson<List<dynamic>>(_packsCacheKey);
+      if (disk != null) {
+        cached = _parsePacks(disk);
+        _memoryPacks = cached;
+      }
+    }
+    if (!refresh && cached != null) {
+      final last = _packsRefreshedAt;
+      if (last == null || DateTime.now().difference(last) > _backgroundRefreshEvery) {
+        _packsRefreshedAt = DateTime.now();
+        unawaited(_refreshPacks().then((_) {}, onError: (_) {}));
+      }
+      return cached;
+    }
+    try {
+      return await _refreshPacks();
+    } catch (_) {
+      // Hors ligne : mieux vaut la dernière liste connue qu'une erreur.
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+
+  Future<Pack> _refreshPack(String id) async {
+    try {
+      final data = await ApiClient.instance.get('/packs/$id') as Map<String, dynamic>;
+      final pack = Pack.fromJson(data);
+      _memoryPack[id] = pack;
+      _packRefreshedAt[id] = DateTime.now();
+      await _storePackOnDisk(id, data);
+      return pack;
+    } on ApiException catch (e) {
+      // Pack supprimé ou dépublié depuis : on ne le ressert plus.
+      if (e.statusCode == 404) await _dropPack(id);
+      rethrow;
+    }
+  }
+
+  Future<void> _storePackOnDisk(String id, Map<String, dynamic> data) async {
+    await LocalCache.instance.writeJson('$_packCachePrefix$id', data);
+    final index = (await LocalCache.instance.readJson<List<dynamic>>(_packIndexKey) ?? [])
+        .map((e) => e.toString())
+        .toList()
+      ..remove(id)
+      ..insert(0, id);
+    while (index.length > _maxCachedPacks) {
+      final evicted = index.removeLast();
+      _memoryPack.remove(evicted);
+      await LocalCache.instance.remove('$_packCachePrefix$evicted');
+    }
+    await LocalCache.instance.writeJson(_packIndexKey, index);
+  }
+
+  Future<void> _dropPack(String id) async {
+    _memoryPack.remove(id);
+    _packRefreshedAt.remove(id);
+    await LocalCache.instance.remove('$_packCachePrefix$id');
+    final index = (await LocalCache.instance.readJson<List<dynamic>>(_packIndexKey) ?? [])
+        .map((e) => e.toString())
+        .toList()
+      ..remove(id);
+    await LocalCache.instance.writeJson(_packIndexKey, index);
+  }
+
+  Future<Pack> fetchPack(String id, {bool refresh = false}) async {
+    var cached = _memoryPack[id];
+    if (cached == null) {
+      final disk = await LocalCache.instance.readJson<Map<String, dynamic>>('$_packCachePrefix$id');
+      if (disk != null) {
+        cached = Pack.fromJson(disk);
+        _memoryPack[id] = cached;
+      }
+    }
+    if (!refresh && cached != null) {
+      final last = _packRefreshedAt[id];
+      if (last == null || DateTime.now().difference(last) > _backgroundRefreshEvery) {
+        _packRefreshedAt[id] = DateTime.now();
+        unawaited(_refreshPack(id).then((_) {}, onError: (_) {}));
+      }
+      return cached;
+    }
+    try {
+      return await _refreshPack(id);
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      // Hors ligne : on ressert la copie connue plutôt qu'une erreur.
+      if (cached != null) return cached;
+      rethrow;
+    }
   }
 
   static const _categoriesCacheKey = 'cache_pack_categories';
@@ -34,20 +177,41 @@ class ContentService {
   /// Gérées depuis l'admin (voir PackCategoryController côté backend), avec
   /// leurs 12 traductions déjà incluses — mises en cache comme les packs
   /// pour un premier affichage instantané.
-  Future<List<PackCategory>> fetchPackCategories() async {
-    try {
-      final data = await ApiClient.instance.get('/pack-categories') as List;
-      await LocalCache.instance.writeJson(_categoriesCacheKey, data);
-      final categories = data.map((e) => PackCategory.fromJson(e as Map<String, dynamic>)).toList();
-      _memoryCategories = categories;
-      return categories;
-    } catch (e) {
-      final cached = await LocalCache.instance.readJson<List<dynamic>>(_categoriesCacheKey);
-      if (cached != null) {
-        final categories = cached.map((entry) => PackCategory.fromJson(entry as Map<String, dynamic>)).toList();
-        _memoryCategories = categories;
-        return categories;
+  DateTime? _categoriesRefreshedAt;
+
+  Future<List<PackCategory>> _refreshCategories() async {
+    final data = await ApiClient.instance.get('/pack-categories') as List;
+    await LocalCache.instance.writeJson(_categoriesCacheKey, data);
+    final categories = data.map((e) => PackCategory.fromJson(e as Map<String, dynamic>)).toList();
+    _memoryCategories = categories;
+    _categoriesRefreshedAt = DateTime.now();
+    return categories;
+  }
+
+  /// Comme les packs : la dernière liste connue est rendue tout de suite
+  /// (mémoire, puis disque) et actualisée en arrière-plan ; [refresh] force
+  /// un vrai appel serveur.
+  Future<List<PackCategory>> fetchPackCategories({bool refresh = false}) async {
+    var cached = _memoryCategories;
+    if (cached == null) {
+      final disk = await LocalCache.instance.readJson<List<dynamic>>(_categoriesCacheKey);
+      if (disk != null) {
+        cached = disk.map((entry) => PackCategory.fromJson(entry as Map<String, dynamic>)).toList();
+        _memoryCategories = cached;
       }
+    }
+    if (!refresh && cached != null) {
+      final last = _categoriesRefreshedAt;
+      if (last == null || DateTime.now().difference(last) > _backgroundRefreshEvery) {
+        _categoriesRefreshedAt = DateTime.now();
+        unawaited(_refreshCategories().then((_) {}, onError: (_) {}));
+      }
+      return cached;
+    }
+    try {
+      return await _refreshCategories();
+    } catch (_) {
+      if (cached != null) return cached;
       rethrow;
     }
   }

@@ -41,13 +41,13 @@ class _CategoryPacksScreenState extends State<CategoryPacksScreen> {
     _future = _fetch();
   }
 
-  Future<List<Pack>> _fetch() async {
-    final packs = await ContentService.instance.fetchPacks();
+  Future<List<Pack>> _fetch({bool refresh = false}) async {
+    final packs = await ContentService.instance.fetchPacks(refresh: refresh);
     return packs.where((p) => p.category == widget.category).toList();
   }
 
   Future<void> _refresh() async {
-    final future = _fetch();
+    final future = _fetch(refresh: true);
     setState(() { _future = future; });
     await future;
   }
