@@ -46,13 +46,13 @@ class GameGuideVoiceDemo extends StatelessWidget {
           Showcase(
             key: micKey,
             title: phase == GameGuideVoicePhase.micReady
-                ? 'Maintiens pour parler'
-                : (connecting ? 'En attente de ton binôme' : 'Active le micro'),
+                ? 'Ton micro est ouvert'
+                : (connecting ? 'En attente de ton binôme' : 'Ta voix se connecte seule'),
             description: phase == GameGuideVoicePhase.micReady
-                ? "Une fois connecté, maintiens ce bouton appuyé pour parler — un simple tap ne suffit pas. (Démonstration : rien n'est envoyé, ceci reste uniquement sur ton téléphone.)"
+                ? "La voix se connecte toute seule avec ton binôme. Touche ce bouton pour couper ou rétablir ton micro : tu l'entends toujours. (Démonstration : rien n'est envoyé, ceci reste uniquement sur ton téléphone.)"
                 : (connecting
-                    ? "En ce moment, ton binôme doit lui aussi cliquer sur son micro pour rejoindre l'appel. (Démonstration : rien n'est réellement envoyé, ceci reste uniquement sur ton téléphone.)"
-                    : "Clique ici pour activer ton micro. (Démonstration : rien n'est réellement envoyé.)"),
+                    ? "La voix se connecte toute seule dès que ton binôme est dans la partie. (Démonstration : rien n'est réellement envoyé, ceci reste uniquement sur ton téléphone.)"
+                    : "Dans la vraie partie, aucune action : le micro est déjà ouvert. Touche ici pour continuer. (Démonstration : rien n'est réellement envoyé.)"),
             targetShapeBorder: const CircleBorder(),
             disableDefaultTargetGestures: phase == GameGuideVoicePhase.micJoin,
             child: GestureDetector(
