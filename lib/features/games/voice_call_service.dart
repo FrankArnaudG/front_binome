@@ -54,6 +54,21 @@ class VoiceCallService {
   bool permissionDenied = false;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
+  // Évite deux négociations simultanées (voice_ready + réponse reçus presque
+  // ensemble) qui créaient deux connexions et deux offres — cause d'une
+  // liaison "qui tourne indéfiniment" après une pause.
+  bool _negotiationStarted = false;
+  Future<void>? _pcFuture;
+  Timer? _watchdog;
+  // Vrai dès qu'on a été connecté au moins une fois : distingue "on attend"
+  // de "connexion perdue, on reconnecte" (voir VoiceCallOverlay).
+  bool everConnected = false;
+  bool get partnerReady => _partnerReady;
+  final _changesController = StreamController<void>.broadcast();
+
+  /// Émis quand l'état visible change sans que le statut change (le binôme
+  /// arrive, une reconnexion démarre...) — voir VoiceCallOverlay.
+  Stream<void> get changes => _changesController.stream;
   final List<RTCIceCandidate> _pendingCandidates = [];
   final _cameraInviteController = StreamController<CameraInvite>.broadcast();
   Stream<CameraInvite> get cameraInviteStream => _cameraInviteController.stream;
@@ -88,6 +103,7 @@ class VoiceCallService {
 
   Future<void> dispose() async {
     _reconnectTimer?.cancel();
+    _watchdog?.cancel();
     RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onRealtimeEvent);
     final wasEnabled = _iAmReady;
     _iAmReady = false;
@@ -112,6 +128,8 @@ class VoiceCallService {
     }
     permissionDenied = false;
     _iAmReady = true;
+    _negotiationStarted = false;
+    _pcFuture = null;
     _setStatus(VoiceCallStatus.connecting);
     debugPrint('VoiceCall: enable() — envoi voice_ready (partnerReady=$_partnerReady)');
     await GameService.instance.sendVoiceSignal('voice_ready', const {});
@@ -234,6 +252,7 @@ class VoiceCallService {
         final wasReady = _partnerReady;
         final isReply = payload['reply'] == true;
         _partnerReady = true;
+        if (!wasReady) _changesController.add(null);
         if (!_iAmReady) break;
         // Le binôme était déjà dans la partie quand on est arrivé : il n'a
         // jamais reçu NOTRE voice_ready, on lui répond (une seule fois, le
@@ -244,7 +263,7 @@ class VoiceCallService {
         // voice_ready "frais" alors qu'on le croyait déjà là : il a relancé
         // sa connexion (reconnexion/retour dans l'app) — notre côté est
         // périmé, on repart de zéro plutôt que d'attendre un délai.
-        if (wasReady && !isReply && _pc != null) {
+        if (wasReady && !isReply && (_pc != null || _negotiationStarted)) {
           unawaited(_resetPeer().then((_) => _maybeStartNegotiation()));
         } else {
           unawaited(_maybeStartNegotiation());
@@ -265,14 +284,18 @@ class VoiceCallService {
         // attend son retour (voice_ready) — pas de reconnexion en boucle.
         _partnerReady = false;
         _reconnectTimer?.cancel();
+        _watchdog?.cancel();
         unawaited(_resetPeer().then((_) {
           if (_iAmReady) _setStatus(VoiceCallStatus.connecting);
+          _changesController.add(null);
         }));
     }
   }
 
   Future<void> _maybeStartNegotiation() async {
-    if (_pc != null) return; // déjà en cours de négociation/connecté
+    if (_pc != null || _negotiationStarted) return; // déjà en cours/connecté
+    _negotiationStarted = true;
+    _armWatchdog();
     final isOfferer = myUserId.compareTo(partnerUserId) < 0;
     debugPrint('VoiceCall: _maybeStartNegotiation — isOfferer=$isOfferer');
     try {
@@ -285,12 +308,28 @@ class VoiceCallService {
       }
     } catch (e, st) {
       debugPrint('VoiceCall: ÉCHEC négociation — $e\n$st');
-      _setStatus(VoiceCallStatus.failed);
+      _negotiationStarted = false;
+      _setStatus(VoiceCallStatus.connecting);
+      _scheduleReconnect(Duration.zero);
     }
   }
 
-  Future<void> _ensurePeerConnection() async {
-    if (_pc != null) return;
+  /// Filet de sécurité : si la liaison n'est pas établie 20 s après le début
+  /// d'une négociation (offre perdue, binôme parti sans prévenir...), on
+  /// relance au lieu de tourner indéfiniment.
+  void _armWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer(const Duration(seconds: 20), () {
+      if (_iAmReady && _partnerReady && _status != VoiceCallStatus.connected) {
+        _scheduleReconnect(Duration.zero);
+      }
+    });
+  }
+
+  // Un seul appelant crée la connexion, les autres attendent la même création.
+  Future<void> _ensurePeerConnection() => _pcFuture ??= _createPeerConnection();
+
+  Future<void> _createPeerConnection() async {
     final iceServers = await GameService.instance.fetchIceServers();
     debugPrint('VoiceCall: iceServers = $iceServers');
     final pc = await createPeerConnection({'iceServers': iceServers});
@@ -335,7 +374,9 @@ class VoiceCallService {
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _reconnectTimer?.cancel();
+          _watchdog?.cancel();
           _reconnectAttempts = 0;
+          everConnected = true;
           _setStatus(VoiceCallStatus.connected);
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
           // Souvent passager (micro-coupure, changement de réseau) : on
@@ -369,6 +410,7 @@ class VoiceCallService {
     _reconnectTimer = Timer(delay, () async {
       if (!_iAmReady || _status == VoiceCallStatus.connected) return;
       _reconnectAttempts++;
+      _changesController.add(null);
       debugPrint('VoiceCall: reconnexion automatique (tentative $_reconnectAttempts)');
       await _resetPeer();
       if (!_iAmReady) return;
@@ -390,6 +432,8 @@ class VoiceCallService {
   /// l'intention de voix ([_iAmReady]) ni au statut.
   Future<void> _resetPeer() async {
     _pendingCandidates.clear();
+    _negotiationStarted = false;
+    _pcFuture = null;
     final stream = _localStream;
     _localStream = null;
     for (final track in stream?.getTracks() ?? const []) {
@@ -431,7 +475,8 @@ class VoiceCallService {
       await GameService.instance.sendVoiceSignal('answer', {'sdp': _encodeSdp(answer.sdp), 'type': answer.type});
     } catch (e, st) {
       debugPrint('VoiceCall: ÉCHEC traitement offre — $e\n$st');
-      _setStatus(VoiceCallStatus.failed);
+      _setStatus(VoiceCallStatus.connecting);
+      _scheduleReconnect(Duration.zero);
     }
   }
 
@@ -477,6 +522,11 @@ class VoiceCallService {
 
   Future<void> _teardown() async {
     _reconnectTimer?.cancel();
+    _watchdog?.cancel();
+    _negotiationStarted = false;
+    _pcFuture = null;
+    _pendingCandidates.clear();
+    everConnected = false;
     final stream = _localStream;
     _localStream = null;
     for (final track in stream?.getTracks() ?? const []) {

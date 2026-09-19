@@ -7,6 +7,7 @@ import 'package:showcaseview/showcaseview.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../auth/auth_service.dart';
+import '../../box/box_scope.dart';
 import '../voice_call_service.dart';
 
 /// Bouton flottant "voix en direct" (voir VoiceCallService et demande
@@ -75,6 +76,12 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   // d'invitation en cours) — affiché en bulle "i" à côté du bouton caméra.
   String? _cameraInviteFrom;
   bool _inviteExpanded = false;
+  // Petite info sur l'état de la voix pendant que le bouton tourne (attente
+  // du binôme / connexion / reconnexion) : dépliée ~4 s à chaque changement,
+  // puis repliée en "i" (un tap la rouvre).
+  StreamSubscription<void>? _changesSubscription;
+  Timer? _noteTimer;
+  bool _noteExpanded = false;
 
   @override
   void initState() {
@@ -95,6 +102,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     _subscription = service.statusStream.listen((status) {
       if (!mounted) return;
       setState(() => _status = status);
+      _flashNote();
       // Liaison interrompue (raccroché/reconnexion) : la caméra locale est
       // déjà coupée côté service (voir _resetPeer), on aligne l'état visuel.
       if (status != VoiceCallStatus.connected) {
@@ -108,6 +116,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
       if (!mounted) return;
       setState(() => _remoteVideoOn = active);
     });
+    _changesSubscription = service.changes.listen((_) => _flashNote());
     _inviteSubscription = service.cameraInviteStream.listen((invite) {
       if (!mounted) return;
       setState(() {
@@ -138,8 +147,32 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     _subscription?.cancel();
     _remoteVideoSubscription?.cancel();
     _inviteSubscription?.cancel();
+    _changesSubscription?.cancel();
+    _noteTimer?.cancel();
     unawaited(_service?.dispose());
     super.dispose();
+  }
+
+  void _flashNote() {
+    if (!mounted) return;
+    _noteTimer?.cancel();
+    setState(() => _noteExpanded = true);
+    _noteTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _noteExpanded = false);
+    });
+  }
+
+  /// Texte d'état affiché à côté du bouton tant que la voix n'est pas
+  /// connectée (`null` = rien à dire : connecté, arrêté ou refusé).
+  String? _statusNote() {
+    final service = _service;
+    if (service == null || widget.paused || _status != VoiceCallStatus.connecting) return null;
+    if (service.partnerReady && service.everConnected) return 'Connexion perdue, reconnexion…';
+    if (!service.partnerReady) {
+      final name = BoxScope.of(context).currentBox?.partner?.prenom.trim() ?? '';
+      return name.isEmpty ? 'En attente de ton binôme… La voix démarre dès son arrivée' : 'En attente de $name… La voix démarre dès son arrivée';
+    }
+    return 'Connexion de la voix…';
   }
 
   /// Un tap : coupe/rétablit NOTRE micro (la liaison reste établie). Si la
@@ -241,6 +274,10 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
                   ),
                 ],
               ),
+              if (_statusNote() case final note?) ...[
+                const SizedBox(width: 8),
+                _infoBubble(note, expanded: _noteExpanded, onTap: () => _noteExpanded ? setState(() => _noteExpanded = false) : _flashNote()),
+              ],
               if (_status == VoiceCallStatus.connected) ...[
                 const SizedBox(width: 10),
                 _wrapGuide(
@@ -289,12 +326,17 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   Widget _buildCameraInvite() {
     final name = (_cameraInviteFrom ?? '').trim();
     final text = name.isEmpty ? "Ton binôme t'invite à activer ta caméra" : "$name t'invite à activer ta caméra";
+    return _infoBubble(text, expanded: _inviteExpanded, onTap: () => setState(() => _inviteExpanded = !_inviteExpanded));
+  }
+
+  /// Bulle "i" repliable : icône seule, ou icône + message quand [expanded].
+  Widget _infoBubble(String text, {required bool expanded, required VoidCallback onTap}) {
     return GestureDetector(
-      onTap: () => setState(() => _inviteExpanded = !_inviteExpanded),
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        constraints: const BoxConstraints(maxWidth: 200),
-        padding: EdgeInsets.symmetric(horizontal: _inviteExpanded ? 10 : 6, vertical: 6),
+        constraints: const BoxConstraints(maxWidth: 220),
+        padding: EdgeInsets.symmetric(horizontal: expanded ? 10 : 6, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(16),
@@ -303,9 +345,20 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.info_rounded, color: Colors.lightBlueAccent, size: 18),
-            if (_inviteExpanded) ...[
+            if (expanded) ...[
               const SizedBox(width: 6),
-              Flexible(child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.25))),
+              Flexible(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    height: 1.25,
+                    fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
             ],
           ],
         ),
