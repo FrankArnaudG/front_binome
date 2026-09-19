@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
 import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -70,6 +71,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   List<_PendingReply> _pendingReplies = [];
   List<Slide>? _packSlides;
   bool _loadingPackSlides = false;
+  // Poème supprimé ou dépublié depuis l'envoi (le serveur répond 404).
+  bool _packUnavailable = false;
   // Plus récente d'abord (voir RepliesPage/SendController::replies) — plus
   // pratique pour la pagination/fusion ci-dessous (le curseur "before" et la
   // comparaison "plus ancien que" s'expriment naturellement sur cet ordre) ;
@@ -357,6 +360,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     try {
       final pack = await ContentService.instance.fetchPack(_send.pack!.id);
       if (mounted) setState(() => _packSlides = pack.slides);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404 && mounted) setState(() => _packUnavailable = true);
     } catch (_) {
       // best effort
     } finally {
@@ -840,7 +845,43 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     return t('date_full_at_time', {'date': date, 'time': time});
   }
 
+  /// Un envoi ne copie pas le poème, il pointe vers lui : si l'admin l'a
+  /// supprimé ou dépublié depuis, il n'y a plus rien à feuilleter — on le dit
+  /// plutôt que d'afficher un chargement sans fin.
+  Widget _unavailablePoemCard(ThemePalette theme) {
+    final t = LocaleScope.of(context).t;
+    return AspectRatio(
+      aspectRatio: 3 / 4,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: theme.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_stories_rounded, size: 40, color: theme.primary.withValues(alpha: 0.5)),
+            const SizedBox(height: 12),
+            Text(
+              t('send_poem_unavailable'),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: theme.textOnBackgroundMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bubbleContent(ThemePalette theme) {
+    if (_send.isPack && (_send.pack == null || _packUnavailable)) {
+      return _unavailablePoemCard(theme);
+    }
     if (_send.isPack) {
       // Même habillage et même feuilletage que "Envoyer une pensée" (voir
       // PackFeedScreen) : revisionner un poème envoyé en entier depuis le
