@@ -145,6 +145,7 @@ flutter:
     - assets/envi/
     - assets/categories_poeme_slide/
     - assets/heartbeat_categories/
+    - assets/google_fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

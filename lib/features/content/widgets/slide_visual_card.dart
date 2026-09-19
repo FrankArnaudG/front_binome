@@ -1,7 +1,4 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../l10n/locale_scope.dart';
 import '../../../models/slide.dart';
@@ -150,65 +147,78 @@ class SlideVisualCard extends StatelessWidget {
                 ),
               ),
             )
-          else
-            // Légende par défaut façon TikTok : casée en bas à gauche.
-            Positioned(
-              left: 24 * scale,
-              right: captionRightPadding * scale,
-              // À faible échelle (voir _PoemReplyBubble : carte miniature
-              // dans le fil, scale 0.6), 28 * scale se rapprochait trop du
-              // bas de la carte et venait toucher les points de progression
-              // à cœurs de SlidePackViewer, fixés eux à bottom: 10 quelle
-              // que soit l'échelle (voir demande utilisateur, capture "le
-              // texte touche les cœurs") — plancher qui garde toujours de
-              // la place pour eux, sans rien changer à pleine taille (28 >
-              // ce plancher dès que scale approche 1).
-              bottom: math.max(28 * scale, 26),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (categoryLabel != null) ...[
-                    Text(
-                      categoryLabel.toUpperCase(),
-                      style: GoogleFonts.nunito(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 11 * scale,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2 * scale,
-                        shadows: const [
-                          Shadow(
-                            color: Colors.black45,
-                            blurRadius: 6,
-                            offset: Offset(0, 1),
+          else ...[
+            // Légende par défaut : police manuscrite des battements de cœur,
+            // posée EN BAS à gauche comme avant (façon TikTok), taille
+            // proportionnelle à la carte, étiquette de catégorie en pastille.
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardW = constraints.maxWidth;
+                  final cardH = constraints.maxHeight;
+                  final length = slideText.runes.length;
+                  final lengthFactor = length <= 45 ? 1.0 : (length <= 80 ? 0.88 : 0.78);
+                  final fontSize = (cardW * 0.08 * lengthFactor).clamp(11.0, 36.0);
+                  final leftPadding = cardW * 0.07;
+                  // Marge à droite pour la barre d'actions du fil de lecture.
+                  final rightPadding = captionRightPadding * scale;
+                  // Plancher : garde de la place pour les cœurs de progression
+                  // (fixés à bottom: 10), même à faible échelle.
+                  final bottomPadding = 28 * scale < 26 ? 26.0 : 28 * scale;
+                  final textWidth = cardW - leftPadding - rightPadding;
+                  return Padding(
+                    padding: EdgeInsets.fromLTRB(leftPadding, 0, rightPadding, bottomPadding),
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: SizedBox(
+                        width: textWidth,
+                        height: cardH * 0.42,
+                        child: FittedBox(
+                          // Filet de sécurité : ne réduit que si le texte
+                          // dépasse vraiment la zone prévue.
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.bottomLeft,
+                          child: SizedBox(
+                            width: textWidth,
+                            child: Text(
+                              slideText,
+                              textAlign: TextAlign.left,
+                              style: handwrittenFont('dancing_script', color: Colors.white, fontSize: fontSize).copyWith(
+                                height: 1.2,
+                                shadows: const [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2))],
+                              ),
+                            ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 8 * scale),
-                  ],
-                  Text(
-                    slideText,
-                    textAlign: TextAlign.left,
-                    style: GoogleFonts.playfairDisplay(
-                      color: Colors.white,
-                      fontSize: 20 * scale,
-                      fontWeight: FontWeight.w600,
-                      fontStyle: FontStyle.italic,
-                      height: 1.4,
-                      letterSpacing: 0.3 * scale,
-                      shadows: const [
-                        Shadow(
-                          color: Colors.black45,
-                          blurRadius: 10,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
             ),
+            if (categoryLabel != null)
+              // À gauche : le prix du poème s'affiche en haut à droite dans le
+              // fil de lecture (voir PackFeedScreen).
+              Positioned(
+                top: 12 * scale,
+                left: 12 * scale,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8 * scale, vertical: 4 * scale),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.28),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.favorite_rounded, size: 12 * scale, color: Colors.white),
+                      SizedBox(width: 4 * scale),
+                      Text(categoryLabel, style: handwrittenFont('caveat', color: Colors.white, fontSize: 15 * scale)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
           if (overlay != null) overlay!,
         ],
       ),
