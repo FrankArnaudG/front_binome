@@ -841,8 +841,14 @@ class _DistanceMapCardState extends State<_DistanceMapCard> with SingleTickerPro
 
   Widget _mapAvatar(String? avatarUrl, String prenom, dynamic theme, {bool headingHome = false}) {
     final initial = prenom.isNotEmpty ? prenom[0].toUpperCase() : '?';
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    // Stack (et non Column) : le repère de carte ne fait que 56 px de haut
+    // (l'avatar en prend 50) — le badge "maison" posé dessous en Column
+    // dépassait de 16 px ("BOTTOM OVERFLOWED"). En Stack sans rognage, il
+    // s'affiche sous l'avatar sans changer la taille du repère, donc sans
+    // décaler l'avatar par rapport à son point sur la carte.
+    return Stack(
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
       children: [
         Container(
           decoration: BoxDecoration(
@@ -863,11 +869,13 @@ class _DistanceMapCardState extends State<_DistanceMapCard> with SingleTickerPro
         // badge sous l'avatar plutôt qu'un texte flottant, pour rester
         // lisible même à plusieurs sur la même carte.
         if (headingHome)
-          Container(
-            margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: theme.primary, borderRadius: BorderRadius.circular(999)),
-            child: const Text('🏠', style: TextStyle(fontSize: 11)),
+          Positioned(
+            top: 52,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: theme.primary, borderRadius: BorderRadius.circular(999)),
+              child: const Text('🏠', style: TextStyle(fontSize: 11)),
+            ),
           ),
       ],
     );
