@@ -23,6 +23,13 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
   final String partnerUserId;
   final _controller = StreamController<MemoryGameBoardState>.broadcast();
   late MemoryGameBoardState _state;
+  // Retournements à MOI encore en vol vers le serveur. Tant qu'il y en a, on
+  // n'applique aucune réponse/évènement serveur en retard : ils décrivent un
+  // état DÉJÀ dépassé par notre prédiction locale, et l'appliquer refermait
+  // la carte qu'on venait de retourner puis la rouvrait (voir demande
+  // utilisateur : "elle se retourne, se referme immédiatement et se rouvre").
+  int _pendingFlips = 0;
+  bool _skippedEventWhilePending = false;
 
   String get _friendChannelName => 'memory-game-session.$sessionId';
 
@@ -33,6 +40,7 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
     required this.partnerUserId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
+    _stateReady = true;
     final box = boxId;
     if (box != null) {
       RealtimeClient.instance.subscribeToBox(box, onEvent: _onRealtimeEvent);
@@ -41,14 +49,27 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
     }
   }
 
-  MemoryGameBoardState _stateFrom(MemoryGameSession session, {List<int>? mismatch}) => MemoryGameBoardState(
-        board: session.board ?? const [],
-        matched: session.matched,
+  bool _stateReady = false;
+
+  MemoryGameBoardState _stateFrom(MemoryGameSession session, {List<int>? mismatch}) {
+    // Le serveur VIDE le plateau, les paires et les coups une fois la partie
+    // terminée/abandonnée (voir MemoryGameController::flip) : recevoir un tel
+    // état (resynchronisation, évènement tardif) faisait retomber l'écran sur
+    // "En attente de la partie…" au lieu du tableau final. On garde alors ce
+    // qu'on avait déjà en mémoire.
+    final cleared = _stateReady && (session.board == null || session.board!.isEmpty);
+    return _buildState(session, mismatch: mismatch, keepPrevious: cleared);
+  }
+
+  MemoryGameBoardState _buildState(MemoryGameSession session, {List<int>? mismatch, bool keepPrevious = false}) =>
+      MemoryGameBoardState(
+        board: keepPrevious ? _state.board : (session.board ?? const []),
+        matched: keepPrevious ? _state.matched : session.matched,
         flipped: session.flipped,
         mismatch: mismatch,
         currentTurnUserId: session.currentTurnUserId,
         movesCount: session.movesCount,
-        movesByUser: session.movesByUser,
+        movesByUser: keepPrevious ? _state.movesByUser : session.movesByUser,
         finished: session.isFinished || session.abandoned,
         abandoned: session.abandoned,
         startedAt: session.startedAt,
@@ -69,6 +90,11 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
     // supposer qu'il n'y en a jamais qu'une.
     if (session.id != sessionId) return;
 
+    if (_pendingFlips > 0) {
+      _skippedEventWhilePending = true;
+      return;
+    }
+
     final mismatchRaw = data['mismatch'] as List?;
     final mismatch = mismatchRaw?.map((e) => e as int).toList();
 
@@ -84,6 +110,7 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
 
   @override
   Future<void> flip(int index) async {
+    _pendingFlips++;
     // Prédiction locale immédiate avec le même moteur que les modes
     // Nearby/pass-and-play (voir MemoryGameEngine) — sur SON PROPRE clic on
     // n'attend JAMAIS l'aller-retour réseau (voir demande utilisateur : "ne
@@ -120,18 +147,33 @@ class RemoteMemoryGameTransport extends MemoryGameTransport {
       // trancher ci-dessous plutôt que d'empêcher l'appel.
     }
 
+    var needsResync = false;
     try {
       final session = await GameService.instance.flipMemoryCard(sessionId, index);
-      _state = _stateFrom(session);
-      _controller.add(_state);
-    } catch (_) {
-      // Échec réseau : la prédiction locale reste affichée telle quelle,
-      // mais on retente une resynchronisation silencieuse pour ne pas
-      // rester durablement décalé·e du serveur.
-      try {
-        final session = await GameService.instance.fetchMemoryGameState(sessionId);
+      // Seule la réponse du DERNIER retournement en vol fait foi : les
+      // précédentes sont déjà périmées par la prédiction locale suivante.
+      if (_pendingFlips == 1) {
         _state = _stateFrom(session);
         _controller.add(_state);
+      }
+    } catch (_) {
+      // Échec réseau/refus serveur : on resynchronise ci-dessous (une fois
+      // tous les retournements en vol terminés).
+      needsResync = true;
+    } finally {
+      _pendingFlips--;
+    }
+
+    // Partie terminée : le serveur vide le plateau juste après la réponse,
+    // rien à resynchroniser (et surtout pas un état vidé).
+    if (_pendingFlips == 0 && !_state.finished && (needsResync || _skippedEventWhilePending)) {
+      _skippedEventWhilePending = false;
+      try {
+        final session = await GameService.instance.fetchMemoryGameState(sessionId);
+        if (_pendingFlips == 0) {
+          _state = _stateFrom(session);
+          _controller.add(_state);
+        }
       } catch (_) {
         // best effort — voir doc de classe RealtimeClient, jamais de crash
         // pour une indisponibilité réseau passagère.
