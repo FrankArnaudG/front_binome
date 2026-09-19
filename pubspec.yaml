@@ -144,6 +144,7 @@ flutter:
     - assets/besoin/
     - assets/envi/
     - assets/categories_poeme_slide/
+    - assets/heartbeat_categories/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

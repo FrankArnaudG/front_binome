@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../models/heartbeat_family.dart';
 import '../../../models/heartbeat_image.dart';
 import '../../../theme/handwritten_fonts.dart';
 import '../../../theme/theme_palette.dart';
@@ -19,6 +20,13 @@ class HeartbeatCard extends StatefulWidget {
   final String message;
   final ThemePalette theme;
 
+  /// Famille du battement + genre de la personne qui l'ENVOIE : sans photo
+  /// du catalogue, choisissent l'image packagée qui habille la carte (voir
+  /// heartbeat_family.dart). Sans famille (message personnalisé, ancien
+  /// envoi), la carte blanche habituelle s'affiche.
+  final String? family;
+  final String? senderGender;
+
   /// Multiplie tailles de texte/espacements — 1.0 par défaut (taille
   /// "pleine carte", voir SlideDetailScreen/showHeartbeatReplyModal). À
   /// réduire (voir GameBoxHistoryScreen._buildHeartbeatBubble) quand la
@@ -33,8 +41,16 @@ class HeartbeatCard extends StatefulWidget {
     required this.images,
     required this.message,
     required this.theme,
+    this.family,
+    this.senderGender,
     this.scale = 1,
   });
+
+  /// La carte sera-t-elle habillée d'une image de famille ? Les images sont en
+  /// portrait (4:5) : l'appelant doit alors lui donner cette proportion plutôt
+  /// que le 4:3 paysage des photos du catalogue.
+  static bool usesFamilyImage(String? family, List<HeartbeatImage> images) =>
+      images.isEmpty && heartbeatFamilyStyleFor(family) != null;
 
   @override
   State<HeartbeatCard> createState() => _HeartbeatCardState();
@@ -128,10 +144,117 @@ class _HeartbeatCardState extends State<HeartbeatCard> {
     return '${text.substring(0, lastSpace)} ${text.substring(lastSpace + 1)}';
   }
 
+  /// Carte "famille" : image packagée plein cadre, message manuscrit posé dans
+  /// la zone dégagée (haut de l'image, côté choisi par famille), jamais par-
+  /// dessus le couple. Le texte rétrécit au besoin plutôt que de déborder.
+  Widget _buildFamilyCard(HeartbeatFamilyStyle style) {
+    final theme = widget.theme;
+    final scale = widget.scale;
+    final badgeOnLeft = style.textAlignment.x > 0.5;
+    final textAlignment = Alignment(style.textAlignment.x, -1);
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: theme.primary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(style.assetFor(widget.senderGender), fit: BoxFit.cover),
+          // Voile léger en haut : garde le texte blanc lisible même sur une
+          // image lumineuse (coucher de soleil, lumière du jour).
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.black45, Colors.transparent],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0, 0.55],
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final cardW = constraints.maxWidth;
+                final cardH = constraints.maxHeight;
+                // Taille proportionnelle à la largeur de la carte (et non fixe) :
+                // lisible aussi bien en plein écran qu'en miniature, et un
+                // peu réduite pour les messages longs plutôt que de tout
+                // rétrécir en bloc dans une colonne étroite.
+                final length = widget.message.runes.length;
+                final lengthFactor = length <= 45 ? 1.0 : (length <= 80 ? 0.88 : 0.78);
+                final fontSize = (cardW * 0.08 * lengthFactor).clamp(11.0, 36.0);
+                final sidePadding = cardW * 0.07;
+                final textWidth = math.min(cardW * style.widthFactor, cardW - 2 * sidePadding);
+                return Padding(
+                  // Départ régulier sous le repère "Battement de cœur".
+                  padding: EdgeInsets.fromLTRB(sidePadding, cardH * 0.15, sidePadding, 0),
+                  child: Align(
+                    alignment: textAlignment,
+                    child: SizedBox(
+                      width: textWidth,
+                      height: cardH * 0.42,
+                      child: FittedBox(
+                        // Filet de sécurité : ne réduit que si le texte
+                        // dépasse vraiment la zone dégagée.
+                        fit: BoxFit.scaleDown,
+                        alignment: textAlignment,
+                        child: SizedBox(
+                          width: textWidth,
+                          child: Text(
+                            _glueTrailingEmoji(widget.message),
+                            textAlign: style.textAlign,
+                            style: handwrittenFont('dancing_script', color: Colors.white, fontSize: fontSize).copyWith(
+                              height: 1.2,
+                              shadows: const [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2))],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // Même repère discret que les autres cartes, du côté opposé au texte.
+          Positioned(
+            top: 12 * scale,
+            left: badgeOnLeft ? 12 * scale : null,
+            right: badgeOnLeft ? null : 12 * scale,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 8 * scale, vertical: 4 * scale),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.28), borderRadius: BorderRadius.circular(20)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.favorite_rounded, size: 12 * scale, color: Colors.white),
+                  SizedBox(width: 4 * scale),
+                  Text('Battement de cœur', style: handwrittenFont('caveat', color: Colors.white, fontSize: 15 * scale)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final images = widget.images;
+
+    if (HeartbeatCard.usesFamilyImage(widget.family, images)) {
+      return _buildFamilyCard(heartbeatFamilyStyleFor(widget.family)!);
+    }
 
     if (images.isEmpty) {
       // Pas d'image (message personnalisé, ou catalogue sans photo) :

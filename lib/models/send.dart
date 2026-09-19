@@ -47,6 +47,8 @@ class Send {
   final Gift? gift;
   final Map<String, String>? heartbeatMessage;
   final List<HeartbeatImage> heartbeatImages;
+  // Famille du battement (tendresse, pensee...) : choisit l'image packagée de la carte.
+  final String? heartbeatFamily;
   final GameCardSend? gameCard;
   final EmojiStorySend? emojiStory;
   final String? emojiReplyText;
@@ -82,6 +84,7 @@ class Send {
     this.gift,
     this.heartbeatMessage,
     this.heartbeatImages = const [],
+    this.heartbeatFamily,
     this.gameCard,
     this.emojiStory,
     this.emojiReplyText,
@@ -124,6 +127,9 @@ class Send {
                 .map((e) => HeartbeatImage.fromJson(e as Map<String, dynamic>))
                 .toList()
             : const [],
+        heartbeatFamily: json['sendable_type'] == 'heartbeat' && json['sendable'] != null
+            ? (json['sendable'] as Map<String, dynamic>)['family'] as String?
+            : null,
         gameCard: json['sendable_type'] == 'game_card' && json['sendable'] != null
             ? GameCardSend.fromJson(json['sendable'] as Map<String, dynamic>)
             : null,
@@ -185,6 +191,7 @@ class Send {
         gift: gift,
         heartbeatMessage: heartbeatMessage,
         heartbeatImages: heartbeatImages,
+        heartbeatFamily: heartbeatFamily,
         gameCard: gameCard ?? this.gameCard,
         emojiStory: emojiStory,
         emojiReplyText: emojiReplyText,

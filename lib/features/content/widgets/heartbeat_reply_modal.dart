@@ -15,6 +15,8 @@ Future<void> showHeartbeatReplyModal(
   BuildContext context, {
   required List<HeartbeatImage> images,
   required String message,
+  String? family,
+  String? senderGender,
 }) {
   return showGeneralDialog(
     context: context,
@@ -23,7 +25,7 @@ Future<void> showHeartbeatReplyModal(
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (context, animation, secondaryAnimation) =>
-        _HeartbeatReplyModal(images: images, message: message),
+        _HeartbeatReplyModal(images: images, message: message, family: family, senderGender: senderGender),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
@@ -40,8 +42,10 @@ Future<void> showHeartbeatReplyModal(
 class _HeartbeatReplyModal extends StatelessWidget {
   final List<HeartbeatImage> images;
   final String message;
+  final String? family;
+  final String? senderGender;
 
-  const _HeartbeatReplyModal({required this.images, required this.message});
+  const _HeartbeatReplyModal({required this.images, required this.message, this.family, this.senderGender});
 
   @override
   Widget build(BuildContext context) {
@@ -71,8 +75,9 @@ class _HeartbeatReplyModal extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 AspectRatio(
-                  aspectRatio: 4 / 3,
-                  child: HeartbeatCard(images: images, message: message, theme: theme),
+                  // Images de famille en portrait (4:5), photos du catalogue en 4:3.
+                  aspectRatio: HeartbeatCard.usesFamilyImage(family, images) ? 4 / 5 : 4 / 3,
+                  child: HeartbeatCard(images: images, message: message, theme: theme, family: family, senderGender: senderGender),
                 ),
                 Positioned(
                   top: -10,
