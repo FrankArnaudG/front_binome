@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:showcaseview/showcaseview.dart';
 
 import 'core/app_router.dart';
+import 'core/api_config.dart';
 import 'core/app_update_checker.dart';
 import 'core/pin_storage.dart';
 import 'core/ritual_reminder_service.dart';
@@ -27,6 +28,8 @@ import 'theme/theme_scope.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Une version publiée ne doit jamais partir sur localhost ni en HTTP.
+  ApiConfig.assertSafeForRelease();
   // Sans ça, Android réserve une bande opaque blanche pour la barre de
   // navigation système en bas de l'écran plutôt que de laisser le contenu
   // de l'app (dégradé de thème) s'étendre derrière — visible en bas de tout
