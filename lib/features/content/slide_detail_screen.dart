@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/api_client.dart';
+import '../../core/last_seen_label.dart';
 import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -24,6 +25,7 @@ import '../box/couple_profile_screen.dart';
 import '../home/widgets/couple_avatars_badge.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'content_service.dart';
+import 'unread_timeline_service.dart';
 import 'packs_screen.dart';
 import 'widgets/eternal_rose.dart';
 import 'widgets/heartbeat_card.dart';
@@ -78,6 +80,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   // comparaison "plus ancien que" s'expriment naturellement sur cet ordre) ;
   // build() les reparcourt à l'envers pour l'affichage (voir _buildReplies).
   List<Send> _replies = [];
+  // Messages reçus déjà signalés comme lus (ou en cours de l'être) — évite de
+  // rappeler le serveur pour le même message à chaque rechargement du fil.
+  final Set<String> _seenRequested = {};
   bool _hasMoreReplies = false;
   bool _loadingMoreReplies = false;
   // Le tout premier remplissage doit amener l'écran sur le dernier échange
@@ -183,8 +188,31 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       });
       if (_followLatest) _scrollToBottomSoon();
       _scrollToBottomIfOverflowingOnce();
+      _markIncomingSeen();
     } catch (_) {
       // best effort
+    }
+  }
+
+  /// Tant que la discussion est ouverte, tout ce que le binôme nous a envoyé
+  /// est sous nos yeux : on le signale comme lu (coches bleues chez lui, via
+  /// SendSeen) sans exiger d'appuyer sur chaque message — comme une messagerie
+  /// classique. Un message n'est signalé qu'une fois ; en cas d'échec réseau
+  /// il sera retenté au prochain rechargement du fil.
+  void _markIncomingSeen() {
+    final me = widget.user.id;
+    final unread = [..._replies, _send]
+        .where((s) => s.recipientId == me && !s.isSeen && _seenRequested.add(s.id))
+        .toList();
+    if (unread.isEmpty) return;
+    var marked = 0;
+    for (final send in unread) {
+      ContentService.instance.markSeen(send.id).then((updated) {
+        marked++;
+        if (!mounted) return;
+        _applySeen(send.id, updated.seenAt ?? DateTime.now());
+        if (marked == unread.length) UnreadTimelineService.instance.refresh(me);
+      }, onError: (_) => _seenRequested.remove(send.id));
     }
   }
 
@@ -274,6 +302,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
         // En tête : la plus récente vient en premier dans notre ordre de
         // stockage (voir _buildReplies pour l'ordre d'affichage réel).
         _replies = [newSend, ..._replies];
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _markIncomingSeen();
+        });
         // Si CET écho est la confirmation d'un envoi que NOUS venons de
         // faire (voir _sendMessage/_pendingReplies), retire tout de suite
         // sa bulle optimiste plutôt que d'attendre le retour HTTP de
@@ -683,6 +714,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
         context,
         images: reply.heartbeatImages,
         message: reply.heartbeatMessageFor(locale.current.code) ?? locale.t('heartbeat_default_message'),
+        family: reply.heartbeatFamily,
+        senderGender: reply.sender?.gender,
       );
       return;
     }
@@ -849,6 +882,42 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     return t('date_full_at_time', {'date': date, 'time': time});
   }
 
+  /// Dernière connexion du binôme la plus récente qu'on connaisse : celle du
+  /// profil chargé avec l'envoi, ou celle portée par l'une de ses réponses
+  /// (rechargées à chaque ouverture, donc plus fraîches).
+  DateTime? get _partnerLastSeenAt {
+    final partner = _partner;
+    if (partner == null) return null;
+    var latest = partner.lastSeenAt;
+    for (final reply in _replies) {
+      final seen = reply.sender?.id == partner.id ? reply.sender?.lastSeenAt : null;
+      if (seen != null && (latest == null || seen.isAfter(latest))) latest = seen;
+    }
+    return latest;
+  }
+
+  /// "En ligne" (canal presence temps réel) ou "Vu il y a X" sous les
+  /// avatars — même information que l'en-tête des discussions de jeu.
+  Widget _presenceLine(ThemePalette theme) {
+    final online = _partnerPresent;
+    final label = online
+        ? LocaleScope.of(context).t('presence_online')
+        : lastSeenLabel(context, _partnerLastSeenAt);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.nunito(
+          fontSize: 11.5,
+          color: online ? Colors.greenAccent.shade700 : theme.textOnBackgroundMuted,
+          fontWeight: online ? FontWeight.w700 : FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
   /// Un envoi ne copie pas le poème, il pointe vers lui : si l'admin l'a
   /// supprimé ou dépublié depuis, il n'y a plus rien à feuilleter — on le dit
   /// plutôt que d'afficher un chargement sans fin.
@@ -924,7 +993,17 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       // Widget partagé avec la modale de réponse (voir
       // showHeartbeatReplyModal) — la même carte doit apparaître partout,
       // pas une variante simplifiée ici.
-      final card = HeartbeatCard(images: _send.heartbeatImages, message: _mainText(_send), theme: theme);
+      final card = HeartbeatCard(
+        images: _send.heartbeatImages,
+        message: _mainText(_send),
+        theme: theme,
+        family: _send.heartbeatFamily,
+        senderGender: _send.sender?.gender,
+      );
+      if (HeartbeatCard.usesFamilyImage(_send.heartbeatFamily, _send.heartbeatImages)) {
+        // Images de famille : portrait 4:5, pour qu'elles ne soient pas rognées.
+        return AspectRatio(aspectRatio: 4 / 5, child: card);
+      }
       return _send.heartbeatImages.isNotEmpty
           // Plus court que le 3/4 des poèmes/packs (portrait) — un simple
           // aperçu photo n'a pas besoin d'occuper presque tout l'écran.
@@ -1176,6 +1255,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                               partnerPresent: _partnerPresent,
                             ),
                           ),
+                          _presenceLine(theme),
                         ],
                       ),
                     ),
@@ -1795,22 +1875,32 @@ class _ThreadReplyBubble extends StatelessWidget {
                   // la carte du battement de cœur — jamais la bulle de
                   // texte plate partagée avec les réponses-émoji.
                   : reply.isHeartbeat
-                      ? _heartbeatTextCard()
+                      ? (HeartbeatCard.usesFamilyImage(reply.heartbeatFamily, reply.heartbeatImages)
+                          ? _heartbeatFamilyPreview()
+                          : _heartbeatTextCard())
                       : _textBubble(),
         ),
       ),
     );
   }
 
-  Widget _timeLabel(Color color) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(time, style: GoogleFonts.nunito(fontSize: 9, color: color)),
-          if (isMine) ...[
-            const SizedBox(width: 4),
-            SendTickIcon(tick: tickOverride ?? sendTickFor(reply), color: color, onRetry: onRetry),
+  // FittedBox : sur une carte étroite (ex. battement de cœur sans photo, 106 px
+  // utiles), "11 septembre 2026 à 18:03" + coches dépassait la bulle (bandeau
+  // "RIGHT OVERFLOWED") — la ligne rétrécit désormais au lieu de déborder, et
+  // reste inchangée quand elle tient.
+  Widget _timeLabel(Color color) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(time, style: GoogleFonts.nunito(fontSize: 9, color: color)),
+            if (isMine) ...[
+              const SizedBox(width: 4),
+              SendTickIcon(tick: tickOverride ?? sendTickFor(reply), color: color, onRetry: onRetry),
+            ],
           ],
-        ],
+        ),
       );
 
   // Réponse-poème : la vraie carte (image/dégradé + texte), pas juste le
@@ -1925,6 +2015,43 @@ class _ThreadReplyBubble extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: _timeLabel(theme.textOnBackgroundMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Réponse-battement de cœur habillé d'une image de famille (packagée dans
+  // l'app) : même vignette que _packPreview, avec la vraie carte réduite.
+  Widget _heartbeatFamilyPreview() {
+    return Container(
+      width: 130,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: isMine
+            ? theme.primary.withValues(alpha: 0.18)
+            : Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          AspectRatio(
+            aspectRatio: 4 / 5,
+            child: HeartbeatCard(
+              images: const [],
+              message: fallbackText,
+              theme: theme,
+              family: reply.heartbeatFamily,
+              senderGender: reply.sender?.gender,
+              scale: 0.4,
             ),
           ),
           const SizedBox(height: 4),

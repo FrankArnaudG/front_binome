@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/last_seen_label.dart';
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/realtime_client.dart';
@@ -2847,7 +2848,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   /// contenu, la forcer casserait sa mise en page interne.
   Widget _buildHeartbeatBubble(ThemePalette theme, Send reply, String messageText) {
     final isMine = reply.senderId == widget.user.id;
-    final hasImages = reply.heartbeatImages.isNotEmpty;
+    final hasFamilyImage = HeartbeatCard.usesFamilyImage(reply.heartbeatFamily, reply.heartbeatImages);
+    final hasImages = reply.heartbeatImages.isNotEmpty || hasFamilyImage;
     // Cette bulle ne fait que 210px de large — le texte manuscrit par
     // défaut (HeartbeatCard) est pensé pour une carte pleine largeur et y
     // débordait/paraissait démesuré (voir demande utilisateur, même
@@ -2856,8 +2858,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         ? SizedBox(
             width: 210,
             child: AspectRatio(
-              aspectRatio: 3 / 4,
-              child: HeartbeatCard(images: reply.heartbeatImages, message: messageText, theme: theme, scale: 0.6),
+              aspectRatio: hasFamilyImage ? 4 / 5 : 3 / 4,
+              child: HeartbeatCard(
+                images: reply.heartbeatImages,
+                message: messageText,
+                theme: theme,
+                family: reply.heartbeatFamily,
+                senderGender: reply.sender?.gender,
+                scale: 0.6,
+              ),
             ),
           )
         : ConstrainedBox(
@@ -3935,16 +3944,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
 /// "En ligne" prime toujours (voir isOnline dans build) — cette fonction ne
 /// sert que le repli hors ligne, à partir de AppUser.lastSeenAt
 /// (voir TouchLastSeen côté backend).
-String _lastSeenLabel(BuildContext context, DateTime? lastSeenAt) {
-  final t = LocaleScope.of(context).t;
-  if (lastSeenAt == null) return t('presence_offline');
-  final diff = DateTime.now().difference(lastSeenAt.toLocal());
-  if (diff.inMinutes < 1) return t('presence_online_now');
-  if (diff.inMinutes < 60) return t('presence_online_minutes_ago', {'minutes': '${diff.inMinutes}'});
-  if (diff.inHours < 24) return t('presence_online_hours_ago', {'hours': '${diff.inHours}'});
-  if (diff.inDays < 7) return t('presence_online_days_ago', {'days': '${diff.inDays}'});
-  return t('presence_online_long_ago');
-}
+String _lastSeenLabel(BuildContext context, DateTime? lastSeenAt) => lastSeenLabel(context, lastSeenAt);
 
 /// Bulle "carte" pour la question elle-même — une vraie carte-photo (même
 /// esprit que SlideVisualCard/"Envoyer une pensée" : image de la boîte en
