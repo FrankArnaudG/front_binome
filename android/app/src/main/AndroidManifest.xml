@@ -53,6 +53,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Retour dans l'app après un paiement YengaPay : la page de retour
+                 du site (binomecouple.com/paiement/succes.html ou echec.html)
+                 ouvre binome://payment/... et Android ramène l'app au premier
+                 plan. Le solde est ensuite relu par PaymentReturnWatcher. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="binome" android:host="payment"/>
+            </intent-filter>
+            <!-- Le lien ne doit pas être routé par Flutter (l'app n'a pas de
+                 routes nommées) : elle revient simplement au premier plan,
+                 dans l'état où on l'a laissée. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

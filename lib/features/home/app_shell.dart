@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/app_router.dart';
 import '../../core/delivery_ack_service.dart';
+import '../../core/payment_return_watcher.dart';
 import '../../core/doodle_notifier.dart';
 import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
@@ -72,6 +75,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // l'utilisateur revient sur un tout autre écran de l'app.
       WalletBalanceNotifier.instance.refresh();
       SubscriptionStatusNotifier.instance.refresh();
+      // Confirme un paiement fait dans le navigateur (relit le solde à
+      // quelques secondes d'intervalle, le webhook pouvant arriver après le
+      // retour) — sans effet si aucun paiement n'a été lancé.
+      unawaited(PaymentReturnWatcher.instance.onResumed());
       // Jours de jeu "présentiel connecté" en attente (voir
       // NearbyBillingTracker) — tente une déclaration à chaque retour au
       // premier plan, moment naturel où une connexion vient probablement

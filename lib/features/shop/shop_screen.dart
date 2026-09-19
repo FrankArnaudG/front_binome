@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import '../../core/payment_return_watcher.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/coin_pack.dart';
 import '../../theme/theme_scope.dart';
@@ -188,6 +189,7 @@ class _ShopScreenState extends State<ShopScreen> {
       // Navigateur externe (pas de WebView) : le webhook back confirmera
       // le paiement ; WalletBalanceNotifier se rafraîchit tout seul au
       // retour dans l'app (voir AppShell.didChangeAppLifecycleState).
+      PaymentReturnWatcher.instance.arm();
       await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
     } on ApiException catch (e) {
       // Affiche le vrai message du serveur (ex. "Non authentifié") plutôt

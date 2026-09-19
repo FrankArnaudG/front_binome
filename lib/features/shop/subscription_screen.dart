@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import '../../core/payment_return_watcher.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/subscription_plan.dart';
 import '../../theme/theme_palette.dart';
@@ -161,6 +162,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         return;
       }
 
+      PaymentReturnWatcher.instance.arm();
       await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
     } on ApiException catch (e) {
       // Voir ShopScreen._payViaYengaPay — affiche le vrai message serveur
