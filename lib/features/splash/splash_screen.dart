@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,22 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _checkSession() async {
+    // Démarrage instantané : session + Box connues en local et Box active →
+    // on ouvre l'app tout de suite (pas d'attente de deux appels réseau
+    // successifs), puis on revérifie tout en arrière-plan.
+    final cachedUser = await AuthService.instance.cachedUserIfLoggedIn();
+    final cachedBox = cachedUser == null ? null : await BoxService.instance.loadCached();
+    if (!mounted) return;
+    if (cachedUser != null &&
+        !cachedUser.needsProfileCompletion &&
+        cachedBox != null &&
+        !cachedBox.isDissolved &&
+        !cachedBox.isWaiting) {
+      AppRouter.routeAfterAuth(context, cachedUser, cachedBox);
+      unawaited(_revalidateInBackground());
+      return;
+    }
+
     final user = await AuthService.instance.restoreSession();
     if (!mounted) return;
 
@@ -50,6 +67,20 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final box = await BoxService.instance.fetchCurrent();
     if (!mounted) return;
     AppRouter.routeAfterAuth(context, user, box);
+  }
+
+  /// Après un démarrage sur cache : session invalide (401) → retour à
+  /// l'accueil ; sinon la Box (et donc l'écran) se met à jour toute seule.
+  Future<void> _revalidateInBackground() async {
+    final user = await AuthService.instance.restoreSession();
+    if (user == null) {
+      AppRouter.navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+        (_) => false,
+      );
+      return;
+    }
+    await BoxService.instance.fetchCurrent();
   }
 
   @override

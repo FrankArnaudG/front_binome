@@ -90,6 +90,14 @@ class AuthService {
     }
   }
 
+  /// Utilisateur du dernier lancement, sans aucun appel réseau — pour
+  /// ouvrir l'app tout de suite (voir SplashScreen), la session étant
+  /// revérifiée ensuite en arrière-plan par [restoreSession].
+  Future<AppUser?> cachedUserIfLoggedIn() async {
+    if (await TokenStorage.instance.readToken() == null) return null;
+    return _cachedUser();
+  }
+
   Future<AppUser?> _cachedUser() async {
     final cached = await TokenStorage.instance.readUserJson();
     if (cached == null) return null;

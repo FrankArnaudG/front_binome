@@ -101,6 +101,18 @@ class BoxService extends ChangeNotifier {
     }
   }
 
+  /// Dernière Box connue, sans appel réseau (`null` si aucune en cache) —
+  /// pour un démarrage instantané ; [fetchCurrent] la rafraîchit ensuite.
+  Future<Box?> loadCached() async {
+    final cached = await _storage.read(key: _cacheKey);
+    if (cached == null) return null;
+    try {
+      return await _apply(jsonDecode(cached) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> leaveBox() async {
     await ApiClient.instance.post('/boxes/leave');
     await _apply(null);
