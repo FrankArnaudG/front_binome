@@ -1,4 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -43,6 +45,7 @@ void main() async {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     await PushNotificationService.instance.createAndroidChannel();
   } catch (_) {}
+  await _setupCrashReporting();
   // Écoute BoxService dès maintenant — se resynchronisera dès qu'une Box
   // sera chargée (connexion, restauration de session...), y compris un
   // changement fait depuis l'autre appareil du couple.
@@ -91,6 +94,26 @@ void main() async {
     ],
   );
   runApp(const BinomeApp());
+}
+
+/// Surveillance des plantages (Firebase Crashlytics — voir rapport d'audit du
+/// 13/09/2026 : aucune remontée des erreurs en production). Uniquement en
+/// version publiée : en développement, la collecte est coupée pour ne pas
+/// polluer les rapports. N'envoie aucune donnée personnelle (pas
+/// d'identifiant utilisateur), seulement la trace technique du plantage. Ne
+/// doit jamais empêcher l'app de démarrer.
+Future<void> _setupCrashReporting() async {
+  try {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
+    if (!kReleaseMode) return;
+    // Erreurs du framework Flutter (widgets, rendu...).
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    // Erreurs asynchrones et natives hors du framework Flutter.
+    WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+  } catch (_) {}
 }
 
 class BinomeApp extends StatelessWidget {
