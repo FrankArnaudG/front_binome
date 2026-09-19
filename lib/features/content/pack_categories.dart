@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -144,7 +142,9 @@ class _CategoryImage extends StatelessWidget {
       'assets/categories_poeme_slide/$slug.jpg',
     ];
     for (final path in candidates) {
-      if (assets.contains(path)) return _FullImageOnBlur(path: path);
+      if (assets.contains(path)) {
+        return Image.asset(path, fit: BoxFit.cover);
+      }
     }
     return fallback;
   }
@@ -157,32 +157,6 @@ class _CategoryImage extends StatelessWidget {
       future: _assetsFuture,
       builder: (context, snapshot) =>
           snapshot.hasData ? _resolve(snapshot.data!) : const SizedBox.shrink(),
-    );
-  }
-}
-
-/// Affiche l'image en entier (sans zoom ni bords coupés, quelle que soit la
-/// forme de la carte) : une version floutée de la même image comble le reste
-/// de la carte, l'image nette est posée au centre par-dessus.
-class _FullImageOnBlur extends StatelessWidget {
-  final String path;
-
-  const _FullImageOnBlur({required this.path});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        ClipRect(
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: Image.asset(path, fit: BoxFit.cover),
-          ),
-        ),
-        const ColoredBox(color: Color(0x33000000)),
-        Image.asset(path, fit: BoxFit.contain),
-      ],
     );
   }
 }
