@@ -5,9 +5,9 @@ import '../../../l10n/locale_scope.dart';
 import '../../../models/game.dart';
 import '../../../theme/theme_scope.dart';
 
-/// Pop-up "Comment jouer" — accessible depuis la liste des jeux (icône
+/// Pop-up "À propos du jeu" (présentation, pas les règles) — accessible depuis la liste des jeux (icône
 /// ampoule sur la carte, voir _CardBack dans games_menu_screen) pour
-/// consulter les règles avant même d'entrer dans le jeu. Contenu piloté par
+/// découvrir le jeu avant même d'entrer dans le jeu. Contenu piloté par
 /// game.rules, entièrement éditable — mise en forme comprise — depuis
 /// l'espace admin. Mini-syntaxe volontairement minimale plutôt qu'un vrai
 /// éditeur riche (aucune dépendance supplémentaire) : ligne vide = nouveau
@@ -58,7 +58,7 @@ class _GameRulesDialog extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      t('game_rules_title'),
+                      t('game_about_title'),
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16, color: theme.textOnBackground),
                     ),
                   ),
