@@ -7,6 +7,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 import '../../../models/battleship_session.dart';
 import 'battleship_engine.dart';
 import 'battleship_transport.dart';
+import '../../../core/server_clock.dart';
 
 const kBattleshipHostRole = 'host';
 const kBattleshipGuestRole = 'guest';
@@ -179,7 +180,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
 
     if (_hostReady && _guestReady) {
       _currentTurnRole = kBattleshipHostRole;
-      _startedAt = DateTime.now();
+      _startedAt = ServerClock.instance.now();
     }
     _controller.add(_stateFor(kBattleshipHostRole));
     _sendStateToGuest();
@@ -218,7 +219,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
   void _applyPause(String role) {
     if (_pausedByRole != null || _finished) return;
     _pausedByRole = role;
-    _pausedAt = DateTime.now();
+    _pausedAt = ServerClock.instance.now();
     _controller.add(_stateFor(kBattleshipHostRole));
     _sendStateToGuest();
   }
@@ -227,7 +228,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     if (_pausedByRole != role) return;
     final paused = _pausedAt;
     if (paused != null && _startedAt != null) {
-      _startedAt = _startedAt!.add(DateTime.now().difference(paused));
+      _startedAt = _startedAt!.add(ServerClock.instance.now().difference(paused));
     }
     _pausedByRole = null;
     _pausedAt = null;

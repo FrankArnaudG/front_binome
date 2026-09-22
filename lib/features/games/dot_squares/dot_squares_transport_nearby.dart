@@ -7,6 +7,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 import '../../../models/dot_square_session.dart';
 import 'dot_squares_engine.dart';
 import 'dot_squares_transport.dart';
+import '../../../core/server_clock.dart';
 
 /// Identifiants internes des deux rôles — voir kNearbyHostRole/
 /// kNearbyGuestRole dans memory_game_transport_nearby.dart, même principe
@@ -89,7 +90,7 @@ class NearbyDotSquaresTransport extends DotSquaresTransport {
           cols: message['gridCols'] as int? ?? DotSquaresEngine.gridCols,
         ).copyWith(
           currentTurnUserId: kDotSquaresHostRole,
-          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : DateTime.now(),
+          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : ServerClock.instance.now(),
         );
         _controller.add(_state);
       case 'state':
@@ -186,7 +187,7 @@ class NearbyDotSquaresTransport extends DotSquaresTransport {
 
   void _applyHostPause(String byRole) {
     if (_state.isPaused || _state.finished) return;
-    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: ServerClock.instance.now());
     _controller.add(_state);
     _sendState();
   }
@@ -198,7 +199,7 @@ class NearbyDotSquaresTransport extends DotSquaresTransport {
     if (!_state.isPaused || _state.pausedByUserId != byRole) return;
     final paused = _state.pausedAt;
     if (paused != null && _state.startedAt != null) {
-      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(ServerClock.instance.now().difference(paused)));
     }
     _state = _state.copyWith(clearPause: true);
     _controller.add(_state);

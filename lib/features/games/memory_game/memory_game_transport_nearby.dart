@@ -8,6 +8,7 @@ import '../../../models/memory_game_session.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_engine.dart';
 import 'memory_game_transport.dart';
+import '../../../core/server_clock.dart';
 
 /// Identifiants internes des deux rôles — Nearby Connections n'a pas de
 /// notion de compte, seulement un lien pair-à-pair établi en avance (voir
@@ -37,7 +38,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
     _state = MemoryGameBoardState(
       board: generateShuffledMemoryBoard(pairCount),
       currentTurnUserId: kNearbyHostRole,
-      startedAt: DateTime.now(),
+      startedAt: ServerClock.instance.now(),
       myUserId: kNearbyHostRole,
     );
     _sendInit();
@@ -96,7 +97,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
         _state = MemoryGameBoardState(
           board: board,
           currentTurnUserId: kNearbyHostRole,
-          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : DateTime.now(),
+          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : ServerClock.instance.now(),
           myUserId: kNearbyGuestRole,
         );
         _controller.add(_state);
@@ -143,7 +144,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
 
   void _applyHostPause(String byRole) {
     if (_state.isPaused || _state.finished) return;
-    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: ServerClock.instance.now());
     _controller.add(_state);
     _sendState();
   }
@@ -155,7 +156,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
     if (!_state.isPaused || _state.pausedByUserId != byRole) return;
     final paused = _state.pausedAt;
     if (paused != null && _state.startedAt != null) {
-      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(ServerClock.instance.now().difference(paused)));
     }
     _state = _state.copyWith(clearPause: true);
     _controller.add(_state);

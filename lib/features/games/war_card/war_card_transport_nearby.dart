@@ -6,6 +6,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 
 import 'war_card_engine.dart';
 import 'war_card_transport.dart';
+import '../../../core/server_clock.dart';
 
 /// Identifiants internes des deux rôles — voir kNumberHuntHostRole/
 /// kNumberHuntGuestRole, même principe (Nearby Connections n'a pas de
@@ -216,7 +217,7 @@ class NearbyWarCardTransport extends WarCardTransport {
       readyCreator: outcome.readyCreator,
       readyPartner: outcome.readyPartner,
       started: outcome.started,
-      startedAt: outcome.started ? DateTime.now() : _state.startedAt,
+      startedAt: outcome.started ? ServerClock.instance.now() : _state.startedAt,
     );
     _controller.add(_state);
     _sendState();
@@ -278,7 +279,7 @@ class NearbyWarCardTransport extends WarCardTransport {
 
   void _applyHostPause(String byRole) {
     if (_state.isPaused || _state.finished) return;
-    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: ServerClock.instance.now());
     _controller.add(_state);
     _sendState();
   }
@@ -287,7 +288,7 @@ class NearbyWarCardTransport extends WarCardTransport {
     if (!_state.isPaused || _state.pausedByUserId != byRole) return;
     final paused = _state.pausedAt;
     if (paused != null && _state.startedAt != null) {
-      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(ServerClock.instance.now().difference(paused)));
     }
     _state = _state.copyWith(clearPause: true);
     _controller.add(_state);

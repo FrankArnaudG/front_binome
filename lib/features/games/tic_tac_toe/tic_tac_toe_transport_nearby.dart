@@ -6,6 +6,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 
 import 'tic_tac_toe_engine.dart';
 import 'tic_tac_toe_transport.dart';
+import '../../../core/server_clock.dart';
 
 /// Identifiants internes des deux rôles — voir kNearbyHostRole/
 /// kNearbyGuestRole dans memory_game_transport_nearby.dart, même principe
@@ -35,7 +36,7 @@ class NearbyTicTacToeTransport extends TicTacToeTransport {
       },
       scoresByUser: {kTicTacToeHostRole: 0, kTicTacToeGuestRole: 0},
       currentTurnUserId: kTicTacToeHostRole,
-      startedAt: DateTime.now(),
+      startedAt: ServerClock.instance.now(),
       myUserId: kTicTacToeHostRole,
     );
     _sendInit();
@@ -97,7 +98,7 @@ class NearbyTicTacToeTransport extends TicTacToeTransport {
           },
           scoresByUser: {kTicTacToeHostRole: 0, kTicTacToeGuestRole: 0},
           currentTurnUserId: kTicTacToeHostRole,
-          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : DateTime.now(),
+          startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : ServerClock.instance.now(),
           myUserId: kTicTacToeGuestRole,
         );
         _controller.add(_state);
@@ -184,7 +185,7 @@ class NearbyTicTacToeTransport extends TicTacToeTransport {
 
   void _applyHostPause(String byRole) {
     if (_state.isPaused || _state.finished) return;
-    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: ServerClock.instance.now());
     _controller.add(_state);
     _sendState();
   }
@@ -196,7 +197,7 @@ class NearbyTicTacToeTransport extends TicTacToeTransport {
     if (!_state.isPaused || _state.pausedByUserId != byRole) return;
     final paused = _state.pausedAt;
     if (paused != null && _state.startedAt != null) {
-      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(ServerClock.instance.now().difference(paused)));
     }
     _state = _state.copyWith(clearPause: true);
     _controller.add(_state);

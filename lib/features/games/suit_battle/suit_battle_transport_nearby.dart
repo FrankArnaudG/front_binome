@@ -6,6 +6,7 @@ import 'package:nearby_connections/nearby_connections.dart';
 
 import 'suit_battle_engine.dart';
 import 'suit_battle_transport.dart';
+import '../../../core/server_clock.dart';
 
 /// Identifiants internes des deux rôles — voir kWarCardHostRole/
 /// kWarCardGuestRole, même principe (Nearby Connections n'a pas de notion
@@ -205,7 +206,7 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
       readyCreator: outcome.readyCreator,
       readyPartner: outcome.readyPartner,
       started: outcome.started,
-      startedAt: outcome.started ? DateTime.now() : _state.startedAt,
+      startedAt: outcome.started ? ServerClock.instance.now() : _state.startedAt,
       turnUserId: outcome.started ? kSuitBattleHostRole : _state.turnUserId,
       phase: outcome.started ? 'lead' : _state.phase,
     );
@@ -327,7 +328,7 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
 
   void _applyHostPause(String byRole) {
     if (_state.isPaused || _state.finished) return;
-    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: DateTime.now());
+    _state = _state.copyWith(pausedByUserId: byRole, pausedAt: ServerClock.instance.now());
     _controller.add(_state);
     _sendState();
   }
@@ -336,7 +337,7 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
     if (!_state.isPaused || _state.pausedByUserId != byRole) return;
     final paused = _state.pausedAt;
     if (paused != null && _state.startedAt != null) {
-      _state = _state.copyWith(startedAt: _state.startedAt!.add(DateTime.now().difference(paused)));
+      _state = _state.copyWith(startedAt: _state.startedAt!.add(ServerClock.instance.now().difference(paused)));
     }
     _state = _state.copyWith(clearPause: true);
     _controller.add(_state);
