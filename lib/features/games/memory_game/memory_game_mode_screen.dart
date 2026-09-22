@@ -12,6 +12,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../game_guide_storage.dart';
+import '../game_guide_notes.dart';
 import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
 import 'memory_game_difficulty_screen.dart';
@@ -100,17 +101,11 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
         'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 Tokens.';
   }
 
-  String get _nearbyInfoText {
-    final rate = _economyRate;
-    final cost = rate?['nearby_daily_coin_cost'] ?? 5;
-    final days = rate?['nearby_free_trial_days'] ?? 0;
-    final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
-    return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
-        "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost Tokens une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
-        "TOUS les jeux interactifs de l'application, autant de fois que vous voulez ce jour là, sans être facturé "
-        "de nouveau.$trial";
-  }
+  // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+  // telephone" — plus de coût ni d'essai gratuit à annoncer, ce mode est simplement gratuit.
+  static const String _nearbyInfoText =
+      "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
+      "Pratique quand vous êtes ensemble mais sans réseau disponible. Il est gratuit.";
 
   static const String _localInfoText =
       "Ce mode se joue à tour de rôle sur un seul téléphone, sans connexion internet. Il est gratuit.";
@@ -160,7 +155,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
                 key: _remoteTileKey,
                 title: 'Mode à distance',
                 description:
-                    "Joue en temps réel avec ton binôme, où qu'il ou elle soit. Vous pouvez aussi vous parler pendant la partie.",
+                    withGuideNote("Joue en temps réel avec ton binôme, où qu'il ou elle soit. Vous pouvez aussi vous parler pendant la partie.", kHowToPlayNote),
                 targetBorderRadius: BorderRadius.circular(20),
                 child: _ModeTile(
                   theme: theme,
@@ -180,7 +175,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
                 key: _nearbyTileKey,
                 title: 'Mode présentiel connecté',
                 description:
-                    "Vous êtes ensemble, sans internet. Les deux téléphones se connectent directement en Bluetooth ou Wifi.",
+                    withGuideNote("Vous êtes ensemble, sans internet. Les deux téléphones se connectent directement en Bluetooth ou Wifi.", kHowToPlayNote),
                 targetBorderRadius: BorderRadius.circular(20),
                 child: _ModeTile(
                   theme: theme,

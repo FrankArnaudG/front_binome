@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/game_invite_notifier.dart';
+import '../../core/realtime_client.dart';
 import '../../models/app_user.dart';
 import '../../models/game_invite.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../box/box_scope.dart';
+import '../box/box_service.dart';
 import 'game_invite_navigation.dart';
 import 'game_service.dart';
 
@@ -38,10 +40,19 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   DateTime? _startedAt;
   bool _resolved = false;
 
+  // Présence en direct du binôme (canal de la Box, voir RealtimeClient) :
+  // null = inconnue (pas encore reçue, ou invitation hors-Box), false = pas en
+  // ligne → on l'écrit à l'écran pour que l'auteur le prévienne (voir
+  // demande utilisateur).
+  bool? _partnerOnline;
+  String? _presenceBoxId;
+  String? _partnerId;
+
   @override
   void initState() {
     super.initState();
     if (widget.invite.isFriendInvite) _loadFriendInvitee();
+    _watchPartnerPresence();
     _startedAt = DateTime.now();
     _subscription = GameInviteNotifier.instance.watch(widget.invite.id).listen(_onUpdate);
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -55,6 +66,33 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     // expiration des 60s puis annuler l'invitation MÊME QUAND le binôme
     // avait déjà rejoint et jouait de son côté (voir demande utilisateur).
     _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) => _pollStatus());
+  }
+
+  /// Écoute la présence du binôme sur le canal de sa Box (déjà utilisé ailleurs
+  /// dans l'app, voir RealtimeClient.subscribeToBox) pour savoir s'il est en
+  /// ligne. Rien pour une invitation hors-Box (défi à un ami de jeu) : pas de
+  /// canal de présence commun, l'état reste inconnu et aucun message n'est
+  /// affiché.
+  void _watchPartnerPresence() {
+    if (widget.invite.isFriendInvite) return;
+    final box = BoxService.instance.currentBox;
+    final partner = box?.partnerOf(widget.user.id);
+    if (box == null || partner == null) return;
+    _presenceBoxId = box.id;
+    _partnerId = partner.id;
+    unawaited(RealtimeClient.instance.subscribeToBox(
+      box.id,
+      onEvent: _ignoreEvent,
+      onPresenceChange: _onPresenceChange,
+    ));
+  }
+
+  void _ignoreEvent(RealtimeEvent event) {}
+
+  void _onPresenceChange(Set<String> memberIds) {
+    final partnerId = _partnerId;
+    if (!mounted || partnerId == null) return;
+    setState(() => _partnerOnline = memberIds.contains(partnerId));
   }
 
   Future<void> _pollStatus() async {
@@ -139,6 +177,14 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     _tickTimer?.cancel();
     _timeoutTimer?.cancel();
     _pollTimer?.cancel();
+    final presenceBoxId = _presenceBoxId;
+    if (presenceBoxId != null) {
+      RealtimeClient.instance.unsubscribeFromBox(
+        presenceBoxId,
+        onEvent: _ignoreEvent,
+        onPresenceChange: _onPresenceChange,
+      );
+    }
     GameInviteNotifier.instance.disposeWatch(widget.invite.id);
     super.dispose();
   }
@@ -206,6 +252,58 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
                       'Il/elle a ${remaining.inSeconds}s pour rejoindre la partie.',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+                    ),
+                    // Le binôme n'est pas connecté : l'invitation ne lui sera
+                    // vue qu'à l'ouverture de l'app (voir demande utilisateur).
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topCenter,
+                      child: _partnerOnline == false
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 18),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: theme.primary.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: theme.primary.withValues(alpha: 0.25)),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.wifi_off_rounded, size: 18, color: theme.primary),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Ton binôme n'est pas en ligne.",
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                              color: theme.textOnBackground,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            "Demande-lui de se connecter à l'application pour qu'il/elle voie ton invitation.",
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 12.5,
+                                              height: 1.35,
+                                              color: theme.textOnBackgroundMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : const SizedBox(width: double.infinity),
                     ),
                     const SizedBox(height: 28),
                     OutlinedButton(

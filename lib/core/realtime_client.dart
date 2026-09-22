@@ -44,6 +44,14 @@ class RealtimeClient {
   final _presentMembers = <String, Set<String>>{};
   Timer? _reconnectTimer;
 
+  // Demande de recalage adressée aux écrans qui gardent un état local (parties à distance) : émise après
+  // une reconnexion et au retour au premier plan, moments où des messages ont pu être manqués.
+  final _resyncController = StreamController<void>.broadcast();
+  Stream<void> get resyncRequests => _resyncController.stream;
+  void requestResync() {
+    if (!_resyncController.isClosed) _resyncController.add(null);
+  }
+
   // Chien de garde : Reverb envoie un `pusher:ping` toutes les ~30-60s (voir
   // config par défaut), donc silence total pendant plus de 45s = connexion
   // morte à coup sûr — sans ça, une coupure SILENCIEUSE (écran verrouillé,
@@ -155,7 +163,10 @@ class RealtimeClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 3), () async {
       await connect();
-      if (_channel != null) await _resubscribeAll();
+      if (_channel != null) {
+        await _resubscribeAll();
+        requestResync();
+      }
     });
   }
 

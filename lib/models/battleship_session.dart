@@ -50,6 +50,8 @@ class BattleshipShot {
 /// principe que TicTacToeSession).
 class BattleshipSession {
   final String id;
+  // Numéro de version serveur (voir HasStateVersion) : 0 = serveur sans versionnement.
+  final int version;
   final String? boxId;
   final String? playerOneId;
   final String? playerTwoId;
@@ -73,6 +75,7 @@ class BattleshipSession {
 
   const BattleshipSession({
     required this.id,
+    this.version = 0,
     this.boxId,
     this.playerOneId,
     this.playerTwoId,
@@ -101,6 +104,7 @@ class BattleshipSession {
 
   factory BattleshipSession.fromJson(Map<String, dynamic> json) => BattleshipSession(
         id: json['id'] as String,
+        version: (json['version'] as num?)?.toInt() ?? 0,
         boxId: json['box_id'] as String?,
         playerOneId: json['player_one_id'] as String?,
         playerTwoId: json['player_two_id'] as String?,

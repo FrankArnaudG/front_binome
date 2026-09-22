@@ -2,17 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/delivery_ack_service.dart';
+import '../../core/realtime_client.dart';
 import '../../core/payment_return_watcher.dart';
 import '../../core/doodle_notifier.dart';
 import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
-import '../box/box_scope.dart';
+import '../auth/auth_service.dart';
 import '../content/unread_timeline_service.dart';
-import '../games/nearby_billing_tracker.dart';
 import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
@@ -48,10 +49,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // démarre dès que l'app est montée, s'arrête/reprend avec le premier
     // plan ci-dessous.
     UsageService.instance.startSessionPings();
+    ApiClient.onSessionRevoked = _onSessionRevoked;
+  }
+
+  bool _revokedHandled = false;
+
+  /// Le serveur a refusé le jeton de cet appareil : il a été déconnecté depuis un autre téléphone (voir
+  /// « Déconnecter les autres appareils ») — retour à l'écran de connexion.
+  Future<void> _onSessionRevoked() async {
+    if (_revokedHandled) return;
+    _revokedHandled = true;
+    await AuthService.instance.handleSessionRevoked();
+    if (!mounted) return;
+    AppRouter.toLogin(context);
   }
 
   @override
   void dispose() {
+    if (ApiClient.onSessionRevoked == _onSessionRevoked) ApiClient.onSessionRevoked = null;
     WidgetsBinding.instance.removeObserver(this);
     UsageService.instance.stopSessionPings();
     super.dispose();
@@ -62,6 +77,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       UsageService.instance.startSessionPings();
       DeliveryAckService.instance.onAppResumed();
+      // Une partie à distance ouverte a pu manquer des messages pendant l'absence (voir RealtimeClient.requestResync).
+      RealtimeClient.instance.requestResync();
       // Voir demande utilisateur : si un dessin est arrivé pendant que
       // l'app n'était pas au premier plan, il doit s'afficher tout de
       // suite au retour, sans attendre le prochain tick du poll de secours
@@ -79,12 +96,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // quelques secondes d'intervalle, le webhook pouvant arriver après le
       // retour) — sans effet si aucun paiement n'a été lancé.
       unawaited(PaymentReturnWatcher.instance.onResumed());
-      // Jours de jeu "présentiel connecté" en attente (voir
-      // NearbyBillingTracker) — tente une déclaration à chaque retour au
-      // premier plan, moment naturel où une connexion vient probablement
-      // de revenir.
-      final boxId = BoxScope.of(context).currentBox?.id;
-      if (boxId != null) NearbyBillingTracker.instance.reportAndClear(boxId);
+      // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+      // telephone" — plus aucune déclaration de forfait journalier à tenter (voir
+      // NearbyBillingTracker/FriendChallengeNearbyBillingTracker, plus jamais alimentés).
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       UsageService.instance.stopSessionPings();
     }

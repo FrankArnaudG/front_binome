@@ -150,6 +150,14 @@ class _WarCardScoreboardSheet extends StatelessWidget {
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               ),
             ],
+            // "Quitter" : referme le jeu et ramène au choix de la difficulté (voir demande
+            // utilisateur) — taper à côté de la feuille revient au même (résultat null).
+            SizedBox(height: allowRematch ? 10 : 20),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: Text(LocaleScope.t(context, 'game_score_quit')),
+            ),
           ],
         ),
       ),

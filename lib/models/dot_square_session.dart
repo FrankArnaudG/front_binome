@@ -63,6 +63,8 @@ class DotSquareRectangle {
 /// possible en fin de partie (pas de gagnant net).
 class DotSquareSession {
   final String id;
+  // Numéro de version serveur (voir HasStateVersion) : 0 = serveur sans versionnement.
+  final int version;
   // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
   // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
   // les deux joueurs à la place de box->creator_id/partner_id (même
@@ -99,6 +101,7 @@ class DotSquareSession {
 
   const DotSquareSession({
     required this.id,
+    this.version = 0,
     this.boxId,
     this.playerOneId,
     this.playerTwoId,
@@ -134,6 +137,7 @@ class DotSquareSession {
 
     return DotSquareSession(
         id: json['id'] as String,
+        version: (json['version'] as num?)?.toInt() ?? 0,
         boxId: json['box_id'] as String?,
         playerOneId: json['player_one_id'] as String?,
         playerTwoId: json['player_two_id'] as String?,

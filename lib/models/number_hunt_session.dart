@@ -23,6 +23,8 @@ Map<String, int> _parseIntMap(dynamic value) {
 /// lequel des deux peut tenter à tout moment.
 class NumberHuntSession {
   final String id;
+  // Numéro de version serveur (voir HasStateVersion) : 0 = serveur sans versionnement.
+  final int version;
   // `null` pour une partie hors-Box (défi à un ami de jeu via son code,
   // voir demande utilisateur) — [playerOneId]/[playerTwoId] portent alors
   // les deux joueurs à la place de box->creator_id/partner_id (même
@@ -48,6 +50,7 @@ class NumberHuntSession {
 
   const NumberHuntSession({
     required this.id,
+    this.version = 0,
     this.boxId,
     this.playerOneId,
     this.playerTwoId,
@@ -74,6 +77,7 @@ class NumberHuntSession {
 
   factory NumberHuntSession.fromJson(Map<String, dynamic> json) => NumberHuntSession(
         id: json['id'] as String,
+        version: (json['version'] as num?)?.toInt() ?? 0,
         boxId: json['box_id'] as String?,
         playerOneId: json['player_one_id'] as String?,
         playerTwoId: json['player_two_id'] as String?,

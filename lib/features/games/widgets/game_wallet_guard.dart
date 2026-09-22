@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/realtime_client.dart';
-import '../../../theme/theme_scope.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
 
@@ -10,11 +8,16 @@ import '../../shop/wallet_balance_notifier.dart';
 /// interactif en cours (voir BillGameSessions/GameEconomySetting côté
 /// backend — "chaque minute qui passe équivaut à une petite portion de coin
 /// consommée", voir demande utilisateur) : affiche un avertissement discret
-/// avant l'épuisement (voir [GameWalletLow]), puis un popup bloquant
-/// "recharger ou terminer la partie" dès que le solde tombe à zéro (voir
-/// [GameWalletDepleted]) — le micro/la caméra en cours (voir
-/// VoiceCallOverlay.forceEnded) sont coupés automatiquement à ce moment,
-/// jamais avant.
+/// avant l'épuisement (voir [GameWalletLow]).
+///
+/// Le gel réel de la partie une fois le solde épuisé (voir demande
+/// utilisateur : "même le jeu doit être coupé et non le micro et la caméra
+/// seul") passe désormais par le mécanisme de PAUSE déjà existant — le
+/// serveur pose lui-même la pause (voir BillGameSessions), le plateau se
+/// fige donc automatiquement comme une pause normale, sans que ce widget
+/// ait quoi que ce soit à faire pour ça. Ce widget se contente d'un message
+/// informatif ponctuel au moment de l'épuisement, avec un raccourci vers la
+/// boutique.
 ///
 /// N'a d'effet QUE si [boxId] est fourni (mode à distance dans une Box) —
 /// une partie en pass-and-play ou entre amis hors couple n'a pas de
@@ -24,22 +27,12 @@ class GameWalletGuard extends StatefulWidget {
   final String? boxId;
   final String sessionType;
   final String sessionId;
-  // Le couple vient d'épuiser son solde EN COURS de cette partie précise —
-  // voir demande utilisateur : "le micro et la vidéo sont coupés
-  // automatiquement" (voir VoiceCallOverlay.forceEnded, wiré par l'appelant).
-  final ValueChanged<bool>? onDepletedChanged;
-  // Termine la partie EN COURS (voir widget.transport.abandon() côté
-  // appelant, même geste qu'un abandon volontaire) — bouton "Terminer la
-  // partie" du popup.
-  final VoidCallback onEndGame;
 
   const GameWalletGuard({
     super.key,
     required this.boxId,
     required this.sessionType,
     required this.sessionId,
-    required this.onEndGame,
-    this.onDepletedChanged,
   });
 
   @override
@@ -47,7 +40,7 @@ class GameWalletGuard extends StatefulWidget {
 }
 
 class _GameWalletGuardState extends State<GameWalletGuard> {
-  bool _dialogShown = false;
+  bool _depletedNoticeShown = false;
   bool _warningShown = false;
 
   @override
@@ -90,43 +83,21 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
     }
     if (event.event == 'GameWalletDepleted') {
       final sessionId = event.data?['session_id'] as String?;
-      if (sessionId != widget.sessionId || _dialogShown || !mounted) return;
-      _dialogShown = true;
-      widget.onDepletedChanged?.call(true);
-      _showDepletedDialog();
-    }
-  }
-
-  Future<void> _showDepletedDialog() async {
-    final theme = ThemeScope.paletteOf(context);
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: theme.surface,
-        title: Text('Solde de Tokens épuisé', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
-        content: Text(
-          "Votre couple n'a plus de Tokens pour continuer cette partie. Rechargez pour poursuivre, ou terminez la partie ici.",
-          style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
+      // Uniquement CETTE partie précise — voir demande utilisateur : une autre partie en cours en
+      // parallèle avec le même solde commun continue tant qu'ELLE a de quoi être facturée.
+      if (sessionId != widget.sessionId || _depletedNoticeShown || !mounted) return;
+      _depletedNoticeShown = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Solde de pièces épuisé — la partie est en pause.'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'Recharger',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen())),
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              widget.onEndGame();
-            },
-            child: const Text('Terminer la partie', style: TextStyle(color: Colors.redAccent)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen()));
-            },
-            child: Text('Recharger', style: TextStyle(color: theme.primary, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
+      );
+    }
   }
 
   @override

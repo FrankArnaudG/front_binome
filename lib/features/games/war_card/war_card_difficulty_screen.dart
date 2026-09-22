@@ -9,6 +9,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../game_guide_storage.dart';
+import '../game_guide_notes.dart';
 import 'war_card_engine.dart';
 import 'war_card_mode_screen.dart';
 
@@ -81,7 +82,7 @@ class _WarCardDifficultyScreenState extends State<WarCardDifficultyScreen> {
         child: SafeArea(
           child: _starting
               ? Center(child: CircularProgressIndicator(color: theme.primary))
-              : WarCardLevelList(theme: theme, onSelected: _start, firstTileGuideKey: _firstLevelGuideKey),
+              : WarCardLevelList(theme: theme, onSelected: _start, firstTileGuideKey: _firstLevelGuideKey, guideNote: widget.mode == WarCardMode.local ? null : kHowToPlayNote),
         ),
       ),
     );
@@ -110,8 +111,10 @@ class WarCardLevelList extends StatelessWidget {
   // Guide pas-à-pas (voir demande utilisateur) — non-null uniquement pour
   // faire apparaître une bulle sur le PREMIER palier de la liste.
   final GlobalKey? firstTileGuideKey;
+  // N.B. ajouté à la bulle du guide (voir game_guide_notes.dart) — null en mode "un seul téléphone".
+  final String? guideNote;
 
-  const WarCardLevelList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey});
+  const WarCardLevelList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey, this.guideNote});
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +185,7 @@ class WarCardLevelList extends StatelessWidget {
     return Showcase(
       key: guideKey,
       title: 'Choisis un format',
-      description: 'Plus le paquet est grand, plus la partie sera longue.',
+      description: withGuideNote('Plus le paquet est grand, plus la partie sera longue.', guideNote),
       targetBorderRadius: BorderRadius.circular(20),
       child: tile,
     );

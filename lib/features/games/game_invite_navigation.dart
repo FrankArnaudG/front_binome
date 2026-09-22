@@ -7,20 +7,31 @@ import '../../models/app_user.dart';
 import '../../models/game_invite.dart';
 import '../box/box_scope.dart';
 import 'dot_squares/dot_squares_board_screen.dart';
+import 'dot_squares/dot_squares_difficulty_screen.dart';
+import 'dot_squares/dot_squares_mode_screen.dart';
 import 'dot_squares/dot_squares_transport_remote.dart';
 import 'game_service.dart';
 import 'memory_game/memory_game_board_screen.dart';
+import 'memory_game/memory_game_difficulty_screen.dart';
+import 'memory_game/memory_game_mode_screen.dart';
 import 'memory_game/memory_game_transport_remote.dart';
+import 'battleship/battleship_difficulty_screen.dart';
 import 'battleship/battleship_mode_screen.dart';
 import 'battleship/battleship_placement_screen.dart';
 import 'battleship/battleship_transport_remote.dart';
 import 'number_hunt/number_hunt_board_screen.dart';
+import 'number_hunt/number_hunt_difficulty_screen.dart';
+import 'number_hunt/number_hunt_mode_screen.dart';
 import 'number_hunt/number_hunt_transport_remote.dart';
 import 'tic_tac_toe/tic_tac_toe_board_screen.dart';
+import 'tic_tac_toe/tic_tac_toe_mode_screen.dart';
 import 'tic_tac_toe/tic_tac_toe_transport_remote.dart';
 import 'war_card/war_card_board_screen.dart';
+import 'war_card/war_card_difficulty_screen.dart';
+import 'war_card/war_card_mode_screen.dart';
 import 'war_card/war_card_transport_remote.dart';
 import 'suit_battle/suit_battle_board_screen.dart';
+import 'suit_battle/suit_battle_mode_screen.dart';
 import 'suit_battle/suit_battle_transport_remote.dart';
 
 /// Ouvre la partie créée par une invitation ACCEPTÉE ([resolved.sessionId]
@@ -79,6 +90,19 @@ Future<void> openGameSessionFromInvite(
   final game = games.firstWhere((g) => g.id == resolved.gameId, orElse: () => games.first);
   if (!context.mounted) return;
 
+  // Voir demande utilisateur : seul celui qui a lancé la partie voit "Rejouer" (= nouvelle
+  // invitation, même difficulté) ; l'autre joueur ne voit que "Quitter", qui lui ouvre le choix de
+  // la difficulté. Un défi d'ami hors-Box n'a pas de binôme à ré-inviter : pas de "Rejouer" et
+  // "Quitter" referme simplement le jeu.
+  final isLauncher = resolved.inviterId == me.id;
+  final canRematch = isLauncher && !resolved.isFriendInvite;
+  final canBackToChoice = !isLauncher && !resolved.isFriendInvite;
+  Future<void> Function(BuildContext)? quitTo(Widget Function() choice) => canBackToChoice
+      ? (ctx) async {
+          Navigator.of(ctx).pushReplacement(MaterialPageRoute<void>(builder: (_) => choice()));
+        }
+      : null;
+
   Widget? screen;
   switch (resolved.sessionType) {
     case 'memory_game':
@@ -93,6 +117,11 @@ Future<void> openGameSessionFromInvite(
         transport: RemoteMemoryGameTransport(session: session, boxId: boxId, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startMemoryGameAndPush(ctx, game: game, user: me, mode: MemoryGameMode.remote, pairCount: session.pairCount, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => MemoryGameDifficultyScreen(game: game, user: me, mode: MemoryGameMode.remote)),
       );
     case 'tic_tac_toe':
       final session = await GameService.instance.fetchTicTacToeState(sessionId);
@@ -106,6 +135,11 @@ Future<void> openGameSessionFromInvite(
         transport: RemoteTicTacToeTransport(session: session, boxId: boxId, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startTicTacToeAndPush(ctx, game: game, user: me, mode: TicTacToeMode.remote, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => TicTacToeModeScreen(game: game, user: me)),
       );
     case 'dot_squares':
       final session = await GameService.instance.fetchDotSquaresState(sessionId);
@@ -119,6 +153,11 @@ Future<void> openGameSessionFromInvite(
         transport: RemoteDotSquaresTransport(session: session, boxId: boxId, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startDotSquaresAndPush(ctx, game: game, user: me, mode: DotSquaresMode.remote, cols: session.gridCols, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => DotSquaresDifficultyScreen(game: game, user: me, mode: DotSquaresMode.remote)),
       );
     case 'number_hunt':
       final session = await GameService.instance.fetchNumberHuntState(sessionId);
@@ -132,6 +171,11 @@ Future<void> openGameSessionFromInvite(
         transport: RemoteNumberHuntTransport(session: session, boxId: boxId, myUserId: me.id, partnerUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startNumberHuntAndPush(ctx, game: game, user: me, mode: NumberHuntMode.remote, cellCount: session.cellCount, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => NumberHuntDifficultyScreen(game: game, user: me, mode: NumberHuntMode.remote)),
       );
     // Voir demande utilisateur : défi d'ami hors-Box — `creatorId`/
     // `partnerId` restent le nom historique des DEUX rôles de jeu (voir
@@ -153,6 +197,11 @@ Future<void> openGameSessionFromInvite(
         ),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startWarCardAndPush(ctx, game: game, user: me, mode: WarCardMode.remote, deckSize: session.deckSize, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => WarCardDifficultyScreen(game: game, user: me, mode: WarCardMode.remote)),
       );
     case 'suit_battle':
       final session = await GameService.instance.fetchSuitBattleState(sessionId);
@@ -169,6 +218,11 @@ Future<void> openGameSessionFromInvite(
         ),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startSuitBattleAndPush(ctx, game: game, user: me, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => SuitBattleModeScreen(game: game, user: me)),
       );
     case 'battleship':
       final session = await GameService.instance.fetchBattleshipState(sessionId);
@@ -182,14 +236,11 @@ Future<void> openGameSessionFromInvite(
         transport: RemoteBattleshipTransport(session: session, boxId: boxId, myUserId: me.id, opponentUserId: opponentId),
         playerNames: playerNames,
         playerAvatars: playerAvatars,
-        onRematch: (ctx) => startBattleshipAndPush(
-          ctx,
-          game: game,
-          user: me,
-          mode: BattleshipMode.remote,
-          gridSize: session.gridSize,
-          replaceCurrent: true,
-        ),
+        isLauncher: isLauncher,
+        onRematch: canRematch
+            ? (ctx) => startBattleshipAndPush(ctx, game: game, user: me, mode: BattleshipMode.remote, gridSize: session.gridSize, replaceCurrent: true)
+            : null,
+        onQuit: quitTo(() => BattleshipDifficultyScreen(game: game, user: me, mode: BattleshipMode.remote)),
       );
   }
   if (screen == null || !context.mounted) return;

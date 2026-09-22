@@ -28,6 +28,7 @@ import '../widgets/voice_call_overlay.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import 'number_hunt_transport.dart';
 import 'number_hunt_transport_remote.dart';
+import 'number_hunt_transport_local.dart';
 
 /// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
 /// memory_game_board_screen.dart pour le principe général) — pas de tour
@@ -53,6 +54,12 @@ class NumberHuntBoardScreen extends StatefulWidget {
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
   final Future<void> Function(BuildContext context)? onRematch;
+  // Celui qui a lancé la partie (voir demande utilisateur) : seul lui voit "Rejouer" et le
+  // décompte de Tokens (c'est son temps qui est facturé). L'autre joueur ne voit que "Quitter".
+  final bool isLauncher;
+  // "Quitter" depuis la feuille de score : par défaut referme le jeu ; l'invité·e d'une partie à
+  // distance y ouvre le choix de la difficulté (voir game_invite_navigation.dart).
+  final Future<void> Function(BuildContext context)? onQuit;
   final NearbyComms? nearbyComms;
   final String? nearbyMyName;
   final String? nearbyPartnerName;
@@ -65,6 +72,8 @@ class NumberHuntBoardScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.isLauncher = true,
+    this.onQuit,
     this.nearbyComms,
     this.nearbyMyName,
     this.nearbyPartnerName,
@@ -120,9 +129,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   // distance" (voir _onState) — seul ce second cas doit afficher la
   // pop-up dédiée plutôt que de rester silencieux.
   bool _leavingMyself = false;
-  // Solde de pièces du couple épuisé en cours de partie (voir
-  // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
-  bool _walletDepleted = false;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -180,7 +186,13 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
     if (_commentsBoxId != null) _loadEconomyRate();
   }
 
+  /// Le guide "Comment jouer" n'existe que dans le mode "Présentiel, un seul téléphone" (voir demande
+  /// utilisateur) : pas de lancement automatique ni de bouton "?" en partie à distance ou en présentiel
+  /// connecté. Les guides qui y mènent renvoient vers ce mode (voir game_guide_notes.dart).
+  bool get _guideAvailable => widget.transport is LocalNumberHuntTransport;
+
   Future<void> _maybeStartGuide() async {
+    if (!_guideAvailable) return;
     final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
     if (seen || !mounted) return;
     GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
@@ -467,15 +479,18 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
       playerNames: widget.playerNames,
       playerAvatars: widget.playerAvatars,
       colorFor: _colorFor,
-      allowRematch: widget.onRematch != null,
+      allowRematch: widget.isLauncher && widget.onRematch != null,
     );
-    if (rematch == true && widget.onRematch != null && mounted) {
+    if (rematch == true && widget.isLauncher && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
     } else if (mounted) {
-      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
-      // taper à côté, peu importe le geste — doit refermer le jeu et
-      // revenir à la liste, comme un retour classique.
-      Navigator.of(context).pop();
+      // "Quitter", ou tap à côté de la feuille (voir demande utilisateur) : referme le jeu
+      // (retour au choix de la difficulté pour l'invité·e, voir onQuit).
+      if (widget.onQuit != null) {
+        await widget.onQuit!(context);
+      } else {
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -536,14 +551,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
 
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
-  Future<void> _endGameFromWalletDepletion() async {
-    _leavingMyself = true;
-    await widget.transport.abandon();
-    // Voir demande utilisateur : "ça doit être instantané".
-    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
-    if (mounted) Navigator.of(context).pop();
-  }
-
   String get _partnerUserId =>
       widget.playerNames.keys.firstWhere((id) => id != widget.user.id, orElse: () => widget.user.id);
 
@@ -599,13 +606,13 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
               child: _state.isPaused
                   ? IconButton(
                       icon: const Icon(Icons.play_circle_outline),
-                      tooltip: _state.pausedByMe
+                      tooltip: (_state.pausedByMe || _state.pausedByUserId == null)
                           ? LocaleScope.t(context, 'memory_board_resume_tooltip')
                           : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
                               'name': widget.playerNames[_state.pausedByUserId] ??
                                   LocaleScope.t(context, 'memory_board_partner_fallback'),
                             }),
-                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                      onPressed: (_state.pausedByMe || _state.pausedByUserId == null) ? () => widget.transport.resume() : null,
                     )
                   : IconButton(
                       icon: const Icon(Icons.pause_circle_outline),
@@ -624,13 +631,13 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                 }
               },
             ),
-          if (_state.finished && widget.onRematch != null)
+          if (_state.finished && widget.isLauncher && widget.onRematch != null)
             IconButton(
               icon: const Icon(Icons.replay_rounded),
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
-          if (!_state.finished)
+          if (!_state.finished && _guideAvailable)
             IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
@@ -658,7 +665,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                     Showcase(
                       key: _coinsGuideKey,
                       title: 'Temps et Tokens',
-                      description: commentsBoxId != null
+                      description: commentsBoxId != null && widget.isLauncher
                           ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
                           : 'Le temps écoulé depuis le début de la partie.',
                       targetBorderRadius: BorderRadius.circular(8),
@@ -667,7 +674,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                           Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                           const SizedBox(width: 4),
                           Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                          if (commentsBoxId != null) ...[
+                          if (commentsBoxId != null && widget.isLauncher) ...[
                             const SizedBox(width: 8),
                             CoinBillingRing(theme: theme, progress: _coinProgress()),
                             if (_coinsConsumed() != null) ...[
@@ -762,16 +769,18 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  _state.pausedByMe
-                                      ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
-                                      : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
-                                          'name': widget.playerNames[_state.pausedByUserId] ??
-                                              LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                        }),
+                                  _state.pausedByUserId == null
+                                      ? LocaleScope.t(context, 'memory_board_paused_subtitle_depleted')
+                                      : (_state.pausedByMe
+                                          ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
+                                          : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
+                                              'name': widget.playerNames[_state.pausedByUserId] ??
+                                                  LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                            })),
                                   textAlign: TextAlign.center,
                                   style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
                                 ),
-                                if (_state.pausedByMe) ...[
+                                if (_state.pausedByMe || _state.pausedByUserId == null) ...[
                                   const SizedBox(height: 20),
                                   ElevatedButton.icon(
                                     onPressed: () => widget.transport.resume(),
@@ -811,7 +820,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
             partnerUserId: _partnerUserId,
             enabled: true,
             paused: _state.isPaused,
-            forceEnded: _walletDepleted || _state.isPaused,
+            forceEnded: _state.isPaused,
           )
         else if (widget.nearbyComms != null && !_state.finished)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
@@ -820,8 +829,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
           boxId: commentsBoxId,
           sessionType: 'number_hunt',
           sessionId: _sessionId,
-          onDepletedChanged: (v) => setState(() => _walletDepleted = v),
-          onEndGame: _endGameFromWalletDepletion,
         ),
       ],
       ),

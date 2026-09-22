@@ -13,6 +13,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_guide_storage.dart';
+import '../game_guide_notes.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
 import 'memory_emoji_pool.dart';
@@ -188,7 +189,7 @@ class _MemoryGameDifficultyScreenState extends State<MemoryGameDifficultyScreen>
               : MemoryGameDifficultyList(
                   theme: theme,
                   onSelected: _start,
-                  firstTileGuideKey: _firstDifficultyGuideKey,
+                  firstTileGuideKey: _firstDifficultyGuideKey, guideNote: widget.mode == MemoryGameMode.local ? null : kHowToPlayNote,
                 ),
         ),
       ),
@@ -205,8 +206,10 @@ class MemoryGameDifficultyList extends StatelessWidget {
   // Guide pas-à-pas (voir demande utilisateur) — non-null uniquement pour
   // faire apparaître une bulle sur le PREMIER palier de la liste.
   final GlobalKey? firstTileGuideKey;
+  // N.B. ajouté à la bulle du guide (voir game_guide_notes.dart) — null en mode "un seul téléphone".
+  final String? guideNote;
 
-  const MemoryGameDifficultyList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey});
+  const MemoryGameDifficultyList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey, this.guideNote});
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +284,7 @@ class MemoryGameDifficultyList extends StatelessWidget {
     return Showcase(
       key: guideKey,
       title: 'Choisis une difficulté',
-      description: 'Plus il y a de cartes, plus la partie sera longue et difficile.',
+      description: withGuideNote('Plus il y a de cartes, plus la partie sera longue et difficile.', guideNote),
       targetBorderRadius: BorderRadius.circular(20),
       child: tile,
     );

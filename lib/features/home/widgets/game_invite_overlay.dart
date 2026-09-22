@@ -36,10 +36,59 @@ class GameInviteOverlay extends StatelessWidget {
     return AnimatedBuilder(
       animation: GameInviteNotifier.instance,
       builder: (context, _) {
+        // Le binôme vient de taper sur "Rejoindre" : la pop-up a disparu, la
+        // partie se prépare — on l'indique plutôt que de laisser l'écran figé.
+        if (GameInviteNotifier.instance.isJoining) return const _JoiningLoader();
         final invite = GameInviteNotifier.instance.pendingInvite;
         if (invite == null) return const SizedBox.shrink();
         return _GameInviteCard(key: ValueKey(invite.id), invite: invite);
       },
+    );
+  }
+}
+
+/// Voile plein écran avec un chargement, affiché entre le tap sur "Rejoindre"
+/// et l'ouverture de l'écran de jeu (voir GameInviteNotifier.isJoining).
+/// Bloque les taps : pas de double action pendant l'ouverture.
+class _JoiningLoader extends StatelessWidget {
+  const _JoiningLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: Material(
+          color: Colors.black.withValues(alpha: 0.45),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+              decoration: BoxDecoration(
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 20, offset: const Offset(0, 8)),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: CircularProgressIndicator(strokeWidth: 3, color: theme.primary),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Ouverture de la partie…',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: theme.textOnBackground),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -98,6 +147,10 @@ class _GameInviteCardState extends State<_GameInviteCard> {
     if (_responding) return;
     setState(() => _responding = true);
 
+    // "Rejoindre" : le chargement s'allume AVANT que la pop-up disparaisse
+    // (pas de flash sans rien) et reste jusqu'à l'ouverture de l'écran de jeu.
+    if (accept) GameInviteNotifier.instance.setJoining(true);
+
     // Efface le pop-up tout de suite plutôt que d'attendre l'aller-retour
     // réseau (voir GameInviteNotifier.dismissPendingInvite).
     GameInviteNotifier.instance.dismissPendingInvite();
@@ -113,8 +166,19 @@ class _GameInviteCardState extends State<_GameInviteCard> {
         await GameService.instance.declineGameInvite(widget.invite.id);
       }
     } catch (_) {
-      // Best-effort — l'auteur verra de toute façon l'expiration au bout
-      // de 60s si rien n'aboutit (voir GameInviteWaitingScreen).
+      // L'auteur verra de toute façon l'expiration au bout de 60s si rien
+      // n'aboutit (voir GameInviteWaitingScreen). Côté invité·e, on le dit
+      // plutôt que de laisser croire que rien ne s'est passé.
+      if (accept) {
+        final context = AppRouter.navigatorKey.currentContext;
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(content: Text("Impossible de rejoindre la partie. Réessaie dans un instant.")),
+          );
+        }
+      }
+    } finally {
+      if (accept) GameInviteNotifier.instance.setJoining(false);
     }
   }
 

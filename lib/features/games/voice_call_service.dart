@@ -60,6 +60,10 @@ class VoiceCallService {
   bool _negotiationStarted = false;
   Future<void>? _pcFuture;
   Timer? _watchdog;
+  // Diagnostic (voir demande utilisateur : connexion vocale parfois de 30 à 40 s) : heure de début de
+  // la négociation en cours, pour horodater chaque étape dans les journaux.
+  DateTime? _negoStartedAt;
+  String _since() => _negoStartedAt == null ? '?' : '+${DateTime.now().difference(_negoStartedAt!).inMilliseconds} ms';
   // Vrai dès qu'on a été connecté au moins une fois : distingue "on attend"
   // de "connexion perdue, on reconnecte" (voir VoiceCallOverlay).
   bool everConnected = false;
@@ -131,6 +135,9 @@ class VoiceCallService {
     _negotiationStarted = false;
     _pcFuture = null;
     _setStatus(VoiceCallStatus.connecting);
+    // Les serveurs ICE sont demandés TOUT DE SUITE, pendant qu'on attend le binôme, au lieu de l'être au
+    // début de la négociation (jusqu'à 5 s perdues sur le trajet critique, voir demande utilisateur).
+    unawaited(_iceServers().then((_) {}, onError: (_) {}));
     debugPrint('VoiceCall: enable() — envoi voice_ready (partnerReady=$_partnerReady)');
     await GameService.instance.sendVoiceSignal('voice_ready', const {});
     if (_partnerReady) await _maybeStartNegotiation();
@@ -295,6 +302,7 @@ class VoiceCallService {
   Future<void> _maybeStartNegotiation() async {
     if (_pc != null || _negotiationStarted) return; // déjà en cours/connecté
     _negotiationStarted = true;
+    _negoStartedAt = DateTime.now();
     _armWatchdog();
     final isOfferer = myUserId.compareTo(partnerUserId) < 0;
     debugPrint('VoiceCall: _maybeStartNegotiation — isOfferer=$isOfferer');
@@ -326,12 +334,32 @@ class VoiceCallService {
     });
   }
 
+  // Serveurs ICE (STUN + identifiants TURN éphémères) mis de côté pour ne pas les attendre au moment de
+  // négocier. Jamais réutilisés au-delà de 10 min (les identifiants TURN expirent) ; en cas d'échec de la
+  // demande, la suivante repart de zéro.
+  Future<List<Map<String, dynamic>>>? _iceFuture;
+  DateTime? _iceFetchedAt;
+
+  Future<List<Map<String, dynamic>>> _iceServers() {
+    final fetchedAt = _iceFetchedAt;
+    final fresh = _iceFuture != null && fetchedAt != null && DateTime.now().difference(fetchedAt) < const Duration(minutes: 10);
+    if (!fresh) {
+      _iceFetchedAt = DateTime.now();
+      _iceFuture = GameService.instance.fetchIceServers();
+    }
+    final future = _iceFuture!;
+    return future.catchError((Object e) {
+      if (identical(_iceFuture, future)) _iceFuture = null;
+      throw e;
+    });
+  }
+
   // Un seul appelant crée la connexion, les autres attendent la même création.
   Future<void> _ensurePeerConnection() => _pcFuture ??= _createPeerConnection();
 
   Future<void> _createPeerConnection() async {
-    final iceServers = await GameService.instance.fetchIceServers();
-    debugPrint('VoiceCall: iceServers = $iceServers');
+    final iceServers = await _iceServers();
+    debugPrint('VoiceCall: iceServers = $iceServers (${_since()})');
     final pc = await createPeerConnection({'iceServers': iceServers});
     _pc = pc;
 
@@ -346,6 +374,10 @@ class VoiceCallService {
 
     pc.onIceCandidate = (candidate) {
       if (candidate.candidate == null) return;
+      // "typ host" = réseau local, "srflx" = via STUN, "relay" = via le serveur TURN : voir lesquels
+      // apparaissent, et quand, indique si le relais est joignable depuis ce téléphone.
+      final kind = RegExp(r' typ (\w+)').firstMatch(candidate.candidate!)?.group(1) ?? '?';
+      debugPrint('VoiceCall: candidat local $kind (${_since()})');
       unawaited(GameService.instance.sendVoiceSignal('ice_candidate', {
         'candidate': candidate.candidate,
         'sdpMid': candidate.sdpMid,
@@ -369,8 +401,10 @@ class VoiceCallService {
       remoteRenderer.srcObject = null;
       _remoteVideoActiveController.add(false);
     };
+    pc.onIceGatheringState = (state) => debugPrint('VoiceCall: iceGatheringState => $state (${_since()})');
+    pc.onIceConnectionState = (state) => debugPrint('VoiceCall: iceConnectionState => $state (${_since()})');
     pc.onConnectionState = (state) {
-      debugPrint('VoiceCall: connectionState => $state');
+      debugPrint('VoiceCall: connectionState => $state (${_since()})');
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _reconnectTimer?.cancel();

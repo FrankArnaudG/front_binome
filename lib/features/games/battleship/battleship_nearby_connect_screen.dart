@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nearby_connections/nearby_connections.dart';
-import 'package:permission_handler/permission_handler.dart';
 
+import '../nearby/nearby_permissions.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -13,7 +13,6 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
-import '../nearby_billing_tracker.dart';
 import 'battleship_difficulty_screen.dart';
 import 'battleship_placement_screen.dart';
 import 'battleship_transport_nearby.dart';
@@ -45,23 +44,21 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
   String? _error;
   String? _connectedEndpointId;
   bool _isHost = false;
+  // Message à afficher si les permissions/la localisation bloquent (voir NearbyPermissions).
+  String _permissionProblemKey = 'memory_nearby_permission_denied';
   NearbyBattleshipTransport? _transport;
   NearbyComms? _comms;
 
   Future<bool> _ensurePermissions() async {
-    final statuses = await [
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.bluetoothScan,
-      Permission.nearbyWifiDevices,
-      Permission.locationWhenInUse,
-    ].request();
-    return statuses.values.every((s) => s.isGranted || s.isLimited);
+    // Seules les permissions qui existent sur CE téléphone sont demandées (voir NearbyPermissions).
+    final problem = await NearbyPermissions.problemKey();
+    _permissionProblemKey = problem ?? _permissionProblemKey;
+    return problem == null;
   }
 
   Future<void> _startHosting() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
       return;
     }
     setState(() {
@@ -88,7 +85,7 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
 
   Future<void> _startDiscovering() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
       return;
     }
     setState(() {
@@ -184,9 +181,8 @@ class _BattleshipNearbyConnectScreenState extends State<BattleshipNearbyConnectS
 
   void _openPlacement(NearbyBattleshipTransport transport) {
     final box = BoxScope.of(context).currentBox;
-    // Facturation forfaitaire du mode Nearby (voir NearbyBillingTracker/
-    // demande utilisateur) — uniquement dans une vraie Box.
-    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
+    // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+    // telephone" — plus aucun suivi/déclaration de forfait journalier.
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kBattleshipHostRole : kBattleshipGuestRole;
     final partnerRole = _isHost ? kBattleshipGuestRole : kBattleshipHostRole;

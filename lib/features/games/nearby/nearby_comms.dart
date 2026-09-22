@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart' as cam;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:image/image.dart' as img;
 import 'package:nearby_connections/nearby_connections.dart';
@@ -53,6 +54,13 @@ class NearbyComms {
   cam.CameraController? _cameraController;
   bool _sendingVideo = false;
   bool _encodingFrame = false;
+  // Diagnostic (voir demande utilisateur : "si j'active ma vidéo ça n'apparaît pas chez mon
+  // binôme") — compte les images réellement envoyées, pour distinguer dans les journaux "rien n'est
+  // envoyé" de "envoyé mais jamais reçu/affiché en face".
+  int _framesSent = 0;
+  // Même diagnostic côté réception, pour distinguer "jamais envoyé" de
+  // "envoyé mais jamais reçu" dans les journaux du binôme/ami.
+  int _framesReceived = 0;
 
   static const _sampleRate = 16000;
   // Qualité JPEG volontairement basse (voir demande utilisateur : "es-ce
@@ -142,9 +150,15 @@ class NearbyComms {
   Future<bool> startVideo() async {
     if (_sendingVideo) return true;
     try {
-      if (!(await Permission.camera.request()).isGranted) return false;
+      if (!(await Permission.camera.request()).isGranted) {
+        debugPrint('NearbyComms: caméra refusée par les réglages du téléphone');
+        return false;
+      }
       final cameras = await cam.availableCameras();
-      if (cameras.isEmpty) return false;
+      if (cameras.isEmpty) {
+        debugPrint('NearbyComms: aucune caméra disponible sur ce téléphone');
+        return false;
+      }
       final camera = cameras.firstWhere(
         (c) => c.lensDirection == cam.CameraLensDirection.front,
         orElse: () => cameras.first,
@@ -158,9 +172,12 @@ class NearbyComms {
       await controller.initialize();
       _cameraController = controller;
       _sendingVideo = true;
+      _framesSent = 0;
       await controller.startImageStream(_onCameraFrame);
+      debugPrint('NearbyComms: capture caméra démarrée (${camera.lensDirection})');
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('NearbyComms: échec du démarrage de la caméra — $e');
       _sendingVideo = false;
       final controller = _cameraController;
       _cameraController = null;
@@ -198,7 +215,14 @@ class NearbyComms {
         endpointId,
         Uint8List.fromList(utf8.encode(jsonEncode({'type': 'video_frame', 'jpg': base64Encode(jpg)}))),
       );
-    } catch (_) {
+      _framesSent++;
+      // Une fois au démarrage puis de loin en loin (jamais à chaque image, ça inonderait les
+      // journaux) — voir demande utilisateur : diagnostiquer "envoyé mais jamais reçu en face".
+      if (_framesSent == 1 || _framesSent % 30 == 0) {
+        debugPrint('NearbyComms: image vidéo envoyée #$_framesSent (${jpg.length} octets)');
+      }
+    } catch (e) {
+      debugPrint('NearbyComms: échec de l\'envoi de l\'image vidéo #${_framesSent + 1} — $e');
       // Best-effort : une image ratée n'interrompt pas le flux, la
       // suivante arrivera au tour d'après.
     }
@@ -273,6 +297,10 @@ class NearbyComms {
         final b64 = message['jpg'] as String?;
         if (b64 != null) {
           try {
+            _framesReceived++;
+            if (_framesReceived == 1 || _framesReceived % 30 == 0) {
+              debugPrint('NearbyComms: image vidéo reçue #$_framesReceived (${b64.length} caractères b64)');
+            }
             _remoteVideoFrameController.add(base64Decode(b64));
           } catch (_) {
             // Image corrompue/incomplète — ignorée, la suivante arrivera.
@@ -291,5 +319,14 @@ class NearbyComms {
     unawaited(stopVideo());
     unawaited(_recorder.dispose());
     if (_playbackReady) unawaited(FlutterPcmSound.release());
+    // Sans ceci, la connexion Bluetooth/Wifi Direct restait active côté
+    // natif après avoir quitté la partie (voir demande utilisateur : "si je
+    // veux me reconnecter à un autre jeu ou au même jeu, la recherche pour
+    // rejoindre ne donne rien" — seul un redémarrage complet de l'app
+    // libérait la connexion coincée). Un `Nearby()` recréé côté Dart à
+    // l'écran de connexion suivant ne change rien : côté natif la connexion
+    // aux points de terminaison est un état global, pas lié à l'instance
+    // Dart.
+    unawaited(nearby.stopAllEndpoints());
   }
 }

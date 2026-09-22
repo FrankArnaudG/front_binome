@@ -67,7 +67,11 @@ class TicTacToeBoardState {
   });
 
   bool get isMyTurn => currentTurnUserId == myUserId;
-  bool get isPaused => pausedByUserId != null;
+  // pausedAt (pas pausedByUserId) : une pause posée AUTOMATIQUEMENT par un solde épuisé (voir
+  // AuthorizesResume côté serveur) laisse pausedByUserId à NULL — seul pausedAt distingue
+  // fiablement une partie en pause d'une partie qui joue, exactement comme côté serveur
+  // (Session::isPaused()).
+  bool get isPaused => pausedAt != null;
   bool get pausedByMe => pausedByUserId == myUserId;
   bool get iWon => winnerUserId == myUserId;
 

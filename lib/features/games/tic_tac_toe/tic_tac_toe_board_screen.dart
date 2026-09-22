@@ -29,6 +29,7 @@ import '../../shop/wallet_balance_notifier.dart';
 import 'tic_tac_toe_engine.dart';
 import 'tic_tac_toe_transport.dart';
 import 'tic_tac_toe_transport_remote.dart';
+import 'tic_tac_toe_transport_local.dart';
 
 /// Étapes du guide pas-à-pas du plateau (voir doc de _BoardGuideStep dans
 /// memory_game_board_screen.dart pour le principe général). Une seule
@@ -68,6 +69,12 @@ class TicTacToeBoardScreen extends StatefulWidget {
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
   final Future<void> Function(BuildContext context)? onRematch;
+  // Celui qui a lancé la partie (voir demande utilisateur) : seul lui voit "Rejouer" et le
+  // décompte de Tokens (c'est son temps qui est facturé). L'autre joueur ne voit que "Quitter".
+  final bool isLauncher;
+  // "Quitter" depuis la feuille de score : par défaut referme le jeu ; l'invité·e d'une partie à
+  // distance y ouvre le choix de la difficulté (voir game_invite_navigation.dart).
+  final Future<void> Function(BuildContext context)? onQuit;
   final NearbyComms? nearbyComms;
   final String? nearbyMyName;
   final String? nearbyPartnerName;
@@ -80,6 +87,8 @@ class TicTacToeBoardScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.isLauncher = true,
+    this.onQuit,
     this.nearbyComms,
     this.nearbyMyName,
     this.nearbyPartnerName,
@@ -107,9 +116,6 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   // distance" (voir _maybeShowScoreboard) — seul ce second cas doit
   // afficher la pop-up dédiée plutôt que de rester silencieux.
   bool _leavingMyself = false;
-  // Solde de pièces du couple épuisé en cours de partie (voir
-  // GameWalletGuard/demande utilisateur) — coupe le micro/vidéo en cours.
-  bool _walletDepleted = false;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -123,6 +129,11 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   List<String?>? _highlightBoard;
   List<int>? _highlightedLine;
   Timer? _highlightTimer;
+  // Message « Point pour [prénom] ! » / « Tu as marqué un point ! » affiché AU CENTRE du plateau (voir
+  // demande utilisateur : l'ancienne bannière en bas d'écran passait inaperçue).
+  ({String text, bool mine})? _scoreBanner;
+  int _scoreBannerSeq = 0;
+  Timer? _scoreBannerTimer;
 
   // Guide pas-à-pas (voir doc de classe de _TicTacToeGuideStep et demande
   // utilisateur : "prends le même soin pour les autres jeux") — mêmes
@@ -168,7 +179,13 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     if (_commentsBoxId != null) _loadEconomyRate();
   }
 
+  /// Le guide "Comment jouer" n'existe que dans le mode "Présentiel, un seul téléphone" (voir demande
+  /// utilisateur) : pas de lancement automatique ni de bouton "?" en partie à distance ou en présentiel
+  /// connecté. Les guides qui y mènent renvoient vers ce mode (voir game_guide_notes.dart).
+  bool get _guideAvailable => widget.transport is LocalTicTacToeTransport;
+
   Future<void> _maybeStartGuide() async {
+    if (!_guideAvailable) return;
     final seen = await GameGuideStorage.instance.hasSeen(widget.user.id, _boardGuideKey);
     if (seen || !mounted) return;
     GameGuideStorage.instance.markSeen(widget.user.id, _boardGuideKey);
@@ -399,6 +416,14 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
   void _onState(TicTacToeBoardState state) {
     if (!mounted) return;
     final justScored = state.scoredLine != null && state.preScatterBoard != null;
+    // Qui vient de marquer : celui dont le score a augmenté par rapport à l'état affiché jusque-là.
+    // Sans hausse (même état reçu deux fois : réponse puis évènement), on ne ré-annonce rien.
+    String? scorerId;
+    if (justScored) {
+      for (final entry in state.scoresByUser.entries) {
+        if (entry.value > (_state.scoresByUser[entry.key] ?? 0)) scorerId = entry.key;
+      }
+    }
 
     setState(() {
       _state = state;
@@ -411,7 +436,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     });
 
     if (justScored) {
-      _showScoreToast();
+      if (scorerId != null) _showScoreBanner(scorerId, mine: scorerId == state.myUserId);
       _highlightTimer?.cancel();
       _highlightTimer = Timer(_kScoreHighlightDuration, () {
         if (!mounted) return;
@@ -467,16 +492,22 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     if (exit == true && mounted) Navigator.of(context).pop();
   }
 
-  void _showScoreToast() {
+  void _showScoreBanner(String scorerId, {required bool mine}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(LocaleScope.t(context, 'ttt_point_scored')),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    final text = mine
+        ? LocaleScope.t(context, 'ttt_you_scored')
+        : LocaleScope.t(context, 'ttt_point_for', {
+            'name': widget.playerNames[scorerId] ?? LocaleScope.t(context, 'memory_board_partner_fallback'),
+          });
+    _scoreBannerTimer?.cancel();
+    setState(() {
+      _scoreBannerSeq++;
+      _scoreBanner = (text: text, mine: mine);
+    });
+    // Un peu moins longtemps que la surbrillance de la ligne (voir _kScoreHighlightDuration).
+    _scoreBannerTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _scoreBanner = null);
+    });
   }
 
   /// Même dialogue pour le bouton drapeau ET la flèche retour (voir
@@ -507,15 +538,18 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
       state: _state,
       playerNames: widget.playerNames,
       playerAvatars: widget.playerAvatars,
-      allowRematch: widget.onRematch != null,
+      allowRematch: widget.isLauncher && widget.onRematch != null,
     );
-    if (rematch == true && widget.onRematch != null && mounted) {
+    if (rematch == true && widget.isLauncher && widget.onRematch != null && mounted) {
       await widget.onRematch!(context);
     } else if (mounted) {
-      // Voir demande utilisateur : fermer ce modal — croix, glisser, ou
-      // taper à côté, peu importe le geste — doit refermer le jeu et
-      // revenir à la liste, comme un retour classique.
-      Navigator.of(context).pop();
+      // "Quitter", ou tap à côté de la feuille (voir demande utilisateur) : referme le jeu
+      // (retour au choix de la difficulté pour l'invité·e, voir onQuit).
+      if (widget.onQuit != null) {
+        await widget.onQuit!(context);
+      } else {
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -588,6 +622,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
     ShowcaseView.get().removeOnDismissCallback(_onGuideDismissed);
     _clockTimer?.cancel();
     _highlightTimer?.cancel();
+    _scoreBannerTimer?.cancel();
     widget.transport.dispose();
     widget.nearbyComms?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -610,14 +645,6 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
 
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
-  Future<void> _endGameFromWalletDepletion() async {
-    _leavingMyself = true;
-    await widget.transport.abandon();
-    // Voir demande utilisateur : "ça doit être instantané".
-    if (_commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
-    if (mounted) Navigator.of(context).pop();
-  }
-
   String get _partnerUserId =>
       widget.playerNames.keys.firstWhere((id) => id != widget.user.id, orElse: () => widget.user.id);
 
@@ -680,13 +707,13 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
               child: _state.isPaused
                   ? IconButton(
                       icon: const Icon(Icons.play_circle_outline),
-                      tooltip: _state.pausedByMe
+                      tooltip: (_state.pausedByMe || _state.pausedByUserId == null)
                           ? LocaleScope.t(context, 'memory_board_resume_tooltip')
                           : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
                               'name': widget.playerNames[_state.pausedByUserId] ??
                                   LocaleScope.t(context, 'memory_board_partner_fallback'),
                             }),
-                      onPressed: _state.pausedByMe ? () => widget.transport.resume() : null,
+                      onPressed: (_state.pausedByMe || _state.pausedByUserId == null) ? () => widget.transport.resume() : null,
                     )
                   : IconButton(
                       icon: const Icon(Icons.pause_circle_outline),
@@ -714,13 +741,13 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
           // fois qu'elle a disparu (voir demande utilisateur : "comment
           // rejouer ou quitter à partir de là" — quitter reste la flèche
           // retour standard, déjà là).
-          if (_state.finished && widget.onRematch != null)
+          if (_state.finished && widget.isLauncher && widget.onRematch != null)
             IconButton(
               icon: const Icon(Icons.replay_rounded),
               tooltip: LocaleScope.t(context, 'memory_score_rematch'),
               onPressed: () => widget.onRematch!(context),
             ),
-          if (!_state.finished)
+          if (!_state.finished && _guideAvailable)
             IconButton(icon: const Icon(Icons.help_outline_rounded), tooltip: 'Revoir le guide', onPressed: _startGuide),
         ],
       ),
@@ -761,7 +788,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                     Showcase(
                       key: _coinsGuideKey,
                       title: 'Temps et Tokens',
-                      description: commentsBoxId != null
+                      description: commentsBoxId != null && widget.isLauncher
                           ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
                           : 'Le temps écoulé depuis le début de la partie.',
                       targetBorderRadius: BorderRadius.circular(8),
@@ -770,7 +797,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                           Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                           const SizedBox(width: 4),
                           Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                          if (commentsBoxId != null) ...[
+                          if (commentsBoxId != null && widget.isLauncher) ...[
                             const SizedBox(width: 8),
                             CoinBillingRing(theme: theme, progress: _coinProgress()),
                             if (_coinsConsumed() != null) ...[
@@ -947,16 +974,18 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
-                                        _state.pausedByMe
-                                            ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
-                                            : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
-                                                'name': widget.playerNames[_state.pausedByUserId] ??
-                                                    LocaleScope.t(context, 'memory_board_partner_fallback'),
-                                              }),
+                                        _state.pausedByUserId == null
+                                            ? LocaleScope.t(context, 'memory_board_paused_subtitle_depleted')
+                                            : (_state.pausedByMe
+                                                ? LocaleScope.t(context, 'memory_board_paused_subtitle_me')
+                                                : LocaleScope.t(context, 'memory_board_paused_subtitle_partner', {
+                                                    'name': widget.playerNames[_state.pausedByUserId] ??
+                                                        LocaleScope.t(context, 'memory_board_partner_fallback'),
+                                                  })),
                                         textAlign: TextAlign.center,
                                         style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
                                       ),
-                                      if (_state.pausedByMe) ...[
+                                      if (_state.pausedByMe || _state.pausedByUserId == null) ...[
                                         const SizedBox(height: 20),
                                         ElevatedButton.icon(
                                           onPressed: () => widget.transport.resume(),
@@ -970,6 +999,31 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
                                 ),
                               ),
                             ),
+                          // Point marqué : étiquette au CENTRE du plateau, par-dessus la grille, sans
+                          // jamais bloquer les touches (IgnorePointer).
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: Center(
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 260),
+                                  switchInCurve: Curves.easeOutBack,
+                                  switchOutCurve: Curves.easeIn,
+                                  transitionBuilder: (child, animation) => FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(scale: Tween<double>(begin: 0.7, end: 1).animate(animation), child: child),
+                                  ),
+                                  child: _scoreBanner == null
+                                      ? const SizedBox.shrink(key: ValueKey('score-banner-none'))
+                                      : _TicTacToeScoreBanner(
+                                          key: ValueKey(_scoreBannerSeq),
+                                          theme: theme,
+                                          text: _scoreBanner!.text,
+                                          mine: _scoreBanner!.mine,
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -999,7 +1053,7 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
             partnerUserId: _partnerUserId,
             enabled: true,
             paused: _state.isPaused,
-            forceEnded: _walletDepleted || _state.isPaused,
+            forceEnded: _state.isPaused,
           )
         else if (widget.nearbyComms != null && !_state.finished)
           NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
@@ -1008,8 +1062,6 @@ class _TicTacToeBoardScreenState extends State<TicTacToeBoardScreen> {
           boxId: commentsBoxId,
           sessionType: 'tic_tac_toe',
           sessionId: _sessionId,
-          onDepletedChanged: (v) => setState(() => _walletDepleted = v),
-          onEndGame: _endGameFromWalletDepletion,
         ),
       ],
       ),
@@ -1088,6 +1140,52 @@ class _TicTacToePlayerChip extends StatelessWidget {
             style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w800, color: theme.primary),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Étiquette « Point pour [prénom] ! » / « Tu as marqué un point ! » posée au centre du plateau. Celui
+/// qui marque la voit en couleur pleine (dégradé de la palette, texte blanc) ; l'adversaire la voit sur
+/// fond de carte, avec le nom de celui qui a marqué. Légèrement translucide pour laisser deviner la
+/// ligne qui s'illumine dessous.
+class _TicTacToeScoreBanner extends StatelessWidget {
+  final ThemePalette theme;
+  final String text;
+  final bool mine;
+
+  const _TicTacToeScoreBanner({super.key, required this.theme, required this.text, required this.mine});
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = mine ? Colors.white : theme.textOnBackground;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: mine ? LinearGradient(colors: [theme.primary, theme.secondary]) : null,
+          color: mine ? null : theme.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: mine ? Colors.white.withValues(alpha: 0.55) : theme.primary.withValues(alpha: 0.4), width: 1.5),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 22, offset: const Offset(0, 8)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.emoji_events_rounded, size: 22, color: mine ? Colors.white : theme.primary),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: foreground),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

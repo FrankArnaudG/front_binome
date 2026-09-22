@@ -108,6 +108,20 @@ class AuthService {
     }
   }
 
+  /// Le serveur a révoqué la session de cet appareil (déconnecté depuis un autre téléphone) : nettoyage
+  /// LOCAL uniquement — aucun appel réseau, le jeton n'existe plus côté serveur.
+  Future<void> handleSessionRevoked() async {
+    DeliveryAckService.instance.stop();
+    await TokenStorage.instance.clear();
+    await LocalCache.instance.clear();
+    ContentService.instance.clearMemoryCache();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // best effort
+    }
+  }
+
   Future<void> signOut() async {
     await PushNotificationService.instance.unregisterToken();
     DeliveryAckService.instance.stop();

@@ -34,6 +34,9 @@ class BattleshipPlacementScreen extends StatefulWidget {
   // mais doit le conserver le temps de construire le plateau de combat
   // qui, lui, affiche le bouton "Rejouer".
   final Future<void> Function(BuildContext context)? onRematch;
+  // Simples relais vers BattleshipBoardScreen (voir ses commentaires).
+  final bool isLauncher;
+  final Future<void> Function(BuildContext context)? onQuit;
   // Simple relais vers BattleshipBoardScreen (voir NearbyComms) — cet écran
   // de placement n'affiche pas de chat lui-même, il transmet juste le
   // canal jusqu'au plateau de combat.
@@ -49,6 +52,8 @@ class BattleshipPlacementScreen extends StatefulWidget {
     required this.playerNames,
     required this.playerAvatars,
     this.onRematch,
+    this.isLauncher = true,
+    this.onQuit,
     this.nearbyComms,
     this.nearbyMyName,
     this.nearbyPartnerName,
@@ -282,6 +287,8 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
               playerNames: widget.playerNames,
               playerAvatars: widget.playerAvatars,
               onRematch: widget.onRematch,
+              isLauncher: widget.isLauncher,
+              onQuit: widget.onQuit,
             ),
           ),
         );
@@ -304,6 +311,8 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
         playerNames: widget.playerNames,
         playerAvatars: widget.playerAvatars,
         onRematch: widget.onRematch,
+        isLauncher: widget.isLauncher,
+        onQuit: widget.onQuit,
         nearbyComms: widget.nearbyComms,
         nearbyMyName: widget.nearbyMyName,
         nearbyPartnerName: widget.nearbyPartnerName,

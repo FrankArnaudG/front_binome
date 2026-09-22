@@ -8,7 +8,7 @@ import 'package:showcaseview/showcaseview.dart';
 import '../nearby/nearby_comms.dart';
 
 /// Bouton "voix et vidéo en direct" pour le mode présentiel connecté (voir
-/// NearbyComms) — mic push-to-talk et caméra à bascule, même
+/// NearbyComms) — mic et caméra tous deux à bascule (tap pour activer/désactiver), même
 /// principe/disposition que VoiceCallOverlay, mais SANS WebRTC ni serveur
 /// de signalisation : voix et vidéo transitent uniquement par la connexion
 /// Bluetooth/Wifi Direct déjà utilisée par le jeu (voir demande
@@ -63,15 +63,23 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
     // directement sur `paused` : pas de connexion à "raccrocher" comme en
     // WebRTC, juste à arrêter la capture locale.
     if (widget.paused && !oldWidget.paused) {
-      if (_talking) unawaited(_onTalkStop());
+      if (_talking) unawaited(_onToggleTalk());
       if (_cameraOn) unawaited(_toggleCamera());
     }
   }
 
-  Future<void> _onTalkStart() async {
-    if (widget.paused || _starting || _talking) return;
+  // Bascule (tap pour activer/désactiver), comme le bouton caméra — remplace
+  // l'ancien mode "maintenir appuyé" suite à demande utilisateur : "je dois
+  // cliquer plusieurs fois pour que ça s'active".
+  Future<void> _onToggleTalk() async {
+    if (widget.paused || _starting) return;
     final comms = widget.comms;
     if (comms == null) return;
+    if (_talking) {
+      setState(() => _talking = false);
+      await comms.stopTalking();
+      return;
+    }
     setState(() => _starting = true);
     final ok = await comms.startTalking();
     if (!mounted) return;
@@ -79,12 +87,6 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
       _starting = false;
       _talking = ok;
     });
-  }
-
-  Future<void> _onTalkStop() async {
-    if (!_talking) return;
-    setState(() => _talking = false);
-    await widget.comms?.stopTalking();
   }
 
   Future<void> _toggleCamera() async {
@@ -143,18 +145,19 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
               _wrapGuide(
                 widget.micGuideKey,
                 title: 'Active le micro',
-                description: 'Maintiens ce bouton appuyé pour parler à ton binôme pendant la partie.',
+                description: 'Appuie sur ce bouton pour activer ou couper le micro pendant la partie.',
                 child: GestureDetector(
-                  onTapDown: (_) => _onTalkStart(),
-                  onTapUp: (_) => _onTalkStop(),
-                  onTapCancel: _onTalkStop,
+                  onTap: _onToggleTalk,
                   child: Container(
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
+                      // Vert quand actif — même convention que le bouton caméra juste en dessous et
+                      // que le micro du mode à distance (voir VoiceCallOverlay._colorFor). Corrigé
+                      // suite à demande utilisateur : "normalement cest en vert" (c'était en rouge).
                       color: widget.paused
                           ? Colors.grey.withValues(alpha: 0.5)
-                          : (_talking ? Colors.redAccent : Colors.black.withValues(alpha: 0.55)),
+                          : (_talking ? Colors.greenAccent.shade400.withValues(alpha: 0.9) : Colors.black.withValues(alpha: 0.55)),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(

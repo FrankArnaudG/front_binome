@@ -32,6 +32,25 @@ class GameInviteNotifier extends ChangeNotifier {
 
   final _resolutionControllers = <String, StreamController<GameInvite>>{};
 
+  // Vrai entre le tap sur "Rejoindre" et l'ouverture de l'écran de jeu (voir
+  // demande utilisateur : afficher un chargement côté invité·e pendant que la
+  // partie s'ouvre). Le pop-up disparaît dès le tap, sans ça l'écran restait
+  // figé le temps de l'aller-retour réseau. Garde-fou : jamais plus de 25 s,
+  // même si l'ouverture reste bloquée.
+  bool _joining = false;
+  bool get isJoining => _joining;
+  Timer? _joiningTimeout;
+
+  void setJoining(bool value) {
+    _joiningTimeout?.cancel();
+    if (value) {
+      _joiningTimeout = Timer(const Duration(seconds: 25), () => setJoining(false));
+    }
+    if (_joining == value) return;
+    _joining = value;
+    notifyListeners();
+  }
+
   /// À appeler une fois l'utilisateur connu (voir AppRouter.routeAfterAuth)
   /// — s'abonne/se réabonne tout seul au bon canal Box au fil des
   /// changements (jumelage, déjumelage, changement de compte...).

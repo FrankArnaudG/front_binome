@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,8 +15,10 @@ import '../../theme/themed_background.dart';
 import '../../widgets/empty_state.dart';
 import 'blocked_users_screen.dart';
 import 'friend_challenge_support.dart';
+import 'friends_cache.dart';
 import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
+import 'memory_game/memory_game_nearby_connect_screen.dart';
 
 /// Liste des "amis de jeu" (voir FriendChallengeScreen) — se constitue
 /// automatiquement dès qu'un défi hors-Box est accepté (voir
@@ -39,13 +43,44 @@ class _FriendsListScreenState extends State<FriendsListScreen> {
   @override
   void initState() {
     super.initState();
-    _friendsFuture = GameService.instance.fetchFriends();
+    _friendsFuture = _fetchAndCacheFriends();
+  }
+
+  // Copie locale mémorisée à chaque chargement réussi (voir FriendsCache et demande utilisateur :
+  // choisir un ami à défier en Bluetooth doit rester possible SANS connexion internet).
+  Future<List<PublicProfile>> _fetchAndCacheFriends() async {
+    final friends = await GameService.instance.fetchFriends();
+    unawaited(FriendsCache.save(friends));
+    return friends;
   }
 
   Future<void> _refresh() async {
-    final future = GameService.instance.fetchFriends();
+    final future = _fetchAndCacheFriends();
     setState(() => _friendsFuture = future);
     await future;
+  }
+
+  /// Défier CET ami précis en Bluetooth (voir demande utilisateur) — Jeu de Mémoire uniquement pour
+  /// l'instant (voir MemoryGameNearbyConnectScreen.targetFriend), les 6 autres jeux suivront une fois
+  /// validé sur de vrais téléphones.
+  Future<void> _challengeFriendNearby(PublicProfile friend) async {
+    if (_challenging) return;
+    setState(() => _challenging = true);
+    try {
+      final games = await GameService.instance.fetchGames();
+      final memoryGame = games.where((g) => g.isMemoryGame).firstOrNull;
+      if (memoryGame == null || !mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MemoryGameNearbyConnectScreen(game: memoryGame, user: widget.user, targetFriend: friend),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _challenging = false);
+    }
   }
 
   Future<void> _challengeFriend(PublicProfile friend) async {
@@ -67,6 +102,9 @@ class _FriendsListScreenState extends State<FriendsListScreen> {
     );
     if (game == null || !mounted) return;
 
+    // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
+    // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici (voir demande
+    // utilisateur : "à distance c'est facturé en fonction du temps de jeu, comme dans la Box").
     setState(() => _challenging = true);
     try {
       final invite = await GameService.instance.createGameInvite(
@@ -193,6 +231,13 @@ class _FriendsListScreenState extends State<FriendsListScreen> {
                                       friend.fullName,
                                       style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
                                     ),
+                                  ),
+                                  // Défier en Bluetooth, sans internet (voir demande utilisateur) — un
+                                  // bouton à part : le tap sur toute la ligne reste le défi à distance.
+                                  IconButton(
+                                    icon: Icon(Icons.bluetooth_rounded, color: theme.primary, size: 20),
+                                    tooltip: 'Défier en Bluetooth (sans internet)',
+                                    onPressed: _challenging ? null : () => _challengeFriendNearby(friend),
                                   ),
                                   Icon(Icons.sports_esports_rounded, color: theme.textOnBackgroundMuted, size: 20),
                                 ],

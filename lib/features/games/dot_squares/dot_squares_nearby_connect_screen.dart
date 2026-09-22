@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nearby_connections/nearby_connections.dart';
-import 'package:permission_handler/permission_handler.dart';
 
+import '../nearby/nearby_permissions.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
@@ -13,7 +13,6 @@ import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
-import '../nearby_billing_tracker.dart';
 import 'dot_squares_board_screen.dart';
 import 'dot_squares_difficulty_screen.dart';
 import 'dot_squares_engine.dart';
@@ -44,23 +43,21 @@ class _DotSquaresNearbyConnectScreenState extends State<DotSquaresNearbyConnectS
   String? _error;
   String? _connectedEndpointId;
   bool _isHost = false;
+  // Message à afficher si les permissions/la localisation bloquent (voir NearbyPermissions).
+  String _permissionProblemKey = 'memory_nearby_permission_denied';
   NearbyDotSquaresTransport? _transport;
   NearbyComms? _comms;
 
   Future<bool> _ensurePermissions() async {
-    final statuses = await [
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.bluetoothScan,
-      Permission.nearbyWifiDevices,
-      Permission.locationWhenInUse,
-    ].request();
-    return statuses.values.every((s) => s.isGranted || s.isLimited);
+    // Seules les permissions qui existent sur CE téléphone sont demandées (voir NearbyPermissions).
+    final problem = await NearbyPermissions.problemKey();
+    _permissionProblemKey = problem ?? _permissionProblemKey;
+    return problem == null;
   }
 
   Future<void> _startHosting() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
       return;
     }
     setState(() {
@@ -87,7 +84,7 @@ class _DotSquaresNearbyConnectScreenState extends State<DotSquaresNearbyConnectS
 
   Future<void> _startDiscovering() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
       return;
     }
     setState(() {
@@ -182,7 +179,8 @@ class _DotSquaresNearbyConnectScreenState extends State<DotSquaresNearbyConnectS
 
   void _openBoard(NearbyDotSquaresTransport transport) {
     final box = BoxScope.of(context).currentBox;
-    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
+    // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+    // telephone" — plus aucun suivi/déclaration de forfait journalier.
     final partner = box?.partnerOf(widget.user.id);
     final myRole = _isHost ? kDotSquaresHostRole : kDotSquaresGuestRole;
     final partnerRole = _isHost ? kDotSquaresGuestRole : kDotSquaresHostRole;

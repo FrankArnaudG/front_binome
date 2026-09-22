@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import 'api_config.dart';
 import 'server_clock.dart';
@@ -81,16 +82,16 @@ class ApiClient {
     try {
       switch (method) {
         case 'GET':
-          response = await http.get(uri, headers: headers).timeout(timeout);
+          response = await _get(uri, headers, timeout);
           break;
         case 'POST':
-          response = await http.post(uri, headers: headers, body: encodedBody).timeout(timeout);
+          response = await _client.post(uri, headers: headers, body: encodedBody).timeout(timeout);
           break;
         case 'PUT':
-          response = await http.put(uri, headers: headers, body: encodedBody).timeout(timeout);
+          response = await _client.put(uri, headers: headers, body: encodedBody).timeout(timeout);
           break;
         case 'DELETE':
-          response = await http.delete(uri, headers: headers, body: encodedBody).timeout(timeout);
+          response = await _client.delete(uri, headers: headers, body: encodedBody).timeout(timeout);
           break;
       }
     } on ApiException {
@@ -99,8 +100,38 @@ class ApiClient {
       throw _networkErrorToApiException(e);
     }
 
+    // Jeton refusé par le serveur (déconnecté à distance depuis un autre appareil, voir « Déconnecter
+    // les autres appareils ») : l'écran doit revenir à la connexion au lieu de rester affiché comme
+    // connecté. Jamais pour les appels de déconnexion eux-mêmes.
+    if (response.statusCode == 401 && token != null && !path.startsWith('/auth/logout') && !path.startsWith('/auth/device-tokens')) {
+      unawaited(onSessionRevoked?.call());
+    }
+
     return _decode(response);
   }
+
+  // Client HTTP PARTAGÉ : les fonctions http.get/http.post ouvraient une connexion neuve (TCP + TLS,
+  // plusieurs allers-retours réseau) à CHAQUE appel. Sur un réseau mobile à forte latence, une connexion
+  // vocale (serveurs ICE, offre, réponse, un appel par candidat réseau) perdait ainsi 30 à 40 secondes
+  // (voir demande utilisateur). On réutilise désormais la même connexion ; inactive plus de 20 s elle est
+  // fermée, pour ne pas garder un lien devenu caduc après un changement de réseau.
+  static final http.Client _client = IOClient(HttpClient()..idleTimeout = const Duration(seconds: 20));
+
+  /// GET avec une seule nouvelle tentative si la connexion réutilisée était devenue caduque (jamais pour
+  /// un envoi : rejouer un POST pourrait le dupliquer).
+  Future<http.Response> _get(Uri uri, Map<String, String> headers, Duration timeout) async {
+    try {
+      return await _client.get(uri, headers: headers).timeout(timeout);
+    } on TimeoutException {
+      rethrow;
+    } catch (_) {
+      return await _client.get(uri, headers: headers).timeout(timeout);
+    }
+  }
+
+  /// Appelé (une fois à la fois) quand le serveur refuse le jeton de cet appareil — branché par
+  /// AppShell, donc actif uniquement pendant qu'un compte est connecté.
+  static Future<void> Function()? onSessionRevoked;
 
   /// Une panne réseau (serveur injoignable, DNS, timeout...) lève une
   /// exception BRUTE (SocketException/TimeoutException/ClientException),

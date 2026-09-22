@@ -3,17 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nearby_connections/nearby_connections.dart';
-import 'package:permission_handler/permission_handler.dart';
 
+import '../nearby/nearby_identity.dart';
+import '../nearby/nearby_permissions.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
+import '../../../models/public_profile.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
-import '../nearby_billing_tracker.dart';
 import 'memory_game_board_screen.dart';
 import 'memory_game_difficulty_screen.dart';
 import 'memory_game_transport_nearby.dart';
@@ -24,11 +25,17 @@ const _kNearbyServiceId = 'app.binome.memory_game';
 /// (voir NearbyMemoryGameTransport) puis, une fois connecté, l'hôte choisit
 /// la difficulté (l'invité attend simplement — le plateau lui arrive dans
 /// le message `init`).
+///
+/// [targetFriend] : non-null pour un défi à UN AMI PRÉCIS (voir demande utilisateur), au lieu du
+/// binôme habituel — dans les deux cas, seule une connexion dont l'identité annoncée correspond
+/// exactement à la personne recherchée est acceptée (voir NearbyIdentity), jamais le premier appareil
+/// trouvé : sans ça, un binôme ET un ami tous deux à portée en même temps pouvaient se mélanger.
 class MemoryGameNearbyConnectScreen extends StatefulWidget {
   final Game game;
   final AppUser user;
+  final PublicProfile? targetFriend;
 
-  const MemoryGameNearbyConnectScreen({super.key, required this.game, required this.user});
+  const MemoryGameNearbyConnectScreen({super.key, required this.game, required this.user, this.targetFriend});
 
   @override
   State<MemoryGameNearbyConnectScreen> createState() => _MemoryGameNearbyConnectScreenState();
@@ -42,21 +49,35 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
   String? _error;
   String? _connectedEndpointId;
   bool _isHost = false;
+  // Message à afficher si les permissions/la localisation bloquent (voir NearbyPermissions).
+  String _permissionProblemKey = 'memory_nearby_permission_denied';
 
   Future<bool> _ensurePermissions() async {
-    final statuses = await [
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.bluetoothScan,
-      Permission.nearbyWifiDevices,
-      Permission.locationWhenInUse,
-    ].request();
-    return statuses.values.every((s) => s.isGranted || s.isLimited);
+    // Seules les permissions qui existent sur CE téléphone sont demandées (voir NearbyPermissions).
+    final problem = await NearbyPermissions.problemKey();
+    _permissionProblemKey = problem ?? _permissionProblemKey;
+    return problem == null;
+  }
+
+  /// Identifiant de la SEULE personne avec qui cette recherche doit aboutir — le binôme (résolu via
+  /// BoxScope, comme avant) ou l'ami précis choisi avant d'ouvrir cet écran (voir [widget.targetFriend]
+  /// et demande utilisateur : "aussi si je veux jouer avec mon binôme les amis autour sont ignorés").
+  /// `null` seulement si le mode binôme est demandé sans binôme connu (Box sans partenaire) — l'écran
+  /// affiche alors l'erreur générique existante plutôt que de chercher n'importe qui.
+  String? _expectedUserId() {
+    final friend = widget.targetFriend;
+    if (friend != null) return friend.id;
+    final box = BoxScope.of(context).currentBox;
+    return box?.partnerOf(widget.user.id)?.id;
   }
 
   Future<void> _startHosting() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
+      return;
+    }
+    if (_expectedUserId() == null) {
+      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_start_host_error'));
       return;
     }
     setState(() {
@@ -67,7 +88,7 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
 
     try {
       await _nearby.startAdvertising(
-        widget.user.prenom,
+        NearbyIdentity.encode(widget.user.id, widget.user.prenom),
         Strategy.P2P_POINT_TO_POINT,
         serviceId: _kNearbyServiceId,
         onConnectionInitiated: _onConnectionInitiated,
@@ -83,7 +104,12 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
 
   Future<void> _startDiscovering() async {
     if (!await _ensurePermissions()) {
-      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_permission_denied'));
+      if (mounted) setState(() => _error = LocaleScope.t(context, _permissionProblemKey));
+      return;
+    }
+    final expectedUserId = _expectedUserId();
+    if (expectedUserId == null) {
+      if (mounted) setState(() => _error = LocaleScope.t(context, 'memory_nearby_start_discover_error'));
       return;
     }
     setState(() {
@@ -94,12 +120,17 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
 
     try {
       await _nearby.startDiscovery(
-        widget.user.prenom,
+        NearbyIdentity.encode(widget.user.id, widget.user.prenom),
         Strategy.P2P_POINT_TO_POINT,
         serviceId: _kNearbyServiceId,
         onEndpointFound: (endpointId, endpointName, serviceId) {
+          // Ignoré si ce n'est pas la personne recherchée — voir doc de classe. Un appareil trop
+          // ancien (avant cette vérification, qui ne diffuse encore que son prénom) est traité comme
+          // non identifiable, donc jamais accepté non plus.
+          final identity = NearbyIdentity.decode(endpointName);
+          if (identity == null || identity.userId != expectedUserId) return;
           _nearby.requestConnection(
-            widget.user.prenom,
+            NearbyIdentity.encode(widget.user.id, widget.user.prenom),
             endpointId,
             onConnectionInitiated: _onConnectionInitiated,
             onConnectionResult: _onConnectionResult,
@@ -116,8 +147,15 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
   }
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
-    // Confiance de couple : acceptation automatique, pas de code PIN à
-    // saisir (voir le plan).
+    // Voir doc de classe : n'accepte QUE si l'identité annoncée par l'appareil qui se connecte
+    // correspond exactement à la personne recherchée — sinon on la refuse explicitement (voir
+    // Nearby.rejectConnection) et on continue d'attendre/chercher la bonne personne.
+    final identity = NearbyIdentity.decode(info.endpointName);
+    final expectedUserId = _expectedUserId();
+    if (identity == null || expectedUserId == null || identity.userId != expectedUserId) {
+      unawaited(_nearby.rejectConnection(endpointId));
+      return;
+    }
     _comms = NearbyComms(nearby: _nearby, endpointId: endpointId);
     _nearby.acceptConnection(
       endpointId,
@@ -183,9 +221,12 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
   }
 
   void _openBoard(NearbyMemoryGameTransport transport) {
-    final box = BoxScope.of(context).currentBox;
-    if (box != null) NearbyBillingTracker.instance.markPlayedToday(box.id);
-    final partner = box?.partnerOf(widget.user.id);
+    final friend = widget.targetFriend;
+    // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+    // telephone" — que ce soit avec le binôme ou avec un ami, plus aucun suivi/déclaration de forfait
+    // journalier (voir NearbyBillingTracker/FriendChallengeNearbyBillingTracker, plus jamais appelés).
+    final partnerName = friend?.prenom ?? BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.prenom;
+    final partnerAvatar = friend?.avatar ?? BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.avatar;
     final myRole = _isHost ? kNearbyHostRole : kNearbyGuestRole;
     final partnerRole = _isHost ? kNearbyGuestRole : kNearbyHostRole;
 
@@ -195,17 +236,22 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
           game: widget.game,
           user: widget.user,
           transport: transport,
-          playerNames: {myRole: widget.user.prenom, partnerRole: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback')},
-          playerAvatars: {myRole: widget.user.avatar, partnerRole: partner?.avatar},
+          playerNames: {myRole: widget.user.prenom, partnerRole: partnerName ?? LocaleScope.t(context, 'memory_score_player_fallback')},
+          playerAvatars: {myRole: widget.user.avatar, partnerRole: partnerAvatar},
           nearbyComms: _comms,
           nearbyMyName: widget.user.prenom,
-          nearbyPartnerName: partner?.prenom ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+          nearbyPartnerName: partnerName ?? LocaleScope.t(context, 'memory_score_player_fallback'),
         ),
       ),
     );
 
-    if (_isHost) {
-      unawaited(_postResultWhenFinished(transport, partner?.id));
+    // Résultat enregistré côté serveur UNIQUEMENT pour le binôme (voir MemoryGameController::
+    // recordResult, qui exige une Box avec partenaire) — un défi d'ami en Bluetooth n'a pas encore ce
+    // mécanisme côté serveur ; la partie se joue normalement, seules les statistiques ne sont pas
+    // encore conservées pour ce cas précis.
+    if (_isHost && friend == null) {
+      final partnerId = BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.id;
+      unawaited(_postResultWhenFinished(transport, partnerId));
     }
   }
 

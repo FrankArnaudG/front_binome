@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/game_sync_log.dart';
 import '../../../core/realtime_client.dart';
 import '../../../models/suit_battle_session.dart';
 import '../game_service.dart';
@@ -23,6 +24,14 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
   final _controller = StreamController<SuitBattleBoardState>.broadcast();
   late SuitBattleBoardState _state;
 
+  // Filet de sécurité : un évènement temps réel manqué (coupure réseau, app en arrière-plan) laissait ce
+  // téléphone figé sur un état ancien alors que l'autre avait avancé (voir demande utilisateur : "un
+  // téléphone revient en arrière"). On recale donc régulièrement sur le serveur.
+  Timer? _resyncTimer;
+  StreamSubscription<void>? _resyncSub;
+  // Dernière version serveur appliquée (voir HasStateVersion) : tout état plus ancien est ignoré.
+  int _version = 0;
+
   String get _friendChannelName => 'suit-battle-session.$sessionId';
 
   RemoteSuitBattleTransport({
@@ -33,11 +42,50 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
     required this.partnerId,
   }) : sessionId = session.id {
     _state = _stateFrom(session);
+    _version = session.version;
     final box = boxId;
     if (box != null) {
       RealtimeClient.instance.subscribeToBox(box, onEvent: _onRealtimeEvent);
     } else {
       RealtimeClient.instance.subscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
+    _resyncTimer = Timer.periodic(const Duration(seconds: 4), (_) => _resyncIfBehind());
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _resyncIfBehind());
+  }
+
+  /// Un état plus ancien que celui qu'on a déjà (évènement arrivé dans le désordre) ne doit jamais
+  /// être appliqué : il faisait revenir l'écran en arrière. Une partie terminée passe toujours.
+  bool _isStale(SuitBattleSession session) {
+    if (session.version > 0 && _version > 0) return session.version < _version;
+    return !(session.isFinished || session.abandoned) && session.roundsCount < _state.roundsCount;
+  }
+
+  /// Vérifie qu'un état serveur n'est pas plus ancien que celui affiché ; sinon le trace et le refuse.
+  bool _acceptVersion(SuitBattleSession session) {
+    if (_isStale(session)) {
+      logStaleGameState('suit_battle', incoming: session.version, current: _version);
+      return false;
+    }
+    if (session.version > _version) _version = session.version;
+    return true;
+  }
+
+  void _applyServerState(SuitBattleSession session) {
+    if (!_acceptVersion(session)) return;
+    _state = _stateFrom(session);
+    _controller.add(_state);
+  }
+
+  Future<void> _resyncIfBehind() async {
+    if (_state.finished) return;
+    try {
+      final session = await GameService.instance.fetchSuitBattleState(sessionId);
+      if (_controller.isClosed || _state.finished) return;
+      final behind = session.version > _version || session.roundsCount > _state.roundsCount || ((session.isFinished || session.abandoned) && !_state.finished);
+      if (!behind) return;
+      _applyServerState(session);
+    } catch (_) {
+      // best effort — on retente au prochain tour.
     }
   }
 
@@ -75,9 +123,9 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
 
     final session = SuitBattleSession.fromJson(data['session'] as Map<String, dynamic>);
     if (session.id != sessionId) return;
+    if (!_acceptVersion(session)) return;
 
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
@@ -89,22 +137,19 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
   @override
   Future<void> shuffleDeck() async {
     final session = await GameService.instance.shuffleSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
   Future<void> dealAutomatic() async {
     final session = await GameService.instance.dealAutoSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
   Future<void> readyUp() async {
     final session = await GameService.instance.readyUpSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
@@ -212,13 +257,11 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
   Future<void> _syncWith(Future<SuitBattleSession> Function() call) async {
     try {
       final session = await call();
-      _state = _stateFrom(session);
-      _controller.add(_state);
+      _applyServerState(session);
     } catch (_) {
       try {
         final session = await GameService.instance.fetchSuitBattleState(sessionId);
-        _state = _stateFrom(session);
-        _controller.add(_state);
+        _applyServerState(session);
       } catch (_) {
         // best effort — voir doc de classe RealtimeClient.
       }
@@ -228,8 +271,7 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
   @override
   Future<void> abandon() async {
     final session = await GameService.instance.abandonSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
@@ -241,20 +283,23 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
     _controller.add(_state);
 
     final session = await GameService.instance.pauseSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
   Future<void> resume() async {
-    if (!_state.pausedByMe) return;
+    // Réservé à qui a posé la pause — SAUF une pause posée automatiquement par un solde épuisé
+    // (voir AuthorizesResume côté serveur : pausedByUserId reste alors NULL, n'importe quel
+    // participant peut tenter de la lever, le serveur revérifie lui-même le solde du payeur).
+    if (!_state.pausedByMe && _state.pausedByUserId != null) return;
     final session = await GameService.instance.resumeSuitBattle(sessionId);
-    _state = _stateFrom(session);
-    _controller.add(_state);
+    _applyServerState(session);
   }
 
   @override
   void dispose() {
+    _resyncTimer?.cancel();
+    _resyncSub?.cancel();
     final box = boxId;
     if (box != null) {
       RealtimeClient.instance.unsubscribeFromBox(box, onEvent: _onRealtimeEvent);

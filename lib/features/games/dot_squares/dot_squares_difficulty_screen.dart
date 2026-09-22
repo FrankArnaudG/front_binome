@@ -9,6 +9,7 @@ import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../game_guide_storage.dart';
+import '../game_guide_notes.dart';
 import 'dot_squares_engine.dart';
 import 'dot_squares_mode_screen.dart';
 
@@ -81,7 +82,7 @@ class _DotSquaresDifficultyScreenState extends State<DotSquaresDifficultyScreen>
         child: SafeArea(
           child: _starting
               ? Center(child: CircularProgressIndicator(color: theme.primary))
-              : DotSquaresWidthList(theme: theme, onSelected: _start, firstTileGuideKey: _firstWidthGuideKey),
+              : DotSquaresWidthList(theme: theme, onSelected: _start, firstTileGuideKey: _firstWidthGuideKey, guideNote: widget.mode == DotSquaresMode.local ? null : kHowToPlayNote),
         ),
       ),
     );
@@ -96,8 +97,10 @@ class DotSquaresWidthList extends StatelessWidget {
   // Guide pas-à-pas (voir demande utilisateur) — non-null uniquement pour
   // faire apparaître une bulle sur le PREMIER palier de la liste.
   final GlobalKey? firstTileGuideKey;
+  // N.B. ajouté à la bulle du guide (voir game_guide_notes.dart) — null en mode "un seul téléphone".
+  final String? guideNote;
 
-  const DotSquaresWidthList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey});
+  const DotSquaresWidthList({super.key, required this.theme, required this.onSelected, this.firstTileGuideKey, this.guideNote});
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +161,7 @@ class DotSquaresWidthList extends StatelessWidget {
     return Showcase(
       key: guideKey,
       title: 'Choisis une largeur',
-      description: 'Plus la feuille est large, plus la partie sera longue.',
+      description: withGuideNote('Plus la feuille est large, plus la partie sera longue.', guideNote),
       targetBorderRadius: BorderRadius.circular(20),
       child: tile,
     );

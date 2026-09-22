@@ -85,6 +85,9 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
       return;
     }
 
+    // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
+    // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici (voir demande
+    // utilisateur : "à distance c'est facturé en fonction du temps de jeu, comme dans la Box").
     setState(() => _challenging = true);
     try {
       final invite = await GameService.instance.createGameInvite(

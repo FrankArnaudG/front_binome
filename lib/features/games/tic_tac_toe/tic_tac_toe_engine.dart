@@ -43,8 +43,9 @@ class TicTacToeMoveResult {
 /// puis phase de déplacement une fois les siens tous posés — vers
 /// N'IMPORTE QUELLE case vide du plateau, pas de contrainte d'adjacence
 /// (voir demande utilisateur : "je doi pouvoir deplacer mes pion partout
-/// ou je veux"). Aligner [alignmentLength] pions (une ligne/colonne/
-/// diagonale COMPLÈTE, la grille faisant 5 de large) rapporte 1 point et
+/// ou je veux"). Aligner [alignmentLength] (4) pions à la suite (sur une
+/// ligne/colonne/diagonale de la grille 5×5, pas forcément toute sa
+/// longueur) rapporte 1 point et
 /// disperse aussitôt ces pions sur des cases vides tirées au sort — en
 /// s'assurant que ce tirage ne crée aucun alignement, pour personne.
 /// Victoire au premier à [targetScore] points ; aucun match nul possible
@@ -52,7 +53,7 @@ class TicTacToeMoveResult {
 class TicTacToeEngine {
   static const gridSize = 5;
   static const cellCount = 25;
-  static const alignmentLength = 5;
+  static const alignmentLength = 4;
   static const placementPiecesPerPlayer = 6;
   static const targetScore = 5;
   static const _maxScatterAttempts = 200;
@@ -60,10 +61,9 @@ class TicTacToeEngine {
   static List<List<int>>? _linesCache;
 
   /// Toutes les combinaisons de [alignmentLength] cases alignées (lignes,
-  /// colonnes, 2 diagonales) sur la grille 5×5 — avec une longueur
-  /// d'alignement égale à la largeur de la grille, ce sont exactement les
-  /// 5 lignes + 5 colonnes + 2 diagonales complètes (12 au total). Mis en
-  /// cache, jamais recalculé deux fois.
+  /// colonnes, diagonales) sur la grille 5×5 — avec 4 cases alignées :
+  /// 10 lignes + 10 colonnes + 8 diagonales = 28 segments au total. Mis
+  /// en cache, jamais recalculé deux fois.
   static List<List<int>> winningLines() {
     final cached = _linesCache;
     if (cached != null) return cached;

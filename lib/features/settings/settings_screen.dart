@@ -13,6 +13,7 @@ import '../box/box_scope.dart';
 import '../box/box_service.dart';
 import 'widgets/about_card.dart';
 import 'widgets/account_payment_card.dart';
+import 'widgets/active_devices_card.dart';
 import 'widgets/app_lock_card.dart';
 import 'widgets/currency_card.dart';
 import 'widgets/danger_zone_card.dart';
@@ -192,6 +193,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const LanguagePickerCard(),
               const SizedBox(height: 16),
               const AppLockCard(),
+              const SizedBox(height: 16),
+              const ActiveDevicesCard(),
               if (box != null && box.isActive) ...[
                 const SizedBox(height: 16),
                 EveningRitualCard(box: box),

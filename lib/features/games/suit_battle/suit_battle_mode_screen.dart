@@ -131,17 +131,11 @@ class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
         'soit environ ${_formatMinutes(15 * minutesPerCoin)} pour 15 Tokens.';
   }
 
-  String get _nearbyInfoText {
-    final rate = _economyRate;
-    final cost = rate?['nearby_daily_coin_cost'] ?? 5;
-    final days = rate?['nearby_free_trial_days'] ?? 0;
-    final trial = days > 0 ? ' Les $days premiers jours de jeu sont offerts.' : '';
-    return "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
-        "Pratique quand vous êtes ensemble mais sans réseau disponible. "
-        "Il est facturé $cost Tokens une seule fois par jour. Une fois ce paiement fait, vous pouvez ensuite jouer à "
-        "TOUS les jeux interactifs de l'application, autant de fois que vous voulez ce jour là, sans être facturé "
-        "de nouveau.$trial";
-  }
+  // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
+  // telephone" — plus de coût ni d'essai gratuit à annoncer, ce mode est simplement gratuit.
+  static const String _nearbyInfoText =
+      "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
+      "Pratique quand vous êtes ensemble mais sans réseau disponible. Il est gratuit.";
 
   Future<void> _startRemote() async {
     if (_starting) return;

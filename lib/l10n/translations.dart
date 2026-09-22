@@ -355,6 +355,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Comment jouer',
     'game_about_title': 'À propos du jeu',
     'payment_confirmed': 'Paiement confirmé, merci !',
+    'game_score_quit': 'Quitter',
     'common_understood': 'Compris',
     'charades_ready_hint': 'Passe le téléphone à la personne qui va mimer 🤳',
     'charades_start_button': 'Commencer ({duration})',
@@ -789,6 +790,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} a mis la partie en pause',
     'memory_board_paused_title': 'Partie en pause',
     'memory_board_paused_subtitle_me': 'Reprends quand tu es prêt·e',
+    'memory_board_paused_subtitle_depleted': 'Solde de pièces épuisé — recharge, puis n\'importe qui peut reprendre.',
     'memory_board_paused_subtitle_partner':
         '{name} a mis la partie en pause - seul·e {name} peut la reprendre',
     'memory_board_resume_button': 'Reprendre la partie',
@@ -814,6 +816,7 @@ const Map<String, Map<String, String>> kTranslations = {
         'Deux téléphones à proximité, sans connexion internet.',
     'memory_mode_nearby_unsupported':
         'Disponible uniquement sur Android pour le moment.',
+    'nearby_location_service_off': 'Active la localisation (GPS) du téléphone pour continuer.',
     'memory_nearby_permission_denied':
         'Autorise Bluetooth et localisation pour continuer.',
     'memory_nearby_start_host_error': 'Impossible de démarrer la connexion.',
@@ -838,6 +841,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Phase de pose',
     'ttt_phase_movement': 'Phase de déplacement',
     'ttt_point_scored': 'Point marqué !',
+    'ttt_you_scored': 'Tu as marqué un point !',
+    'ttt_point_for': 'Point pour {name} !',
     'dot_squares_rectangle_scored': 'Rectangle marqué !',
     'dot_squares_rectangles_scored': '{count} rectangles marqués !',
     'dot_squares_close_title': 'Terminer la partie',
@@ -1248,6 +1253,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'How to play',
     'game_about_title': 'About the game',
     'payment_confirmed': 'Payment confirmed, thank you!',
+    'game_score_quit': 'Quit',
     'common_understood': 'Got it',
     'charades_ready_hint': 'Pass the phone to the person who will mime 🤳',
     'charades_start_button': 'Start ({duration})',
@@ -1638,6 +1644,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} paused the game',
     'memory_board_paused_title': 'Game paused',
     'memory_board_paused_subtitle_me': 'Resume whenever you\'re ready',
+    'memory_board_paused_subtitle_depleted': 'Coin balance empty — top up, then either of you can resume.',
     'memory_board_paused_subtitle_partner':
         '{name} paused the game — only {name} can resume it',
     'memory_board_resume_button': 'Resume game',
@@ -1662,6 +1669,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Two phones nearby, no internet connection needed.',
     'memory_mode_nearby_unsupported': 'Currently available on Android only.',
+    'nearby_location_service_off': 'Turn on your phone\'s location (GPS) to continue.',
     'memory_nearby_permission_denied':
         'Allow Bluetooth and location to continue.',
     'memory_nearby_start_host_error': 'Could not start the connection.',
@@ -1683,6 +1691,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Placement phase',
     'ttt_phase_movement': 'Movement phase',
     'ttt_point_scored': 'Point scored!',
+    'ttt_you_scored': 'You scored a point!',
+    'ttt_point_for': 'Point for {name}!',
     'dot_squares_rectangle_scored': 'Rectangle scored!',
     'dot_squares_rectangles_scored': '{count} rectangles scored!',
     'dot_squares_close_title': 'End the game',
@@ -2106,6 +2116,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'So wird gespielt',
     'game_about_title': 'Über das Spiel',
     'payment_confirmed': 'Zahlung bestätigt, danke!',
+    'game_score_quit': 'Beenden',
     'common_understood': 'Verstanden',
     'charades_ready_hint': 'Gib das Handy an die Person, die mimen wird 🤳',
     'charades_start_button': 'Starten ({duration})',
@@ -2509,6 +2520,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} hat das Spiel pausiert',
     'memory_board_paused_title': 'Spiel pausiert',
     'memory_board_paused_subtitle_me': 'Setze fort, wann immer du bereit bist',
+    'memory_board_paused_subtitle_depleted': 'Münzguthaben aufgebraucht — aufladen, danach kann jede·r fortsetzen.',
     'memory_board_paused_subtitle_partner':
         '{name} hat das Spiel pausiert — nur {name} kann es fortsetzen',
     'memory_board_resume_button': 'Spiel fortsetzen',
@@ -2533,6 +2545,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Zwei Handys in der Nähe, ohne Internetverbindung.',
     'memory_mode_nearby_unsupported': 'Derzeit nur auf Android verfügbar.',
+    'nearby_location_service_off': 'Schalte den Standort (GPS) deines Telefons ein, um fortzufahren.',
     'memory_nearby_permission_denied':
         'Erlaubt Bluetooth und Standort, um fortzufahren.',
     'memory_nearby_start_host_error':
@@ -2558,6 +2571,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Platzierungsphase',
     'ttt_phase_movement': 'Bewegungsphase',
     'ttt_point_scored': 'Punkt erzielt!',
+    'ttt_you_scored': 'Du hast einen Punkt erzielt!',
+    'ttt_point_for': 'Punkt für {name}!',
     'dot_squares_rectangle_scored': 'Rechteck erzielt!',
     'dot_squares_rectangles_scored': '{count} Rechtecke erzielt!',
     'dot_squares_close_title': 'Partie beenden',
@@ -2981,6 +2996,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Cómo jugar',
     'game_about_title': 'Sobre el juego',
     'payment_confirmed': '¡Pago confirmado, gracias!',
+    'game_score_quit': 'Salir',
     'common_understood': 'Entendido',
     'charades_ready_hint': 'Pasa el teléfono a quien va a mimar 🤳',
     'charades_start_button': 'Empezar ({duration})',
@@ -3380,6 +3396,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} puso el juego en pausa',
     'memory_board_paused_title': 'Partida en pausa',
     'memory_board_paused_subtitle_me': 'Reanuda cuando estés listo(a)',
+    'memory_board_paused_subtitle_depleted': 'Saldo de monedas agotado — recarga y cualquiera puede reanudar.',
     'memory_board_paused_subtitle_partner':
         '{name} puso el juego en pausa — solo {name} puede reanudarlo',
     'memory_board_resume_button': 'Reanudar partida',
@@ -3403,6 +3420,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Dos teléfonos cerca, sin conexión a internet.',
     'memory_mode_nearby_unsupported': 'Disponible solo en Android por ahora.',
+    'nearby_location_service_off': 'Activa la ubicación (GPS) del teléfono para continuar.',
     'memory_nearby_permission_denied':
         'Permitid Bluetooth y ubicación para continuar.',
     'memory_nearby_start_host_error': 'No se pudo iniciar la conexión.',
@@ -3424,6 +3442,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Fase de colocación',
     'ttt_phase_movement': 'Fase de movimiento',
     'ttt_point_scored': '¡Punto marcado!',
+    'ttt_you_scored': '¡Has marcado un punto!',
+    'ttt_point_for': '¡Punto para {name}!',
     'dot_squares_rectangle_scored': '¡Rectángulo marcado!',
     'dot_squares_rectangles_scored': '¡{count} rectángulos marcados!',
     'dot_squares_close_title': 'Terminar la partida',
@@ -3795,6 +3815,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': '玩法说明',
     'game_about_title': '关于游戏',
     'payment_confirmed': '付款已确认，谢谢！',
+    'game_score_quit': '退出',
     'common_understood': '知道了',
     'charades_ready_hint': '把手机递给要表演的人 🤳',
     'charades_start_button': '开始（{duration}）',
@@ -4165,6 +4186,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name}暂停了游戏',
     'memory_board_paused_title': '游戏已暂停',
     'memory_board_paused_subtitle_me': '准备好后随时继续',
+    'memory_board_paused_subtitle_depleted': '代币余额已用完——请充值，之后任何一方都可以继续。',
     'memory_board_paused_subtitle_partner': '{name}暂停了游戏——只有{name}可以继续',
     'memory_board_resume_button': '继续游戏',
     'memory_board_abandon_title': '要放弃这局游戏吗？',
@@ -4186,6 +4208,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_title': '面对面连接',
     'memory_mode_nearby_subtitle': '两部手机靠近，无需网络连接。',
     'memory_mode_nearby_unsupported': '目前仅支持安卓设备。',
+    'nearby_location_service_off': '请开启手机的定位（GPS）以继续。',
     'memory_nearby_permission_denied': '请允许蓝牙和定位权限以继续。',
     'memory_nearby_start_host_error': '无法建立连接。',
     'memory_nearby_start_discover_error': '无法开始搜索。',
@@ -4205,6 +4228,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': '摆放阶段',
     'ttt_phase_movement': '移动阶段',
     'ttt_point_scored': '得分！',
+    'ttt_you_scored': '你得分了！',
+    'ttt_point_for': '{name} 得分！',
     'dot_squares_rectangle_scored': '得分一个矩形！',
     'dot_squares_rectangles_scored': '得分{count}个矩形！',
     'dot_squares_close_title': '结束游戏',
@@ -4586,6 +4611,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'كيفية اللعب',
     'game_about_title': 'عن اللعبة',
     'payment_confirmed': 'تم تأكيد الدفع، شكرًا لك!',
+    'game_score_quit': 'خروج',
     'common_understood': 'فهمت',
     'charades_ready_hint': 'مرر الهاتف إلى من سيمثّل 🤳',
     'charades_start_button': 'ابدأ ({duration})',
@@ -4969,6 +4995,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} أوقف اللعبة مؤقتًا',
     'memory_board_paused_title': 'اللعبة متوقفة مؤقتًا',
     'memory_board_paused_subtitle_me': 'استأنف عندما تكون جاهزًا',
+    'memory_board_paused_subtitle_depleted': 'رصيد القطع نفد — أعد الشحن، ثم يمكن لأي منكما المتابعة.',
     'memory_board_paused_subtitle_partner':
         '{name} أوقف اللعبة مؤقتًا — {name} وحده يمكنه استئنافها',
     'memory_board_resume_button': 'استئناف اللعبة',
@@ -4992,6 +5019,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'هاتفان قريبان من بعضهما، دون اتصال بالإنترنت.',
     'memory_mode_nearby_unsupported': 'متاح حاليًا على أندرويد فقط.',
+    'nearby_location_service_off': 'فعّل خدمة الموقع (GPS) في هاتفك للمتابعة.',
     'memory_nearby_permission_denied':
         'اسمحا بالبلوتوث وتحديد الموقع للمتابعة.',
     'memory_nearby_start_host_error': 'تعذّر بدء الاتصال.',
@@ -5013,6 +5041,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'مرحلة الوضع',
     'ttt_phase_movement': 'مرحلة التحريك',
     'ttt_point_scored': 'تم تسجيل نقطة!',
+    'ttt_you_scored': 'لقد سجلت نقطة!',
+    'ttt_point_for': 'نقطة لـ {name}!',
     'dot_squares_rectangle_scored': 'تم تسجيل مستطيل!',
     'dot_squares_rectangles_scored': 'تم تسجيل {count} مستطيلات!',
     'dot_squares_close_title': 'إنهاء اللعبة',
@@ -5424,6 +5454,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Cara bermain',
     'game_about_title': 'Tentang permainan',
     'payment_confirmed': 'Pembayaran dikonfirmasi, terima kasih!',
+    'game_score_quit': 'Keluar',
     'common_understood': 'Mengerti',
     'charades_ready_hint': 'Berikan ponsel ke orang yang akan berperan 🤳',
     'charades_start_button': 'Mulai ({duration})',
@@ -5822,6 +5853,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} menjeda permainan',
     'memory_board_paused_title': 'Permainan dijeda',
     'memory_board_paused_subtitle_me': 'Lanjutkan kapan pun kamu siap',
+    'memory_board_paused_subtitle_depleted': 'Saldo koin habis — isi ulang, lalu siapa pun bisa melanjutkan.',
     'memory_board_paused_subtitle_partner':
         '{name} menjeda permainan — hanya {name} yang bisa melanjutkannya',
     'memory_board_resume_button': 'Lanjutkan permainan',
@@ -5847,6 +5879,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Dua ponsel berdekatan, tanpa koneksi internet.',
     'memory_mode_nearby_unsupported': 'Saat ini hanya tersedia di Android.',
+    'nearby_location_service_off': 'Aktifkan lokasi (GPS) ponsel untuk melanjutkan.',
     'memory_nearby_permission_denied':
         'Izinkan Bluetooth dan lokasi untuk melanjutkan.',
     'memory_nearby_start_host_error': 'Tidak dapat memulai koneksi.',
@@ -5869,6 +5902,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Fase penempatan',
     'ttt_phase_movement': 'Fase pergerakan',
     'ttt_point_scored': 'Poin tercetak!',
+    'ttt_you_scored': 'Kamu mencetak poin!',
+    'ttt_point_for': 'Poin untuk {name}!',
     'dot_squares_rectangle_scored': 'Persegi panjang tercetak!',
     'dot_squares_rectangles_scored': '{count} persegi panjang tercetak!',
     'dot_squares_close_title': 'Akhiri permainan',
@@ -6291,6 +6326,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Как играть',
     'game_about_title': 'Об игре',
     'payment_confirmed': 'Оплата подтверждена, спасибо!',
+    'game_score_quit': 'Выйти',
     'common_understood': 'Понятно',
     'charades_ready_hint': 'Передай телефон тому, кто будет показывать 🤳',
     'charades_start_button': 'Начать ({duration})',
@@ -6691,6 +6727,7 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставил(а) игру на паузу',
     'memory_board_paused_title': 'Игра на паузе',
     'memory_board_paused_subtitle_me': 'Продолжите, когда будете готовы',
+    'memory_board_paused_subtitle_depleted': 'Баланс монет исчерпан — пополните, затем любой из вас может продолжить.',
     'memory_board_paused_subtitle_partner':
         '{name} поставил(а) игру на паузу — только {name} может её продолжить',
     'memory_board_resume_button': 'Продолжить игру',
@@ -6714,6 +6751,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Два телефона рядом, без подключения к интернету.',
     'memory_mode_nearby_unsupported': 'Пока доступно только на Android.',
+    'nearby_location_service_off': 'Включи геолокацию (GPS) на телефоне, чтобы продолжить.',
     'memory_nearby_permission_denied':
         'Разрешите Bluetooth и геолокацию, чтобы продолжить.',
     'memory_nearby_start_host_error': 'Не удалось начать подключение.',
@@ -6736,6 +6774,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Фаза расстановки',
     'ttt_phase_movement': 'Фаза перемещения',
     'ttt_point_scored': 'Очко засчитано!',
+    'ttt_you_scored': 'Ты заработал очко!',
+    'ttt_point_for': 'Очко для {name}!',
     'dot_squares_rectangle_scored': 'Прямоугольник засчитан!',
     'dot_squares_rectangles_scored': 'Засчитано прямоугольников: {count}!',
     'dot_squares_close_title': 'Завершить партию',
@@ -7156,6 +7196,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Como jogar',
     'game_about_title': 'Sobre o jogo',
     'payment_confirmed': 'Pagamento confirmado, obrigado!',
+    'game_score_quit': 'Sair',
     'common_understood': 'Entendi',
     'charades_ready_hint': 'Passa o telefone para quem vai mimar 🤳',
     'charades_start_button': 'Começar ({duration})',
@@ -7555,6 +7596,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} pausou o jogo',
     'memory_board_paused_title': 'Jogo pausado',
     'memory_board_paused_subtitle_me': 'Retome quando estiver pronto(a)',
+    'memory_board_paused_subtitle_depleted': 'Saldo de moedas esgotado — recarregue, depois qualquer um pode continuar.',
     'memory_board_paused_subtitle_partner':
         '{name} pausou o jogo — só {name} pode retomá-lo',
     'memory_board_resume_button': 'Retomar jogo',
@@ -7579,6 +7621,7 @@ const Map<String, Map<String, String>> kTranslations = {
         'Dois telemóveis próximos, sem ligação à internet.',
     'memory_mode_nearby_unsupported':
         'Disponível apenas no Android por enquanto.',
+    'nearby_location_service_off': 'Ative a localização (GPS) do telefone para continuar.',
     'memory_nearby_permission_denied':
         'Permitam o Bluetooth e a localização para continuar.',
     'memory_nearby_start_host_error': 'Não foi possível iniciar a ligação.',
@@ -7601,6 +7644,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Fase de colocação',
     'ttt_phase_movement': 'Fase de movimento',
     'ttt_point_scored': 'Ponto marcado!',
+    'ttt_you_scored': 'Você marcou um ponto!',
+    'ttt_point_for': 'Ponto para {name}!',
     'dot_squares_rectangle_scored': 'Retângulo marcado!',
     'dot_squares_rectangles_scored': '{count} retângulos marcados!',
     'dot_squares_close_title': 'Terminar a partida',
@@ -8018,6 +8063,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Nasıl oynanır',
     'game_about_title': 'Oyun hakkında',
     'payment_confirmed': 'Ödeme onaylandı, teşekkürler!',
+    'game_score_quit': 'Çık',
     'common_understood': 'Anladım',
     'charades_ready_hint': 'Telefonu canlandıracak kişiye ver 🤳',
     'charades_start_button': 'Başla ({duration})',
@@ -8414,6 +8460,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} oyunu duraklattı',
     'memory_board_paused_title': 'Oyun duraklatıldı',
     'memory_board_paused_subtitle_me': 'Hazır olduğunda devam et',
+    'memory_board_paused_subtitle_depleted': 'Jeton bakiyesi bitti — yükle, ardından ikinizden biri devam edebilir.',
     'memory_board_paused_subtitle_partner':
         '{name} oyunu duraklattı — yalnızca {name} devam ettirebilir',
     'memory_board_resume_button': 'Oyuna devam et',
@@ -8438,6 +8485,7 @@ const Map<String, Map<String, String>> kTranslations = {
         'Yakındaki iki telefon, internet bağlantısı gerekmez.',
     'memory_mode_nearby_unsupported':
         'Şu anda yalnızca Android\'de kullanılabilir.',
+    'nearby_location_service_off': 'Devam etmek için telefonun konumunu (GPS) aç.',
     'memory_nearby_permission_denied':
         'Devam etmek için Bluetooth ve konuma izin verin.',
     'memory_nearby_start_host_error': 'Bağlantı başlatılamadı.',
@@ -8460,6 +8508,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Yerleştirme aşaması',
     'ttt_phase_movement': 'Hareket aşaması',
     'ttt_point_scored': 'Puan kazanıldı!',
+    'ttt_you_scored': 'Bir puan kazandın!',
+    'ttt_point_for': '{name} puan kazandı!',
     'dot_squares_rectangle_scored': 'Dikdörtgen kazanıldı!',
     'dot_squares_rectangles_scored': '{count} dikdörtgen kazanıldı!',
     'dot_squares_close_title': 'Oyunu bitir',
@@ -8876,6 +8926,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': 'Як грати',
     'game_about_title': 'Про гру',
     'payment_confirmed': 'Оплату підтверджено, дякуємо!',
+    'game_score_quit': 'Вийти',
     'common_understood': 'Зрозуміло',
     'charades_ready_hint': 'Передай телефон тому, хто буде показувати 🤳',
     'charades_start_button': 'Почати ({duration})',
@@ -9272,6 +9323,7 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставив(ла) гру на паузу',
     'memory_board_paused_title': 'Гру призупинено',
     'memory_board_paused_subtitle_me': 'Продовжте, коли будете готові',
+    'memory_board_paused_subtitle_depleted': 'Баланс монет вичерпано — поповніть, тоді будь-хто з вас може продовжити.',
     'memory_board_paused_subtitle_partner':
         '{name} поставив(ла) гру на паузу — лише {name} може її продовжити',
     'memory_board_resume_button': 'Продовжити гру',
@@ -9294,6 +9346,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_title': 'Поруч, на зв\'язку',
     'memory_mode_nearby_subtitle': 'Два телефони поруч, без інтернету.',
     'memory_mode_nearby_unsupported': 'Наразі доступно лише на Android.',
+    'nearby_location_service_off': 'Увімкни геолокацію (GPS) на телефоні, щоб продовжити.',
     'memory_nearby_permission_denied':
         'Дозвольте Bluetooth і геолокацію, щоб продовжити.',
     'memory_nearby_start_host_error': 'Не вдалося розпочати з\'єднання.',
@@ -9316,6 +9369,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': 'Фаза розстановки',
     'ttt_phase_movement': 'Фаза переміщення',
     'ttt_point_scored': 'Очко зараховано!',
+    'ttt_you_scored': 'Ти отримав очко!',
+    'ttt_point_for': 'Очко для {name}!',
     'dot_squares_rectangle_scored': 'Прямокутник зараховано!',
     'dot_squares_rectangles_scored': 'Зараховано прямокутників: {count}!',
     'dot_squares_close_title': 'Завершити партію',
@@ -9697,6 +9752,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_rules_title': '遊び方',
     'game_about_title': 'ゲームについて',
     'payment_confirmed': 'お支払いを確認しました。ありがとうございます！',
+    'game_score_quit': '終了',
     'common_understood': 'わかった',
     'charades_ready_hint': '演じる人にスマホを渡そう 🤳',
     'charades_start_button': '開始（{duration}）',
@@ -10067,6 +10123,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name}がゲームを一時停止しました',
     'memory_board_paused_title': 'ゲーム一時停止中',
     'memory_board_paused_subtitle_me': '準備ができたら再開してください',
+    'memory_board_paused_subtitle_depleted': 'コイン残高がなくなりました。チャージすればどちらでも再開できます。',
     'memory_board_paused_subtitle_partner':
         '{name}がゲームを一時停止しました——{name}だけが再開できます',
     'memory_board_resume_button': 'ゲームを再開',
@@ -10089,6 +10146,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_title': '対面接続',
     'memory_mode_nearby_subtitle': '近くにある2台のスマホ、インターネット接続不要。',
     'memory_mode_nearby_unsupported': '現在Androidのみ対応しています。',
+    'nearby_location_service_off': '続行するには、スマートフォンの位置情報（GPS）をオンにしてください。',
     'memory_nearby_permission_denied': '続けるにはBluetoothと位置情報を許可してください。',
     'memory_nearby_start_host_error': '接続を開始できませんでした。',
     'memory_nearby_start_discover_error': '検索を開始できませんでした。',
@@ -10108,6 +10166,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'ttt_phase_placement': '配置フェーズ',
     'ttt_phase_movement': '移動フェーズ',
     'ttt_point_scored': '得点！',
+    'ttt_you_scored': 'ポイントを獲得！',
+    'ttt_point_for': '{name}のポイント！',
     'dot_squares_rectangle_scored': '長方形を獲得！',
     'dot_squares_rectangles_scored': '{count}個の長方形を獲得！',
     'dot_squares_close_title': 'ゲームを終了',

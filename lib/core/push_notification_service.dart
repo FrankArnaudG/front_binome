@@ -275,6 +275,17 @@ class PushNotificationService {
     }
   }
 
+  /// Jeton push de CET appareil (null si les notifications ne sont pas gérées ici) — utilisé par
+  /// « Déconnecter les autres appareils » pour garder celui-ci et retirer les jetons des autres.
+  Future<String?> currentToken() async {
+    if (!_supported) return null;
+    try {
+      return await FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Retire le jeton courant côté serveur — à appeler à la déconnexion pour
   /// qu'un ancien utilisateur sur cet appareil ne reçoive plus les push d'un
   /// autre compte connecté ensuite.
