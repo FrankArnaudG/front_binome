@@ -80,6 +80,7 @@ class NearbyNumberHuntTransport extends NumberHuntTransport {
       'isTie': _state.isTie,
       'movesCount': _state.movesCount,
       'finished': _state.finished,
+      'abandoned': _state.abandoned,
       'startedAt': _state.startedAt?.toIso8601String(),
       'pausedByUserId': _state.pausedByUserId,
       'pausedAt': _state.pausedAt?.toIso8601String(),
@@ -116,6 +117,7 @@ class NearbyNumberHuntTransport extends NumberHuntTransport {
           isTie: message['isTie'] as bool,
           movesCount: message['movesCount'] as int,
           finished: message['finished'] as bool,
+          abandoned: message['abandoned'] as bool? ?? false,
           startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : _state.startedAt,
           pausedByUserId: pausedByUserId,
           pausedAt: message['pausedAt'] != null ? DateTime.parse(message['pausedAt'] as String) : null,
@@ -130,6 +132,8 @@ class NearbyNumberHuntTransport extends NumberHuntTransport {
         if (isHost) _applyHostPause(kNumberHuntGuestRole);
       case 'resume_request':
         if (isHost) _applyHostResume(kNumberHuntGuestRole);
+      case 'abandon_request':
+        if (isHost) _applyHostAbandon();
     }
   }
 
@@ -197,9 +201,26 @@ class NearbyNumberHuntTransport extends NumberHuntTransport {
 
   @override
   Future<void> abandon() async {
-    _state = _state.copyWith(finished: true);
+    if (isHost) {
+      _applyHostAbandon();
+    } else {
+      // Prévient l'hôte pour qu'il redistribue l'état "abandonné" à son
+      // tour (voir demande utilisateur : "mon binôme ne reçoit rien") —
+      // même principe que pause_request : seul l'hôte fait autorité et
+      // diffuse, l'invité ne peut pas clore la partie unilatéralement pour
+      // l'autre. Reflété localement tout de suite pour fermer SON écran
+      // sans attendre l'aller-retour Bluetooth (voir _confirmAbandon).
+      _send({'type': 'abandon_request'});
+      _state = _state.copyWith(finished: true, abandoned: true);
+      _controller.add(_state);
+    }
+  }
+
+  void _applyHostAbandon() {
+    if (_state.finished) return;
+    _state = _state.copyWith(finished: true, abandoned: true);
     _controller.add(_state);
-    if (isHost) _sendState();
+    _sendState();
   }
 
   @override

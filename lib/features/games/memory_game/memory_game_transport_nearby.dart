@@ -77,6 +77,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
       'movesCount': _state.movesCount,
       'movesByUser': _state.movesByUser,
       'finished': _state.finished,
+      'abandoned': _state.abandoned,
       'startedAt': _state.startedAt?.toIso8601String(),
       'pausedByUserId': _state.pausedByUserId,
       'pausedAt': _state.pausedAt?.toIso8601String(),
@@ -119,6 +120,7 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
           movesCount: message['movesCount'] as int,
           movesByUser: (message['movesByUser'] as Map).map((k, v) => MapEntry(k as String, v as int)),
           finished: message['finished'] as bool,
+          abandoned: message['abandoned'] as bool? ?? false,
           startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : _state.startedAt,
           pausedByUserId: pausedByUserId,
           pausedAt: message['pausedAt'] != null ? DateTime.parse(message['pausedAt'] as String) : null,
@@ -139,6 +141,8 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
         // Reçu côté hôte uniquement — réservé à qui a posé la pause, voir
         // _applyHostResume qui vérifie le rôle avant d'agir.
         if (isHost) _applyHostResume(kNearbyGuestRole);
+      case 'abandon_request':
+        if (isHost) _applyHostAbandon();
     }
   }
 
@@ -207,9 +211,26 @@ class NearbyMemoryGameTransport extends MemoryGameTransport {
 
   @override
   Future<void> abandon() async {
-    _state = _state.copyWith(finished: true);
+    if (isHost) {
+      _applyHostAbandon();
+    } else {
+      // Prévient l'hôte pour qu'il redistribue l'état "abandonné" à son
+      // tour (voir demande utilisateur : "mon binôme ne reçoit rien") —
+      // même principe que pause_request : seul l'hôte fait autorité et
+      // diffuse, l'invité ne peut pas clore la partie unilatéralement pour
+      // l'autre. Reflété localement tout de suite pour fermer SON écran
+      // sans attendre l'aller-retour Bluetooth (voir _confirmAbandon).
+      _send({'type': 'abandon_request'});
+      _state = _state.copyWith(finished: true, abandoned: true);
+      _controller.add(_state);
+    }
+  }
+
+  void _applyHostAbandon() {
+    if (_state.finished) return;
+    _state = _state.copyWith(finished: true, abandoned: true);
     _controller.add(_state);
-    if (isHost) _sendState();
+    _sendState();
   }
 
   @override

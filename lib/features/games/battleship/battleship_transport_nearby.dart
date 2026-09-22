@@ -40,6 +40,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
   DateTime? _startedAt;
   String? _pausedByRole;
   DateTime? _pausedAt;
+  bool _abandoned = false;
 
   // Côté invité uniquement : dernière vue reçue de l'hôte.
   BattleshipBoardState? _guestState;
@@ -83,6 +84,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
       winnerUserId: _winnerRole,
       movesCount: _movesCount,
       finished: _finished,
+      abandoned: _abandoned,
       startedAt: _startedAt,
       myUserId: role,
       opponentUserId: isHostRole ? kBattleshipGuestRole : kBattleshipHostRole,
@@ -106,6 +108,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
       'winnerUserId': state.winnerUserId,
       'movesCount': state.movesCount,
       'finished': state.finished,
+      'abandoned': state.abandoned,
       'startedAt': state.startedAt?.toIso8601String(),
       'pausedByUserId': state.pausedByUserId,
       'pausedAt': state.pausedAt?.toIso8601String(),
@@ -140,6 +143,7 @@ class NearbyBattleshipTransport extends BattleshipTransport {
           winnerUserId: message['winnerUserId'] as String?,
           movesCount: message['movesCount'] as int,
           finished: message['finished'] as bool,
+          abandoned: message['abandoned'] as bool? ?? false,
           startedAt: message['startedAt'] != null ? DateTime.parse(message['startedAt'] as String) : null,
           myUserId: kBattleshipGuestRole,
           opponentUserId: kBattleshipHostRole,
@@ -160,6 +164,8 @@ class NearbyBattleshipTransport extends BattleshipTransport {
         if (isHost) _applyPause(kBattleshipGuestRole);
       case 'resume_request':
         if (isHost) _applyResume(kBattleshipGuestRole);
+      case 'abandon_request':
+        if (isHost) _applyAbandon();
     }
   }
 
@@ -261,14 +267,28 @@ class NearbyBattleshipTransport extends BattleshipTransport {
     }
   }
 
+  void _applyAbandon() {
+    if (_finished) return;
+    _finished = true;
+    _abandoned = true;
+    _controller.add(_stateFor(kBattleshipHostRole));
+    _sendStateToGuest();
+  }
+
   @override
   Future<void> abandon() async {
-    _finished = true;
     if (isHost) {
-      _controller.add(_stateFor(kBattleshipHostRole));
-      _sendStateToGuest();
+      _applyAbandon();
     } else {
-      _guestState = _guestState?.copyWith(finished: true);
+      // Prévient l'hôte pour qu'il redistribue l'état "abandonné" à son
+      // tour (voir demande utilisateur : "mon binôme ne reçoit rien") —
+      // même principe que pause_request : seul l'hôte fait autorité et
+      // diffuse. Reflété localement tout de suite pour fermer SON écran
+      // sans attendre l'aller-retour Bluetooth (voir _confirmAbandon).
+      _send({'type': 'abandon_request'});
+      _finished = true;
+      _abandoned = true;
+      _guestState = _guestState?.copyWith(finished: true, abandoned: true);
       _controller.add(_guestState!);
     }
   }
