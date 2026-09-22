@@ -44,7 +44,7 @@ class _NearbyVoiceOverlayState extends State<NearbyVoiceOverlay> {
   bool _cameraOn = false;
   bool _togglingCamera = false;
   Uint8List? _remoteFrame;
-  StreamSubscription<Uint8List>? _remoteFrameSubscription;
+  StreamSubscription<Uint8List?>? _remoteFrameSubscription;
 
   @override
   void initState() {

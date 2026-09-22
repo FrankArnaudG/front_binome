@@ -46,7 +46,12 @@ class NearbyComms {
   final Nearby nearby;
   final String endpointId;
   final _messagesController = StreamController<NearbyChatMessage>.broadcast();
-  final _remoteVideoFrameController = StreamController<Uint8List>.broadcast();
+  // `null` signale l'arrêt de la vidéo côté distant (voir _onVideoStop) —
+  // sans cette distinction, la dernière image reçue restait affichée
+  // indéfiniment après que le binôme/ami ait coupé sa caméra (voir demande
+  // utilisateur : "j'ai fermé les deux caméras mais celui-ci est resté
+  // bloqué, il ne disparaît pas").
+  final _remoteVideoFrameController = StreamController<Uint8List?>.broadcast();
   final _recorder = AudioRecorder();
   StreamSubscription<Uint8List>? _micSubscription;
   bool _talking = false;
@@ -71,7 +76,7 @@ class NearbyComms {
   NearbyComms({required this.nearby, required this.endpointId});
 
   Stream<NearbyChatMessage> get messages => _messagesController.stream;
-  Stream<Uint8List> get remoteVideoFrames => _remoteVideoFrameController.stream;
+  Stream<Uint8List?> get remoteVideoFrames => _remoteVideoFrameController.stream;
 
   bool get isTalking => _talking;
   bool get isSendingVideo => _sendingVideo;
@@ -189,6 +194,13 @@ class NearbyComms {
   Future<void> stopVideo() async {
     if (!_sendingVideo) return;
     _sendingVideo = false;
+    // Prévient le binôme/ami que la vidéo s'arrête, pour qu'il efface la
+    // dernière image reçue plutôt que de la laisser figée à l'écran (voir
+    // _onVideoStop côté réception).
+    nearby.sendBytesPayload(
+      endpointId,
+      Uint8List.fromList(utf8.encode(jsonEncode({'type': 'video_stop'}))),
+    );
     final controller = _cameraController;
     _cameraController = null;
     try {
@@ -306,6 +318,11 @@ class NearbyComms {
             // Image corrompue/incomplète — ignorée, la suivante arrivera.
           }
         }
+        return true;
+      case 'video_stop':
+        // Le binôme/ami a coupé sa caméra — efface la dernière image reçue
+        // au lieu de la laisser figée à l'écran (voir demande utilisateur).
+        _remoteVideoFrameController.add(null);
         return true;
       default:
         return false;
