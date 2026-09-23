@@ -104,8 +104,24 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   // IMMÉDIATEMENT au centre dès qu'elle est retournée (voir _tapFlip) et
   // y attend l'autre ; une fois les deux réunies, elles y restent 2s
   // avant de repartir ensemble vers la pile du VAINQUEUR — voir
-  // _runDuelAnimation.
+  // _runDuelAnimation. Valeur réelle posée dans initState() (voir
+  // _state.roundsCount) — un `0` figé ici rejouait l'animation de la
+  // DERNIÈRE manche déjà résolue dès que cet écran était recréé en cours
+  // de partie (reconnexion réseau, retour en arrière puis retour dans la
+  // partie...), donnant l'impression qu'une carte se retournait seule
+  // sans qu'on ait tapé (voir demande utilisateur : "ma carte se
+  // retourne sans que je tape ma pile").
   int _lastAnimatedRoundsCount = 0;
+  // Limite "battre sa pile" (voir demande utilisateur : "on peut battre
+  // uniquement deux fois avant de sortir une carte, après avoir sorti je
+  // peux encore battre deux fois max, ainsi de suite") — remis à zéro pour
+  // LES DEUX rôles dès qu'une manche se résout (voir _onState), jamais
+  // seulement pour celui qui vient de jouer : chacun a son propre "crédit"
+  // de 2, mais la remise à zéro est un même événement pour les deux (la
+  // fin de la manche).
+  final Map<String, int> _shuffleCounts = {};
+  static const _maxShufflesPerTurn = 2;
+  int _shuffleCountFor(String userId) => _shuffleCounts[userId] ?? 0;
   bool _duelActive = false;
   _DuelPhase _duelPhase = _DuelPhase.atStage;
   String? _duelCreatorCard;
@@ -148,6 +164,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
+    _lastAnimatedRoundsCount = _state.roundsCount;
     if (_state.finished) _finishedAt = ServerClock.instance.now();
     _subscription = widget.transport.stateStream.listen(_onState);
     ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
@@ -347,6 +364,14 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   void _onState(WarCardBoardState state) {
     if (!mounted) return;
 
+    // Nouvelle manche résolue (roundsCount vient d'augmenter) : remet à
+    // zéro le crédit "battre sa pile" des DEUX rôles (voir demande
+    // utilisateur) — indépendant de la séquence d'animation ci-dessous,
+    // pour rester correct même si `lastRoundResult` arrivait vide.
+    if (state.roundsCount > _state.roundsCount) {
+      _shuffleCounts.clear();
+    }
+
     // Une NOUVELLE manche vient de se résoudre (roundsCount vient
     // d'augmenter) — voir demande utilisateur : lance la séquence
     // "duel" plutôt que de juste afficher le résultat instantanément.
@@ -357,7 +382,15 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       _lastAnimatedRoundsCount = state.roundsCount;
       final creatorCard = state.lastCardFor(state.creatorId);
       final partnerCard = state.lastCardFor(state.partnerId);
-      final winnerId = state.pileCreator.length > _state.pileCreator.length ? state.creatorId : state.partnerId;
+      // `pendingCollectorId` fait autorité quand présent — à distance/
+      // Bluetooth, le pot remporté n'est PLUS fusionné automatiquement
+      // dans la pile (voir demande utilisateur : bouton "ramasser"), donc
+      // la comparaison de taille ci-dessous ne détecterait plus rien.
+      // Repli sur l'ancienne comparaison pour le pass-and-play (toujours
+      // auto-ramassé) et pour une manche qui termine la partie (ramassage
+      // immédiat côté serveur, voir WarCardEngine::resolveRound).
+      final winnerId = state.pendingCollectorId ??
+          (state.pileCreator.length > _state.pileCreator.length ? state.creatorId : state.partnerId);
       // AVANT la mise à jour de _state (donc AVANT résolution) — les deux
       // piles ont encore leur taille D'ORIGINE ici, voir doc de classe.
       final preCreatorCount = _state.pileCreator.length;
@@ -374,9 +407,24 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       }
     }
 
+    // Le pot vient d'être ramassé (voir demande utilisateur : bouton
+    // dédié plutôt qu'un ramassage automatique) — referme la séquence
+    // "duel" restée figée en attente (voir la fin de _runDuelAnimation,
+    // qui s'arrête sans se refermer tant que `pendingCollectorId` reste
+    // non-null).
+    final justCollected = _duelActive && _state.pendingCollectorId != null && state.pendingCollectorId == null;
+
     setState(() {
       _state = state;
       if (state.finished) _finishedAt ??= ServerClock.instance.now();
+      if (justCollected) {
+        _duelActive = false;
+        _duelCreatorCard = null;
+        _duelPartnerCard = null;
+        _duelWinnerId = null;
+        _duelCreatorDisplayCount = null;
+        _duelPartnerDisplayCount = null;
+      }
     });
 
     if (state.finished && !_scoreboardShown && !_duelActive) {
@@ -427,6 +475,18 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
     await Future.delayed(const Duration(milliseconds: 450));
     if (!mounted) return;
+
+    if (_state.pendingCollectorId != null) {
+      // Cartes arrivées côté vainqueur mais pas encore ramassées (voir
+      // demande utilisateur : bouton dédié plutôt qu'un ramassage
+      // automatique) — on s'arrête ICI, `_duelActive`/`_duelWinnerId`
+      // restent tels quels pour garder les cartes "posées" au vainqueur
+      // à l'écran (voir _WarCardDuelArea) le temps que le bouton
+      // "Ramasser" soit tapé. `_onState` referme cette étape dès que le
+      // pot est effectivement ramassé (voir `justCollected`).
+      return;
+    }
+
     setState(() {
       _duelActive = false;
       _duelCreatorCard = null;
@@ -561,6 +621,36 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     if (_pileFor(userId).isEmpty) return;
 
     await widget.transport.flip(userId);
+  }
+
+  /// "Battre" SA PROPRE pile en cours de partie (voir demande
+  /// utilisateur : "je peux regarder mes propres cartes, est-ce possible
+  /// de les battre également") — interdit tant que MA carte est déjà
+  /// engagée dans un duel (`_pendingFlipFor`) : sinon je pourrais changer
+  /// la carte que je viens de jouer après l'avoir vue "révélée" à l'écran,
+  /// alors que la résolution lit le dessus de la pile au moment où les
+  /// DEUX ont tapé, pas au moment du tap lui-même (voir WarCardEngine.flip).
+  Future<void> _shufflePile(String userId) async {
+    if (_state.finished || _state.isPaused || _duelActive) return;
+    if (_pendingFlipFor(userId)) return;
+    if (_pileFor(userId).length < 2) return;
+    if (_shuffleCountFor(userId) >= _maxShufflesPerTurn) return;
+
+    setState(() => _shuffleCounts[userId] = _shuffleCountFor(userId) + 1);
+    await widget.transport.shufflePile(userId);
+  }
+
+  /// "Ramasser" le pot d'une manche gagnée (voir demande utilisateur :
+  /// "un bouton pour m'informer de ramasser... une manière d'impliquer
+  /// chacun proprement", à distance/Bluetooth uniquement — jamais en
+  /// pass-and-play, voir `WarCardBoardState.pendingCollectorId`, toujours
+  /// `null` côté LocalWarCardTransport). L'écran ne se referme qu'une fois
+  /// le nouvel état reçu (voir `justCollected` dans _onState) — pas de
+  /// mise à jour optimiste locale ici, un geste trop rare/délibéré pour
+  /// justifier la complexité.
+  Future<void> _collectPot() async {
+    if (!_state.iMustCollect) return;
+    await widget.transport.collectPot();
   }
 
   /// Affiche SA propre pile en éventail (voir demande utilisateur) — sans
@@ -795,6 +885,9 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                       duelPartnerDisplayCount: _duelPartnerDisplayCount,
                       onTapFlip: _tapFlip,
                       onTapPeek: (userId) => _showFan(context, _pileFor(userId), _colorFor(userId)),
+                      onTapShuffle: _shufflePile,
+                      shuffleCountFor: _shuffleCountFor,
+                      onTapCollect: _collectPot,
                       flipGuideKey: _flipGuideKey,
                       guideFlipped: _guideFlipped,
                       onGuideFlipTap: _guideStep == _WarCardGuideStep.flip ? _onGuideFlipTap : null,
@@ -1535,6 +1628,33 @@ class _WarCardPeekButton extends StatelessWidget {
   }
 }
 
+/// Bouton "battre sa pile" (voir demande utilisateur : "je peux regarder
+/// mes propres cartes, est-ce possible de les battre également") — même
+/// habillage que _WarCardPeekButton, à l'angle opposé (haut-gauche).
+class _WarCardShuffleButton extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+
+  const _WarCardShuffleButton({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 3,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: Icon(Icons.shuffle_rounded, size: 18, color: color),
+        ),
+      ),
+    );
+  }
+}
+
 /// Étape de la carte révélée dans la zone de jeu (voir demande
 /// utilisateur) : dès qu'elle est retournée, elle monte IMMÉDIATEMENT
 /// au centre et y attend ([atStage], voir _tapFlip) — une fois les DEUX
@@ -1569,6 +1689,19 @@ class _WarCardDuelArea extends StatelessWidget {
   final int? duelPartnerDisplayCount;
   final Future<void> Function(String userId) onTapFlip;
   final void Function(String userId) onTapPeek;
+  // "Battre" sa propre pile en cours de partie (voir demande utilisateur) —
+  // async comme onTapFlip : _WarCardBoardScreenState._shufflePile applique
+  // ses propres garde-fous (carte déjà engagée, pile trop petite, etc.).
+  final Future<void> Function(String userId) onTapShuffle;
+  // Limite "battre sa pile" (voir demande utilisateur : max 2 par manche,
+  // remis à zéro à chaque nouvelle manche résolue — voir
+  // _WarCardBoardScreenState._shuffleCounts).
+  final int Function(String userId) shuffleCountFor;
+  // "Ramasser" le pot d'une manche gagnée (voir demande utilisateur : un
+  // bouton dédié plutôt qu'un ramassage automatique, à distance/Bluetooth
+  // uniquement) — sans argument : `_WarCardBoardScreenState._collectPot`
+  // relit `state.pendingCollectorId` lui-même.
+  final VoidCallback onTapCollect;
   // Guide pas-à-pas (voir demande utilisateur : "guider le user vers
   // quelque action pour qu'il comprenne le mécanisme") — bulle sur MA
   // pile uniquement (gauche), jamais celle du binôme. [guideFlipped]
@@ -1598,6 +1731,9 @@ class _WarCardDuelArea extends StatelessWidget {
     required this.duelPartnerDisplayCount,
     required this.onTapFlip,
     required this.onTapPeek,
+    required this.onTapShuffle,
+    required this.shuffleCountFor,
+    required this.onTapCollect,
     this.flipGuideKey,
     this.guideFlipped = false,
     this.onGuideFlipTap,
@@ -1685,8 +1821,13 @@ class _WarCardDuelArea extends StatelessWidget {
             count: leftCount,
             canPlay: canActLeft && !leftTapped && leftPile.isNotEmpty,
             canPeek: true,
+            // 2 max par manche (voir demande utilisateur et
+            // _WarCardBoardScreenState._maxShufflesPerTurn, seule source de
+            // vérité pour l'application réelle de la limite).
+            canShuffle: canActLeft && !leftTapped && leftPile.length > 1 && shuffleCountFor(leftId) < 2,
             onTapFlip: () => onTapFlip(leftId),
             onTapPeek: () => onTapPeek(leftId),
+            onTapShuffle: () => onTapShuffle(leftId),
             guideKey: flipGuideKey,
             guideTitle: guideFlipped ? 'Elle attend ton binôme' : 'Tape pour retourner',
             guideDescription: guideFlipped
@@ -1703,8 +1844,10 @@ class _WarCardDuelArea extends StatelessWidget {
             count: rightCount,
             canPlay: canActRight && !rightTapped && rightPile.isNotEmpty,
             canPeek: isLocalMode,
+            canShuffle: canActRight && !rightTapped && rightPile.length > 1 && shuffleCountFor(rightId) < 2,
             onTapFlip: () => onTapFlip(rightId),
             onTapPeek: () => onTapPeek(rightId),
+            onTapShuffle: () => onTapShuffle(rightId),
           ),
         ),
         // Toujours montés (jamais insérés/retirés de l'arbre) pour que
@@ -1723,8 +1866,10 @@ class _WarCardDuelArea extends StatelessWidget {
           child: rightCard == null ? const SizedBox.shrink() : _WarCardFaceCard(card: rightCard, color: rightColor),
         ),
         // "touche ta carte pour la jouer" (voir demande utilisateur) —
-        // remontée avec les piles, pas collée au bord de l'écran.
-        if (canActLeft && (!leftTapped || (isLocalMode && !rightTapped)))
+        // remontée avec les piles, pas collée au bord de l'écran. Masqué
+        // pendant l'attente de ramassage (voir bloc suivant) : les DEUX
+        // ont déjà tapé pour CETTE manche, ce serait trompeur.
+        if (!(duelActive && state.pendingCollectorId != null) && canActLeft && (!leftTapped || (isLocalMode && !rightTapped)))
           Align(
             alignment: const Alignment(0, 0.3),
             child: Text(
@@ -1732,6 +1877,30 @@ class _WarCardDuelArea extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
             ),
+          ),
+        // "Ramasser mes cartes" (voir demande utilisateur : "un bouton
+        // pour m'informer de ramasser... impliquer chacun proprement") —
+        // affiché UNIQUEMENT une fois les cartes arrivées côté vainqueur
+        // (fin de l'animation de duel, voir _runDuelAnimation qui reste
+        // délibérément figée sur `atWinner` tant que le ramassage n'a pas
+        // eu lieu). Le binôme voit qui doit ramasser, pas de bouton actif
+        // pour lui.
+        if (duelActive && duelPhase == _DuelPhase.atWinner && state.pendingCollectorId != null)
+          Align(
+            alignment: const Alignment(0, 0.3),
+            child: state.iMustCollect
+                ? FilledButton.icon(
+                    onPressed: onTapCollect,
+                    icon: const Icon(Icons.back_hand_rounded, size: 18),
+                    label: Text(LocaleScope.t(context, 'war_card_collect_button')),
+                  )
+                : Text(
+                    LocaleScope.t(context, 'war_card_collect_waiting', {
+                      'partner': playerNames[state.pendingCollectorId] ?? '',
+                    }),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                  ),
           ),
       ],
     );
@@ -1741,14 +1910,16 @@ class _WarCardDuelArea extends StatelessWidget {
 /// Une pile, EN BAS de l'écran (voir demande utilisateur) — dos de
 /// cartes empilés, tapable pour jouer, avec un œil à l'angle haut-droit
 /// (voir sa pile en éventail).
-class _WarCardPileBase extends StatelessWidget {
+class _WarCardPileBase extends StatefulWidget {
   final String label;
   final Color color;
   final int count;
   final bool canPlay;
   final bool canPeek;
+  final bool canShuffle;
   final VoidCallback onTapFlip;
   final VoidCallback onTapPeek;
+  final VoidCallback onTapShuffle;
   final GlobalKey? guideKey;
   final String? guideTitle;
   final String? guideDescription;
@@ -1765,8 +1936,10 @@ class _WarCardPileBase extends StatelessWidget {
     required this.count,
     required this.canPlay,
     required this.canPeek,
+    required this.canShuffle,
     required this.onTapFlip,
     required this.onTapPeek,
+    required this.onTapShuffle,
     this.guideKey,
     this.guideTitle,
     this.guideDescription,
@@ -1774,18 +1947,61 @@ class _WarCardPileBase extends StatelessWidget {
   });
 
   @override
+  State<_WarCardPileBase> createState() => _WarCardPileBaseState();
+}
+
+class _WarCardPileBaseState extends State<_WarCardPileBase> with SingleTickerProviderStateMixin {
+  // Animation "éventail qui s'ouvre puis se ferme" au tap sur "battre"
+  // (voir demande utilisateur) — purement visuelle, indépendante du vrai
+  // mélange déclenché en parallèle par widget.onTapShuffle (voir
+  // _WarCardFullStack.fanAmount).
+  late final AnimationController _shuffleController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  );
+
+  @override
+  void dispose() {
+    _shuffleController.dispose();
+    super.dispose();
+  }
+
+  void _onTapShuffle() {
+    widget.onTapShuffle();
+    unawaited(_shuffleController.forward(from: 0));
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pile = GestureDetector(
-      onTap: onGuideTap ?? (canPlay ? onTapFlip : null),
+      onTap: widget.onGuideTap ?? (widget.canPlay ? widget.onTapFlip : null),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          _WarCardFullStack(count: count, color: color),
-          if (canPeek)
+          AnimatedBuilder(
+            animation: _shuffleController,
+            builder: (context, _) => _WarCardFullStack(
+              count: widget.count,
+              color: widget.color,
+              // sin(π·t) : 0 au repos comme à la fin, pic à 1 au milieu de
+              // l'animation — l'éventail s'ouvre puis se referme tout seul.
+              fanAmount: math.sin(math.pi * _shuffleController.value),
+            ),
+          ),
+          if (widget.canPeek)
             Positioned(
               top: -8,
               right: -8,
-              child: _WarCardPeekButton(color: color, onTap: onTapPeek),
+              child: _WarCardPeekButton(color: widget.color, onTap: widget.onTapPeek),
+            ),
+          // Masqué (pas juste désactivé) quand la carte du dessus est déjà
+          // engagée dans un duel — voir _shufflePile : la battre à ce
+          // moment-là changerait la carte jouée après coup.
+          if (widget.canShuffle)
+            Positioned(
+              top: -8,
+              left: -8,
+              child: _WarCardShuffleButton(color: widget.color, onTap: _onTapShuffle),
             ),
         ],
       ),
@@ -1793,22 +2009,22 @@ class _WarCardPileBase extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+        Text(widget.label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: widget.color)),
         const SizedBox(height: 8),
-        if (guideKey == null)
+        if (widget.guideKey == null)
           pile
         else
           Showcase(
-            key: guideKey!,
-            title: guideTitle ?? 'Tape pour retourner',
-            description: guideDescription ??
+            key: widget.guideKey!,
+            title: widget.guideTitle ?? 'Tape pour retourner',
+            description: widget.guideDescription ??
                 "Tape ta pile pour retourner ta carte. Dès que ton binôme aura fait pareil, vos deux cartes s'affrontent au centre — la plus forte gagne les deux.",
             targetBorderRadius: BorderRadius.circular(12),
-            disableDefaultTargetGestures: onGuideTap != null,
+            disableDefaultTargetGestures: widget.onGuideTap != null,
             child: pile,
           ),
         const SizedBox(height: 6),
-        Text('$count', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+        Text('${widget.count}', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: widget.color)),
       ],
     );
   }
@@ -2044,28 +2260,57 @@ class _WarCardFaceCard extends StatelessWidget {
 class _WarCardFullStack extends StatelessWidget {
   final int count;
   final Color color;
+  // Animation "battre sa pile" (voir demande utilisateur : "éventail qui
+  // s'ouvre puis se ferme") — 0 au repos (pile bien rangée), monte vers 1
+  // au pic de l'éventail puis redescend à 0, piloté par
+  // _WarCardPileBaseState. N'affecte que le rendu, jamais l'ordre réel des
+  // cartes (voir _shufflePile, qui déclenche le vrai mélange côté
+  // transport en parallèle).
+  final double fanAmount;
 
-  const _WarCardFullStack({required this.count, required this.color});
+  const _WarCardFullStack({required this.count, required this.color, this.fanAmount = 0});
 
   @override
   Widget build(BuildContext context) {
     // Jusqu'à 6 dos décalés pour suggérer l'épaisseur des 52 cartes, sans
     // dessiner littéralement 52 widgets superposés.
     final depth = count <= 0 ? 0 : (count >= 52 ? 6 : (1 + (count * 5 / 52)).round());
+    // Ordre de dessin (arrière → avant) : les dos empilés en diagonale
+    // (i = depth..1), puis la carte de face (i = 0, sans décalage).
+    final backIndices = [for (var i = depth; i >= 1; i--) i, 0];
+    const maxSpreadRadians = 0.5; // ~29°, éventail complet à fanAmount = 1
 
     return SizedBox(
-      width: _kCardWidth + depth * 2.5,
+      width: _kCardWidth + depth * 2.5 + _kCardWidth * 0.4 * fanAmount,
       height: _kCardHeight + depth * 2.5,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          for (var i = depth; i >= 1; i--)
-            Positioned(
-              right: (depth - i) * 2.5,
-              top: (depth - i) * 2.5,
-              child: _CardBack(color: color, dimmed: i > 1),
-            ),
-          Positioned(left: 0, bottom: 0, child: _CardBack(color: color)),
+          for (var layer = 0; layer < backIndices.length; layer++)
+            _buildLayer(backIndices[layer], layer, backIndices.length, depth, maxSpreadRadians),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLayer(int i, int layer, int layerCount, int depth, double maxSpreadRadians) {
+    // t va de 0 (dos le plus enfoui) à 1 (carte de face) — l'angle est
+    // centré sur 0 pour que l'éventail s'ouvre symétriquement autour de la
+    // position empilée d'origine.
+    final t = layerCount <= 1 ? 0.5 : layer / (layerCount - 1);
+    final angle = (t - 0.5) * maxSpreadRadians * fanAmount;
+
+    return Positioned(
+      right: i == 0 ? null : (depth - i) * 2.5,
+      left: i == 0 ? 0 : null,
+      top: i == 0 ? null : (depth - i) * 2.5,
+      bottom: i == 0 ? 0 : null,
+      child: Transform.rotate(
+        // Pivote depuis le coin bas-gauche, comme un éventail de cartes
+        // tenu en main.
+        angle: angle,
+        alignment: Alignment.bottomLeft,
+        child: _CardBack(color: color, dimmed: i > 1),
       ),
     );
   }

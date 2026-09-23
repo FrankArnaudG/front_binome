@@ -98,6 +98,8 @@ class NearbyWarCardTransport extends WarCardTransport {
       'startedAt': _state.startedAt?.toIso8601String(),
       'pausedByUserId': _state.pausedByUserId,
       'pausedAt': _state.pausedAt?.toIso8601String(),
+      'pendingCollectorId': _state.pendingCollectorId,
+      'pendingPot': _state.pendingPot,
     });
   }
 
@@ -150,6 +152,9 @@ class NearbyWarCardTransport extends WarCardTransport {
           pausedByUserId: pausedByUserId,
           pausedAt: message['pausedAt'] != null ? DateTime.parse(message['pausedAt'] as String) : null,
           clearPause: pausedByUserId == null,
+          pendingCollectorId: message['pendingCollectorId'] as String?,
+          pendingPot: (message['pendingPot'] as List?)?.map((e) => e as String).toList() ?? const [],
+          clearPendingCollector: message['pendingCollectorId'] == null,
         );
         _controller.add(_state);
       case 'shuffle_request':
@@ -172,6 +177,8 @@ class NearbyWarCardTransport extends WarCardTransport {
         if (isHost) _applyHostResume(kWarCardGuestRole);
       case 'abandon_request':
         if (isHost) _applyHostAbandon();
+      case 'collect_request':
+        if (isHost) _applyHostCollect(kWarCardGuestRole);
     }
   }
 
@@ -276,6 +283,35 @@ class NearbyWarCardTransport extends WarCardTransport {
       winnerUserId: outcome.winnerUserId,
       isTie: outcome.isTie,
       finished: outcome.finished,
+      pendingCollectorId: outcome.pendingCollectorId,
+      pendingPot: outcome.pendingCollectorId != null ? _battlePot : const [],
+      clearPendingCollector: outcome.pendingCollectorId == null,
+    );
+    _controller.add(_state);
+    _sendState();
+  }
+
+  /// Ramasse le pot en attente (voir demande utilisateur : "un bouton
+  /// pour m'informer de ramasser") — [byRole] doit correspondre
+  /// exactement à `_state.pendingCollectorId`, sinon ignoré (l'invité ne
+  /// peut pas ramasser à la place de l'hôte, et vice versa).
+  void _applyHostCollect(String byRole) {
+    if (_state.pendingCollectorId != byRole) return;
+
+    final result = WarCardEngine.collectPot(
+      pileCreator: _pileHost,
+      pilePartner: _pileGuest,
+      pot: _battlePot,
+      collectorIsCreator: byRole == kWarCardHostRole,
+    );
+    _pileHost = result.pileCreator;
+    _pileGuest = result.pilePartner;
+    _battlePot = [];
+
+    _state = _state.copyWith(
+      pileCreator: _pileHost,
+      pilePartner: _pileGuest,
+      clearPendingCollector: true,
     );
     _controller.add(_state);
     _sendState();
@@ -356,6 +392,15 @@ class NearbyWarCardTransport extends WarCardTransport {
       _applyHostFlip(kWarCardHostRole);
     } else {
       _send({'type': 'flip'});
+    }
+  }
+
+  @override
+  Future<void> collectPot() async {
+    if (isHost) {
+      _applyHostCollect(kWarCardHostRole);
+    } else {
+      _send({'type': 'collect_request'});
     }
   }
 

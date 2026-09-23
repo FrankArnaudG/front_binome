@@ -999,6 +999,14 @@ class GameService {
     return WarCardSession.fromJson(data);
   }
 
+  /// Ramasse le pot en attente (voir demande utilisateur : "un bouton
+  /// pour m'informer de ramasser... impliquer chacun proprement") — le
+  /// serveur refuse (403) si ce n'est pas à CET utilisateur de ramasser.
+  Future<WarCardSession> collectPotWarCard(String sessionId) async {
+    final data = await ApiClient.instance.put('/war-card-sessions/$sessionId/collect') as Map<String, dynamic>;
+    return WarCardSession.fromJson(data);
+  }
+
   Future<WarCardSession> abandonWarCard(String sessionId) async {
     final data = await ApiClient.instance.put('/war-card-sessions/$sessionId/abandon') as Map<String, dynamic>;
     return WarCardSession.fromJson(data);

@@ -41,6 +41,10 @@ class WarCardSession {
   final DateTime? finishedAt;
   final DateTime? pausedAt;
   final String? pausedByUserId;
+  // Non-null quand une manche vient de se résoudre et que le pot attend
+  // d'être ramassé par cette personne (voir demande utilisateur : "un
+  // bouton pour m'informer de ramasser... impliquer chacun proprement").
+  final String? pendingCollectorId;
 
   const WarCardSession({
     required this.id,
@@ -70,6 +74,7 @@ class WarCardSession {
     this.finishedAt,
     this.pausedAt,
     this.pausedByUserId,
+    this.pendingCollectorId,
   });
 
   bool get isFinished => finishedAt != null;
@@ -104,6 +109,7 @@ class WarCardSession {
         finishedAt: json['finished_at'] != null ? DateTime.parse(json['finished_at'] as String) : null,
         pausedAt: json['paused_at'] != null ? DateTime.parse(json['paused_at'] as String) : null,
         pausedByUserId: json['paused_by_user_id'] as String?,
+        pendingCollectorId: json['pending_collector_id'] as String?,
       );
 }
 

@@ -96,6 +96,23 @@ class LocalWarCardTransport extends WarCardTransport {
     _pilePartner = outcome.pilePartner;
     _battlePot = outcome.battlePot;
 
+    // Pass-and-play garde le ramassage AUTOMATIQUE (voir demande
+    // utilisateur : le bouton "ramasser" ne s'applique qu'à distance/
+    // Bluetooth, les deux joueurs étant déjà réunis devant le même écran
+    // ici — pas besoin de "s'informer") — ramassé tout de suite, sans
+    // jamais exposer `pendingCollectorId` à l'écran.
+    if (outcome.pendingCollectorId != null) {
+      final result = WarCardEngine.collectPot(
+        pileCreator: _pileCreator,
+        pilePartner: _pilePartner,
+        pot: _battlePot,
+        collectorIsCreator: outcome.pendingCollectorId == creatorUserId,
+      );
+      _pileCreator = result.pileCreator;
+      _pilePartner = result.pilePartner;
+      _battlePot = [];
+    }
+
     _state = _state.copyWith(
       pileCreator: _pileCreator,
       pilePartner: _pilePartner,
@@ -126,6 +143,11 @@ class LocalWarCardTransport extends WarCardTransport {
     }
     _controller.add(_state);
   }
+
+  // Jamais appelée en pass-and-play — voir flip() ci-dessus, qui ramasse
+  // toujours immédiatement (pendingCollectorId n'est jamais exposé ici).
+  @override
+  Future<void> collectPot() async {}
 
   @override
   Future<void> abandon() async {

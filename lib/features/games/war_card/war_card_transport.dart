@@ -40,6 +40,16 @@ class WarCardBoardState {
   final String partnerId;
   final String? pausedByUserId;
   final DateTime? pausedAt;
+  // Non-null en mode à distance/Bluetooth quand une manche vient de se
+  // résoudre et que le pot attend d'être ramassé par cette personne (voir
+  // demande utilisateur : "un bouton pour m'informer de ramasser... une
+  // manière d'impliquer chacun proprement") — toujours null en
+  // pass-and-play, qui garde le ramassage automatique (voir
+  // LocalWarCardTransport, qui ne laisse jamais ce champ non-null).
+  final String? pendingCollectorId;
+  // Cartes en attente de ramassage — vide tant qu'aucune manche n'est en
+  // attente, sinon la pile complète remportée par [pendingCollectorId].
+  final List<String> pendingPot;
 
   const WarCardBoardState({
     this.deck = const [],
@@ -63,7 +73,12 @@ class WarCardBoardState {
     required this.partnerId,
     this.pausedByUserId,
     this.pausedAt,
+    this.pendingCollectorId,
+    this.pendingPot = const [],
   });
+
+  /// Vrai si c'est à MOI de taper "Ramasser" (voir demande utilisateur).
+  bool get iMustCollect => pendingCollectorId == myUserId;
 
   // pausedAt (pas pausedByUserId) : une pause posée AUTOMATIQUEMENT par un solde épuisé (voir
   // AuthorizesResume côté serveur) laisse pausedByUserId à NULL — seul pausedAt distingue
@@ -110,6 +125,9 @@ class WarCardBoardState {
     String? pausedByUserId,
     DateTime? pausedAt,
     bool clearPause = false,
+    String? pendingCollectorId,
+    List<String>? pendingPot,
+    bool clearPendingCollector = false,
   }) =>
       WarCardBoardState(
         deck: deck ?? this.deck,
@@ -133,6 +151,8 @@ class WarCardBoardState {
         partnerId: partnerId,
         pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),
         pausedAt: clearPause ? null : (pausedAt ?? this.pausedAt),
+        pendingCollectorId: clearPendingCollector ? null : (pendingCollectorId ?? this.pendingCollectorId),
+        pendingPot: clearPendingCollector ? const [] : (pendingPot ?? this.pendingPot),
       );
 }
 
@@ -178,6 +198,14 @@ abstract class WarCardTransport {
   /// l'autre selon la pile tapée). Refusé si cette personne a déjà joué
   /// sa carte pour la manche en cours.
   Future<void> shufflePile(String userId);
+
+  /// Ramasse le pot en attente (voir demande utilisateur : "un bouton
+  /// pour m'informer de ramasser... impliquer chacun proprement") —
+  /// réservé à [WarCardBoardState.pendingCollectorId] ; en pass-and-play
+  /// (voir [LocalWarCardTransport]) ce champ n'est jamais renseigné, donc
+  /// cette méthode n'y est jamais appelée (le ramassage y reste
+  /// automatique).
+  Future<void> collectPot();
 
   Future<void> abandon();
 

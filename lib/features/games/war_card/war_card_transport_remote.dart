@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../../../core/game_sync_log.dart';
 import '../../../core/realtime_client.dart';
 import '../../../models/war_card_session.dart';
@@ -71,8 +73,40 @@ class RemoteWarCardTransport extends WarCardTransport {
     return true;
   }
 
-  void _applyServerState(WarCardSession session) {
+  void _applyServerState(WarCardSession session, [String source = 'unknown']) {
     if (!_acceptVersion(session)) return;
+    // Diagnostic (voir demande utilisateur : "ma carte se retourne sans que
+    // je tape ma pile", mode à distance) — trace tout passage de MON
+    // pendingFlip de false à true, avec la source (broadcast temps réel vs
+    // resync périodique vs réponse directe d'un appel), pour distinguer un
+    // vrai tap perdu/dupliqué d'un état serveur mal attribué.
+    final myFlipBefore = myUserId == creatorId ? _state.pendingFlipCreator : _state.pendingFlipPartner;
+    final myFlipAfter = myUserId == creatorId ? session.pendingFlipCreator : session.pendingFlipPartner;
+    if (!myFlipBefore && myFlipAfter) {
+      debugPrint(
+        'RemoteWarCardTransport: mon pendingFlip passe à true via "$source" '
+        '(session ${session.id}, version ${session.version}, rounds ${session.roundsCount})',
+      );
+    }
+    // Diagnostic (voir demande utilisateur : "je peux sortir une carte et
+    // elle change automatiquement") — la carte révélée à l'écran est lue EN
+    // LIVE depuis pileCreator/pilePartner (voir _WarCardDuelArea), donc si
+    // le dessus de MA pile change alors qu'AUCUNE manche n'a été résolue
+    // entre-temps (même roundsCount), la carte affichée change sans raison
+    // valable — signe d'un état incohérent appliqué par erreur.
+    final myPileBefore = myUserId == creatorId ? _state.pileCreator : _state.pilePartner;
+    final myPileAfter = myUserId == creatorId ? (session.pileCreator ?? const []) : (session.pilePartner ?? const []);
+    final myTopCardBefore = myPileBefore.isNotEmpty ? myPileBefore.first : null;
+    final myTopCardAfter = myPileAfter.isNotEmpty ? myPileAfter.first : null;
+    if (myTopCardBefore != null &&
+        myTopCardAfter != null &&
+        myTopCardBefore != myTopCardAfter &&
+        session.roundsCount == _state.roundsCount) {
+      debugPrint(
+        'RemoteWarCardTransport: ma carte du dessus change SANS résolution de manche via "$source" '
+        '($myTopCardBefore → $myTopCardAfter, session ${session.id}, version ${session.version}, rounds ${session.roundsCount})',
+      );
+    }
     _state = _stateFrom(session);
     _controller.add(_state);
   }
@@ -84,7 +118,7 @@ class RemoteWarCardTransport extends WarCardTransport {
       if (_controller.isClosed || _state.finished) return;
       final behind = session.version > _version || session.roundsCount > _state.roundsCount || ((session.isFinished || session.abandoned) && !_state.finished);
       if (!behind) return;
-      _applyServerState(session);
+      _applyServerState(session, 'resync_poll');
     } catch (_) {
       // best effort — on retente au prochain tour.
     }
@@ -112,6 +146,8 @@ class RemoteWarCardTransport extends WarCardTransport {
         partnerId: partnerId,
         pausedByUserId: session.pausedByUserId,
         pausedAt: session.pausedAt,
+        pendingCollectorId: session.pendingCollectorId,
+        pendingPot: session.battlePot,
       );
 
   void _onRealtimeEvent(RealtimeEvent event) {
@@ -123,7 +159,7 @@ class RemoteWarCardTransport extends WarCardTransport {
     if (session.id != sessionId) return;
     if (!_acceptVersion(session)) return;
 
-    _applyServerState(session);
+    _applyServerState(session, 'realtime_broadcast');
   }
 
   @override
@@ -197,11 +233,11 @@ class RemoteWarCardTransport extends WarCardTransport {
 
     try {
       final result = await GameService.instance.flipWarCard(sessionId);
-      _applyServerState(result.session);
+      _applyServerState(result.session, 'my_own_flip_response');
     } catch (_) {
       try {
         final session = await GameService.instance.fetchWarCardState(sessionId);
-        _applyServerState(session);
+        _applyServerState(session, 'my_own_flip_fallback_fetch');
       } catch (_) {
         // best effort — voir doc de classe RealtimeClient.
       }
@@ -212,6 +248,12 @@ class RemoteWarCardTransport extends WarCardTransport {
   Future<void> shufflePile(String userId) async {
     final session = await GameService.instance.shufflePileWarCard(sessionId);
     _applyServerState(session);
+  }
+
+  @override
+  Future<void> collectPot() async {
+    final session = await GameService.instance.collectPotWarCard(sessionId);
+    _applyServerState(session, 'my_own_collect_response');
   }
 
   @override

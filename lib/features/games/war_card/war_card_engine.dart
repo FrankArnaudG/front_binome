@@ -13,6 +13,14 @@ class WarCardFlipOutcome {
   final String? winnerUserId;
   final bool isTie;
   final bool finished;
+  // Non-null quand une manche vient de se résoudre mais que le pot
+  // n'attend plus que d'être ramassé (voir demande utilisateur : "au lieu
+  // de ramasser automatiquement, un bouton pour informer" — implique
+  // chacun des deux plutôt qu'un ramassage automatique) — `null` si la
+  // partie se termine sur cette manche (ramassage immédiat, voir
+  // collectPot/_resolveRound, un bouton n'a alors plus de sens juste avant
+  // le tableau des scores).
+  final String? pendingCollectorId;
 
   const WarCardFlipOutcome({
     required this.resolved,
@@ -26,6 +34,7 @@ class WarCardFlipOutcome {
     this.winnerUserId,
     this.isTie = false,
     this.finished = false,
+    this.pendingCollectorId,
   });
 }
 
@@ -214,8 +223,14 @@ class WarCardEngine {
     required String creatorId,
     required String partnerId,
   }) {
-    final pot = List.of(battlePot);
+    var pot = List.of(battlePot);
     final rounds = <Map<String, String>>[];
+    // 'creator' | 'partner' | null — qui doit ramasser `pot` une fois la
+    // manche résolue (voir demande utilisateur : le gagnant doit taper
+    // pour ramasser, plutôt qu'un ramassage automatique). Ne fusionne PLUS
+    // directement dans la pile ici — voir collectPot(), appelé séparément
+    // une fois que la personne concernée a tapé.
+    String? potWinner;
 
     while (pileCreator.isNotEmpty && pilePartner.isNotEmpty) {
       final creatorCard = pileCreator.removeAt(0);
@@ -227,15 +242,11 @@ class WarCardEngine {
       final partnerValue = _rankValue(partnerCard);
 
       if (creatorValue > partnerValue) {
-        pot.shuffle(Random());
-        pileCreator.addAll(pot);
-        pot.clear();
+        potWinner = 'creator';
         break;
       }
       if (partnerValue > creatorValue) {
-        pot.shuffle(Random());
-        pilePartner.addAll(pot);
-        pot.clear();
+        potWinner = 'partner';
         break;
       }
 
@@ -250,22 +261,23 @@ class WarCardEngine {
     }
 
     // Un des deux s'est retrouvé à sec PENDANT une bataille (pot non
-    // soldé) — l'autre remporte tout ce qui reste en jeu.
-    if (pot.isNotEmpty) {
-      pot.shuffle(Random());
-      if (pileCreator.isEmpty) {
-        pilePartner.addAll(pot);
-      } else {
-        pileCreator.addAll(pot);
-      }
-      pot.clear();
+    // soldé, sortie du while sans comparaison) — l'autre remporte tout ce
+    // qui reste en jeu.
+    if (potWinner == null && pot.isNotEmpty) {
+      potWinner = pileCreator.isEmpty ? 'partner' : 'creator';
     }
+
+    if (potWinner != null) pot.shuffle(Random());
 
     final newRoundsCount = roundsCount + 1;
     String? winnerUserId;
     var isTie = false;
     var finished = false;
 
+    // finished/winnerUserId se déduisent des piles APRÈS retrait des
+    // cartes jouées mais AVANT ajout du pot : c'est la pile du PERDANT
+    // (déjà à jour ici) qui détermine la fin, jamais celle du vainqueur
+    // qui attend encore de ramasser (voir doc de classe).
     if (pileCreator.isEmpty) {
       winnerUserId = partnerId;
       finished = true;
@@ -274,12 +286,34 @@ class WarCardEngine {
       finished = true;
     } else if (newRoundsCount >= maxRounds) {
       finished = true;
-      if (pileCreator.length > pilePartner.length) {
+      // Le pot pas encore ramassé compte quand même pour départager au
+      // décompte maximum, sinon un gros pot en attente fausserait le
+      // résultat.
+      final creatorTotal = pileCreator.length + (potWinner == 'creator' ? pot.length : 0);
+      final partnerTotal = pilePartner.length + (potWinner == 'partner' ? pot.length : 0);
+      if (creatorTotal > partnerTotal) {
         winnerUserId = creatorId;
-      } else if (pilePartner.length > pileCreator.length) {
+      } else if (partnerTotal > creatorTotal) {
         winnerUserId = partnerId;
       } else {
         isTie = true;
+      }
+    }
+
+    String? pendingCollectorId;
+    if (potWinner != null) {
+      if (finished) {
+        // Partie terminée sur cette manche : ramassage immédiat, pas de
+        // bouton (voir demande utilisateur — n'a de sens qu'en cours de
+        // partie, jamais juste avant le tableau des scores).
+        if (potWinner == 'creator') {
+          pileCreator = [...pileCreator, ...pot];
+        } else {
+          pilePartner = [...pilePartner, ...pot];
+        }
+        pot = [];
+      } else {
+        pendingCollectorId = potWinner == 'creator' ? creatorId : partnerId;
       }
     }
 
@@ -290,12 +324,30 @@ class WarCardEngine {
       pendingFlipCreator: false,
       pendingFlipPartner: false,
       battlePot: pot,
+      pendingCollectorId: pendingCollectorId,
       roundsCount: newRoundsCount,
       lastRoundResult: rounds,
       winnerUserId: winnerUserId,
       isTie: isTie,
       finished: finished,
     );
+  }
+
+  /// Ramasse un pot en attente (voir demande utilisateur : le gagnant de
+  /// la manche doit taper pour ramasser plutôt qu'un ramassage
+  /// automatique) — l'appelant doit avoir déjà vérifié que c'est bien à
+  /// [collectorIsCreator] de le faire (voir NearbyWarCardTransport.
+  /// collectPot / WarCardController::collect côté serveur).
+  static ({List<String> pileCreator, List<String> pilePartner}) collectPot({
+    required List<String> pileCreator,
+    required List<String> pilePartner,
+    required List<String> pot,
+    required bool collectorIsCreator,
+  }) {
+    if (collectorIsCreator) {
+      return (pileCreator: [...pileCreator, ...pot], pilePartner: pilePartner);
+    }
+    return (pileCreator: pileCreator, pilePartner: [...pilePartner, ...pot]);
   }
 
   static int _rankValue(String card) {
