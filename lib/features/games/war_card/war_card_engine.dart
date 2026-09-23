@@ -215,6 +215,15 @@ class WarCardEngine {
     );
   }
 
+  /// Une SEULE comparaison par appel — voir demande utilisateur : "si y'a
+  /// deux cartes de même valeur... les deux cartes restent toujours en
+  /// place et on attend que les gens sortent d'autre carte, si y'a guerre
+  /// encore c'est pareil, jusqu'à ce que l'un gagne à ramasser". Pas de
+  /// cartes cachées : en cas d'égalité, les deux cartes rejoignent le pot
+  /// (qui reste en jeu) et [pendingFlipCreator]/[pendingFlipPartner]
+  /// repassent à `false` — chacun doit retaper pour jouer sa carte
+  /// suivante, autant de fois qu'il le faut, jusqu'à une comparaison
+  /// décisive (voir collectPot() pour le ramassage final).
   static WarCardFlipOutcome _resolveRound({
     required List<String> pileCreator,
     required List<String> pilePartner,
@@ -224,61 +233,63 @@ class WarCardEngine {
     required String partnerId,
   }) {
     var pot = List.of(battlePot);
-    final rounds = <Map<String, String>>[];
-    // 'creator' | 'partner' | null — qui doit ramasser `pot` une fois la
-    // manche résolue (voir demande utilisateur : le gagnant doit taper
-    // pour ramasser, plutôt qu'un ramassage automatique). Ne fusionne PLUS
-    // directement dans la pile ici — voir collectPot(), appelé séparément
-    // une fois que la personne concernée a tapé.
-    String? potWinner;
+    final creatorCard = pileCreator.removeAt(0);
+    final partnerCard = pilePartner.removeAt(0);
+    pot.addAll([creatorCard, partnerCard]);
+    final rounds = [
+      {'creator': creatorCard, 'partner': partnerCard},
+    ];
 
-    while (pileCreator.isNotEmpty && pilePartner.isNotEmpty) {
-      final creatorCard = pileCreator.removeAt(0);
-      final partnerCard = pilePartner.removeAt(0);
-      pot.addAll([creatorCard, partnerCard]);
-      rounds.add({'creator': creatorCard, 'partner': partnerCard});
-
-      final creatorValue = _rankValue(creatorCard);
-      final partnerValue = _rankValue(partnerCard);
-
-      if (creatorValue > partnerValue) {
-        potWinner = 'creator';
-        break;
-      }
-      if (partnerValue > creatorValue) {
-        potWinner = 'partner';
-        break;
-      }
-
-      // Égalité → bataille : 3 cartes cachées de chaque côté (moins si
-      // l'un des deux n'en a plus assez), puis la boucle rejoue une
-      // carte visible.
-      final creatorHidden = pileCreator.take(3).toList();
-      pileCreator.removeRange(0, creatorHidden.length);
-      final partnerHidden = pilePartner.take(3).toList();
-      pilePartner.removeRange(0, partnerHidden.length);
-      pot.addAll([...creatorHidden, ...partnerHidden]);
-    }
-
-    // Un des deux s'est retrouvé à sec PENDANT une bataille (pot non
-    // soldé, sortie du while sans comparaison) — l'autre remporte tout ce
-    // qui reste en jeu.
-    if (potWinner == null && pot.isNotEmpty) {
-      potWinner = pileCreator.isEmpty ? 'partner' : 'creator';
-    }
-
-    if (potWinner != null) pot.shuffle(Random());
-
+    final creatorValue = _rankValue(creatorCard);
+    final partnerValue = _rankValue(partnerCard);
     final newRoundsCount = roundsCount + 1;
+
+    // 'creator' | 'partner' | null — qui remporte CE pot. Reste `null`
+    // tant que c'est une égalité ET que les deux ont encore au moins une
+    // carte pour continuer la guerre (voir isOngoingWar ci-dessous) ;
+    // sinon (décisif, OU l'un des deux ne peut plus continuer la guerre)
+    // désigne le vainqueur de ce pot.
+    String? potWinner;
+    if (creatorValue > partnerValue) {
+      potWinner = 'creator';
+    } else if (partnerValue > creatorValue) {
+      potWinner = 'partner';
+    } else if (pileCreator.isEmpty && pilePartner.isEmpty) {
+      potWinner = null; // égalité totale, traité plus bas (partie nulle).
+    } else if (pileCreator.isEmpty) {
+      potWinner = 'partner'; // ne peut plus continuer la guerre, perd par défaut.
+    } else if (pilePartner.isEmpty) {
+      potWinner = 'creator';
+    }
+
+    final isOngoingWar =
+        potWinner == null && creatorValue == partnerValue && !(pileCreator.isEmpty && pilePartner.isEmpty);
+
+    if (isOngoingWar) {
+      // Guerre en cours : ni vainqueur ni ramassage, le pot grossit et
+      // attend la prochaine paire de cartes (voir demande utilisateur :
+      // "les deux cartes restent toujours en place").
+      return WarCardFlipOutcome(
+        resolved: true,
+        pileCreator: pileCreator,
+        pilePartner: pilePartner,
+        pendingFlipCreator: false,
+        pendingFlipPartner: false,
+        battlePot: pot,
+        roundsCount: newRoundsCount,
+        lastRoundResult: rounds,
+      );
+    }
+
     String? winnerUserId;
     var isTie = false;
     var finished = false;
 
-    // finished/winnerUserId se déduisent des piles APRÈS retrait des
-    // cartes jouées mais AVANT ajout du pot : c'est la pile du PERDANT
-    // (déjà à jour ici) qui détermine la fin, jamais celle du vainqueur
-    // qui attend encore de ramasser (voir doc de classe).
-    if (pileCreator.isEmpty) {
+    if (pileCreator.isEmpty && pilePartner.isEmpty) {
+      // Rarissime : les deux tombent à sec exactement à la même manche.
+      finished = true;
+      isTie = true;
+    } else if (pileCreator.isEmpty) {
       winnerUserId = partnerId;
       finished = true;
     } else if (pilePartner.isEmpty) {
@@ -298,7 +309,11 @@ class WarCardEngine {
       } else {
         isTie = true;
       }
+    } else {
+      winnerUserId = potWinner == 'creator' ? creatorId : partnerId;
     }
+
+    if (potWinner != null) pot.shuffle(Random());
 
     String? pendingCollectorId;
     if (potWinner != null) {

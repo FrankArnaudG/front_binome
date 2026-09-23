@@ -101,10 +101,6 @@ class WarCardBoardState {
     return lastRoundResult.last[key];
   }
 
-  /// Vrai si la DERNIÈRE manche jouée a comporté une bataille (plus d'un
-  /// tirage dans la cascade) — pour afficher "Bataille !" côté client.
-  bool get lastRoundWasBattle => lastRoundResult.length > 1;
-
   WarCardBoardState copyWith({
     List<String>? deck,
     bool? dealt,
