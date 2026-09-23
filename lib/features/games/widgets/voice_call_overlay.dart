@@ -68,7 +68,9 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   StreamSubscription<bool>? _remoteVideoSubscription;
   StreamSubscription<CameraInvite>? _inviteSubscription;
   VoiceCallStatus _status = VoiceCallStatus.idle;
-  bool _muted = false;
+  // Coupé par défaut (voir VoiceCallService, doc de classe : "un simple
+  // clic pour qu'il passe au vert") — reflète l'état initial du service.
+  bool _muted = true;
   bool _cameraOn = false;
   bool _remoteVideoOn = false;
   bool _togglingCamera = false;
@@ -175,9 +177,64 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     return 'Connexion de la voix…';
   }
 
+  /// Feuille modale (voir demande utilisateur : "afficher d'abord un
+  /// modal qui sort du bas... avec deux boutons, l'un pour fermer et
+  /// l'autre pour aller activer") — remplace l'ancien SnackBar suivi
+  /// d'une redirection AUTOMATIQUE vers les réglages, qui surprenait
+  /// l'utilisateur (aucune confirmation avant de quitter l'app).
+  Future<void> _showMicPermissionSheet() async {
+    final goToSettings = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.mic_off_rounded, size: 36, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              const Text(
+                "Micro non autorisé",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Ton micro n'est pas autorisé pour cette app. Active-le dans les réglages du téléphone pour parler avec ton binôme.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Fermer'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text('Activer dans les réglages'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (goToSettings == true) await openAppSettings();
+  }
+
   /// Un tap : coupe/rétablit NOTRE micro (la liaison reste établie). Si la
   /// voix n'est pas active (micro refusé, ou arrêtée) : relance la connexion,
-  /// ou ouvre les réglages quand c'est l'autorisation qui manque.
+  /// ou ouvre les réglages quand c'est l'autorisation manque.
   Future<void> _onTapMic() async {
     if (widget.paused) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -188,10 +245,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     final service = _service;
     if (service == null) return;
     if (service.permissionDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Le micro n'est pas autorisé. Active-le dans les réglages du téléphone.")),
-      );
-      await openAppSettings();
+      await _showMicPermissionSheet();
       return;
     }
     if (_status == VoiceCallStatus.idle || _status == VoiceCallStatus.failed) {

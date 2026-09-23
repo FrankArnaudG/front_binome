@@ -127,7 +127,10 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   String? _duelCreatorCard;
   String? _duelPartnerCard;
   String? _duelWinnerId;
-  bool _duelWasBattle = false;
+  // Vrai UNIQUEMENT pendant l'affichage d'une manche non-décisive (les
+  // deux cartes sont à égalité) — voir demande utilisateur : "afficher
+  // GUERRE ⚔️... les deux cartes restent en place".
+  bool _duelIsWarStep = false;
   // Compteurs figés le temps du duel (voir demande utilisateur : chacun
   // affiche n-1 dès son tap, le vainqueur ne remonte à n+1 [-1 puis +2]
   // qu'au moment où les deux cartes rejoignent sa pile, pas avant) — sans
@@ -380,8 +383,6 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     // manuel dans l'écran de pré-partie).
     if (state.roundsCount > _lastAnimatedRoundsCount && state.lastRoundResult.isNotEmpty) {
       _lastAnimatedRoundsCount = state.roundsCount;
-      final creatorCard = state.lastCardFor(state.creatorId);
-      final partnerCard = state.lastCardFor(state.partnerId);
       // `pendingCollectorId` fait autorité quand présent — à distance/
       // Bluetooth, le pot remporté n'est PLUS fusionné automatiquement
       // dans la pile (voir demande utilisateur : bouton "ramasser"), donc
@@ -395,16 +396,12 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       // piles ont encore leur taille D'ORIGINE ici, voir doc de classe.
       final preCreatorCount = _state.pileCreator.length;
       final prePartnerCount = _state.pilePartner.length;
-      if (creatorCard != null && partnerCard != null) {
-        unawaited(_runDuelAnimation(
-          creatorCard: creatorCard,
-          partnerCard: partnerCard,
-          winnerId: winnerId,
-          wasBattle: state.lastRoundWasBattle,
-          preCreatorCount: preCreatorCount,
-          prePartnerCount: prePartnerCount,
-        ));
-      }
+      unawaited(_runDuelAnimation(
+        rounds: state.lastRoundResult,
+        winnerId: winnerId,
+        preCreatorCount: preCreatorCount,
+        prePartnerCount: prePartnerCount,
+      ));
     }
 
     // Le pot vient d'être ramassé (voir demande utilisateur : bouton
@@ -414,6 +411,21 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     // non-null).
     final justCollected = _duelActive && _state.pendingCollectorId != null && state.pendingCollectorId == null;
 
+    // Diagnostic (voir demande utilisateur) — tout état reçu PENDANT que
+    // l'écran affiche encore les cartes figées d'une manche (`_duelActive`)
+    // sans que ce soit un ramassage : la carte affichée elle-même ne doit
+    // JAMAIS en dépendre (elle est figée dans _duelCreatorCard/
+    // _duelPartnerCard), mais ce log confirme si un état inattendu arrive
+    // à ce moment-là (source probable si le problème est bien côté
+    // synchronisation plutôt que rendu).
+    if (_duelActive && !justCollected && state.lastRoundResult != _state.lastRoundResult) {
+      debugPrint(
+        'WarCardBoardScreen: état reçu PENDANT l\'affichage figé du duel — '
+        'ancien lastRoundResult=${_state.lastRoundResult}, nouveau=${state.lastRoundResult}, '
+        'duelPhase=$_duelPhase, roundsCount ancien=${_state.roundsCount} nouveau=${state.roundsCount}',
+      );
+    }
+
     setState(() {
       _state = state;
       if (state.finished) _finishedAt ??= ServerClock.instance.now();
@@ -422,6 +434,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
         _duelCreatorCard = null;
         _duelPartnerCard = null;
         _duelWinnerId = null;
+        _duelIsWarStep = false;
         _duelCreatorDisplayCount = null;
         _duelPartnerDisplayCount = null;
       }
@@ -447,34 +460,65 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   /// gérer la suite, une fois LES DEUX arrivées : 2 secondes ensemble au
   /// centre, puis repartent ensemble rejoindre la pile du vainqueur.
   Future<void> _runDuelAnimation({
-    required String creatorCard,
-    required String partnerCard,
+    required List<Map<String, String>> rounds,
     required String winnerId,
-    required bool wasBattle,
     required int preCreatorCount,
     required int prePartnerCount,
   }) async {
-    if (!mounted) return;
-    setState(() {
-      _duelActive = true;
-      _duelPhase = _DuelPhase.atStage;
-      _duelCreatorCard = creatorCard;
-      _duelPartnerCard = partnerCard;
-      _duelWinnerId = winnerId;
-      _duelWasBattle = wasBattle;
-      // Voir demande utilisateur : chacun affiche n-1 dès son tap — la
-      // pile complète (les deux cartes) ne rejoint le vainqueur qu'à la
-      // toute fin, voir le `setState` plus bas.
-      _duelCreatorDisplayCount = preCreatorCount - 1;
-      _duelPartnerDisplayCount = prePartnerCount - 1;
-    });
+    // Voir demande utilisateur : "quand y'a deux cartes de même valeur,
+    // afficher GUERRE ⚔️ et les deux cartes restent en place, on attend
+    // que les gens sortent d'autres cartes ; si y'a guerre encore c'est
+    // pareil, jusqu'à ce que le gagnant ramasse" — [rounds] porte TOUTE
+    // la cascade (une bataille = plusieurs manches en cascade), on les
+    // affiche une par une : chaque manche non-décisive (égalité) reste
+    // posée avec le bandeau "GUERRE ⚔️" avant de passer à la suivante ;
+    // seule la DERNIÈRE (décisive) enchaîne sur la convergence vers le
+    // vainqueur, comme avant.
+    var removedCreator = 0;
+    var removedPartner = 0;
 
-    await Future.delayed(const Duration(milliseconds: 2000));
-    if (!mounted) return;
-    setState(() => _duelPhase = _DuelPhase.atWinner);
+    for (var i = 0; i < rounds.length; i++) {
+      if (!mounted) return;
+      final isLast = i == rounds.length - 1;
+      removedCreator += 1;
+      removedPartner += 1;
 
-    await Future.delayed(const Duration(milliseconds: 450));
-    if (!mounted) return;
+      setState(() {
+        _duelActive = true;
+        _duelPhase = _DuelPhase.atStage;
+        _duelCreatorCard = rounds[i]['creator'];
+        _duelPartnerCard = rounds[i]['partner'];
+        _duelWinnerId = isLast ? winnerId : null;
+        _duelIsWarStep = !isLast;
+        // Voir demande utilisateur : chacun affiche n-1 dès son tap — la
+        // pile complète ne rejoint le vainqueur qu'à la toute fin, voir
+        // le `setState` plus bas. Les 3 cartes cachées de chaque bataille
+        // intermédiaire (voir WarCardEngine.resolveRound) ne sont pas
+        // comptées ici : affichage transitoire, le vrai compte revient
+        // de toute façon dès la convergence finale.
+        _duelCreatorDisplayCount = preCreatorCount - removedCreator;
+        _duelPartnerDisplayCount = prePartnerCount - removedPartner;
+      });
+
+      if (!isLast) {
+        // "GUERRE ⚔️" — cartes posées en attente des deux prochaines,
+        // voir demande utilisateur.
+        await Future.delayed(const Duration(milliseconds: 1400));
+        removedCreator += 3;
+        removedPartner += 3;
+        continue;
+      }
+
+      await Future.delayed(const Duration(milliseconds: 2000));
+      if (!mounted) return;
+      setState(() {
+        _duelPhase = _DuelPhase.atWinner;
+        _duelIsWarStep = false;
+      });
+
+      await Future.delayed(const Duration(milliseconds: 450));
+      if (!mounted) return;
+    }
 
     if (_state.pendingCollectorId != null) {
       // Cartes arrivées côté vainqueur mais pas encore ramassées (voir
@@ -492,6 +536,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       _duelCreatorCard = null;
       _duelPartnerCard = null;
       _duelWinnerId = null;
+      _duelIsWarStep = false;
       // Bascule sur le vrai compte (déjà résolu dans `_state`) exactement
       // au moment où les deux cartes "rejoignent" la pile du vainqueur —
       // voir demande utilisateur.
@@ -880,7 +925,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                       duelCreatorCard: _duelCreatorCard,
                       duelPartnerCard: _duelPartnerCard,
                       duelWinnerId: _duelWinnerId,
-                      duelWasBattle: _duelWasBattle,
+                      duelIsWarStep: _duelIsWarStep,
                       duelCreatorDisplayCount: _duelCreatorDisplayCount,
                       duelPartnerDisplayCount: _duelPartnerDisplayCount,
                       onTapFlip: _tapFlip,
@@ -1684,7 +1729,10 @@ class _WarCardDuelArea extends StatelessWidget {
   final String? duelCreatorCard;
   final String? duelPartnerCard;
   final String? duelWinnerId;
-  final bool duelWasBattle;
+  // Vrai UNIQUEMENT pendant une manche non-décisive de la cascade (voir
+  // demande utilisateur : "GUERRE ⚔️... les deux cartes restent en
+  // place") — contrôle l'affichage du bandeau "GUERRE".
+  final bool duelIsWarStep;
   final int? duelCreatorDisplayCount;
   final int? duelPartnerDisplayCount;
   final Future<void> Function(String userId) onTapFlip;
@@ -1726,7 +1774,7 @@ class _WarCardDuelArea extends StatelessWidget {
     required this.duelCreatorCard,
     required this.duelPartnerCard,
     required this.duelWinnerId,
-    required this.duelWasBattle,
+    required this.duelIsWarStep,
     required this.duelCreatorDisplayCount,
     required this.duelPartnerDisplayCount,
     required this.onTapFlip,
@@ -1788,17 +1836,32 @@ class _WarCardDuelArea extends StatelessWidget {
     // de quel côté chaque carte vient à l'origine — voir demande
     // utilisateur : "elles doivent se réunir et descendre pour le
     // gagnant", pas repartir chacune vers son côté d'origine).
+    // Vrai une fois les deux cartes arrivées côté vainqueur — sert aussi à
+    // placer le bouton "Ramasser" du bon côté (voir demande utilisateur :
+    // "les cartes doivent rester... au-dessus de la carte du
+    // bénéficiaire, avec un bouton à côté").
+    final winnerIsLeft = duelWinnerId == leftId;
+
     Alignment alignFor({required bool isLeft, required bool revealed}) {
       if (!revealed) return isLeft ? _kLeftBottomAlign : _kRightBottomAlign;
       if (duelActive && duelPhase == _DuelPhase.atWinner) {
-        return duelWinnerId == leftId ? _kLeftBottomAlign : _kRightBottomAlign;
+        // Légèrement décalées l'une de l'autre (jamais EXACTEMENT le même
+        // point) pour que les DEUX cartes restent visibles côte à côte,
+        // au même niveau, au-dessus de la pile du vainqueur — voir
+        // demande utilisateur, capture d'écran où une seule carte
+        // masquait l'autre.
+        final baseX = winnerIsLeft ? _kLeftBottomAlign.x : _kRightBottomAlign.x;
+        final offset = isLeft ? -0.12 : 0.12;
+        return Alignment(baseX + offset, _kLeftBottomAlign.y);
       }
       return isLeft ? _kLeftStageAlign : _kRightStageAlign;
     }
 
     return Stack(
       children: [
-        if (duelActive && duelWasBattle)
+        // "GUERRE ⚔️" — uniquement pendant une manche non-décisive (voir
+        // demande utilisateur), pas pendant la convergence finale.
+        if (duelActive && duelIsWarStep)
           Align(
             alignment: const Alignment(0, -0.15),
             child: Text(
@@ -1887,7 +1950,10 @@ class _WarCardDuelArea extends StatelessWidget {
         // pour lui.
         if (duelActive && duelPhase == _DuelPhase.atWinner && state.pendingCollectorId != null)
           Align(
-            alignment: const Alignment(0, 0.3),
+            // Même côté que la pile du vainqueur (voir winnerIsLeft
+            // ci-dessus), juste en dessous des cartes plutôt que centré
+            // au milieu de l'écran (voir demande utilisateur).
+            alignment: Alignment(winnerIsLeft ? -0.55 : 0.55, 0.22),
             child: state.iMustCollect
                 ? FilledButton.icon(
                     onPressed: onTapCollect,

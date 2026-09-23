@@ -16,16 +16,18 @@ import 'game_service.dart';
 /// VoiceSignal côté back).
 ///
 /// Déroulé (voir demande utilisateur : "des que la connection est etabli
-/// pour jouer, le micro est deja connecte") : la voix s'active TOUTE SEULE à
-/// l'entrée dans la partie ([enable], appelé par l'overlay). Dès que LES
-/// DEUX sont prêts, la connexion WebRTC se négocie automatiquement (celui
-/// des deux dont l'identifiant est lexicographiquement le plus petit
-/// devient l'offreur — départage déterministe, évite une offre en double
-/// sans handshake supplémentaire). Le micro est OUVERT par défaut ;
-/// [setMuted] coupe seulement la voix SORTANTE, la liaison reste établie
-/// (on continue d'entendre le binôme). En cas de coupure, la connexion est
-/// relancée automatiquement (voir [_scheduleReconnect]) tant que personne
-/// n'a raccroché.
+/// pour jouer, le micro est deja connecte") : la voix se CONNECTE TOUTE
+/// SEULE à l'entrée dans la partie ([enable], appelé par l'overlay). Dès
+/// que LES DEUX sont prêts, la connexion WebRTC se négocie automatiquement
+/// (celui des deux dont l'identifiant est lexicographiquement le plus
+/// petit devient l'offreur — départage déterministe, évite une offre en
+/// double sans handshake supplémentaire). Le micro est en revanche COUPÉ
+/// par défaut (voir demande utilisateur : "dès que ça se connecte, le
+/// désactiver... un simple clic pour qu'il passe au vert") — un seul tap
+/// suffit à l'ouvrir, [setMuted] coupe/rétablit seulement la voix
+/// SORTANTE, la liaison elle-même reste établie (on continue d'entendre
+/// le binôme). En cas de coupure, la connexion est relancée automatiquement
+/// (voir [_scheduleReconnect]) tant que personne n'a raccroché.
 enum VoiceCallStatus { idle, connecting, connected, failed }
 
 /// Ce que le binôme demande via un signal `camera_invite` (voir
@@ -46,7 +48,8 @@ class VoiceCallService {
   MediaStream? _localStream;
   bool _iAmReady = false;
   bool _partnerReady = false;
-  bool _muted = false;
+  // Coupé par défaut (voir doc de classe : un seul tap suffit à l'ouvrir).
+  bool _muted = true;
   bool get isMuted => _muted;
   // Vrai si l'autorisation du micro a été refusée (bouton rouge avec
   // explication, voir VoiceCallOverlay) — le seul cas où "échec" reste
@@ -366,7 +369,9 @@ class VoiceCallService {
     debugPrint('VoiceCall: demande getUserMedia...');
     _localStream = await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false});
     debugPrint('VoiceCall: getUserMedia OK, pistes=${_localStream!.getAudioTracks().length}');
-    // Ouvert par défaut, sauf si on l'avait coupé avant une reconnexion.
+    // Coupé par défaut (voir doc de classe), sauf si on l'avait déjà
+    // ouvert avant une reconnexion — `_muted` est mémorisé, pas remis à
+    // zéro ici.
     for (final track in _localStream!.getAudioTracks()) {
       track.enabled = !_muted;
       await pc.addTrack(track, _localStream!);
