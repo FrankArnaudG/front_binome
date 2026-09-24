@@ -365,6 +365,16 @@ class WarCardEngine {
     return (pileCreator: pileCreator, pilePartner: [...pilePartner, ...pot]);
   }
 
+  /// Vrai si les deux cartes d'une manche jouée sont à égalité (même rang)
+  /// — voir demande utilisateur : distinguer une manche "guerre" d'une
+  /// manche décisive doit rester possible même quand le transport ne peut
+  /// pas exposer `pendingCollectorId` de façon fiable (voir
+  /// LocalWarCardTransport, qui ramasse toujours automatiquement et ne
+  /// l'expose donc jamais) — dérivé directement des deux cartes réellement
+  /// jouées (voir `WarCardBoardState.lastRoundResult`), donc toujours
+  /// correct quel que soit le transport.
+  static bool isTieRound(String cardA, String cardB) => _rankValue(cardA) == _rankValue(cardB);
+
   static int _rankValue(String card) {
     final rank = card.substring(0, card.length - 1);
     return switch (rank) {

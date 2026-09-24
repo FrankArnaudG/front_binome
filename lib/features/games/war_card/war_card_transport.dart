@@ -148,7 +148,13 @@ class WarCardBoardState {
         pausedByUserId: clearPause ? null : (pausedByUserId ?? this.pausedByUserId),
         pausedAt: clearPause ? null : (pausedAt ?? this.pausedAt),
         pendingCollectorId: clearPendingCollector ? null : (pendingCollectorId ?? this.pendingCollectorId),
-        pendingPot: clearPendingCollector ? const [] : (pendingPot ?? this.pendingPot),
+        // Indépendant de `clearPendingCollector` (voir demande utilisateur :
+        // afficher le pot accumulé pendant une guerre) — une guerre EN
+        // COURS a aussi `pendingCollectorId == null` (personne n'a encore
+        // gagné ce pot) mais NE DOIT PAS le vider ; seul l'appelant qui
+        // passe explicitement `pendingPot: []` (ramassage effectif, ou
+        // fusion immédiate en fin de partie) le vide réellement.
+        pendingPot: pendingPot ?? this.pendingPot,
       );
 }
 

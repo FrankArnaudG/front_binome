@@ -14,12 +14,10 @@ import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
-import '../../box/box_scope.dart';
 import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
-import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
@@ -27,6 +25,7 @@ import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../widgets/war_card_match_scoreboard.dart';
 import '../../shop/wallet_balance_notifier.dart';
+import 'war_card_engine.dart';
 import 'war_card_transport.dart';
 import 'war_card_transport_local.dart';
 import 'war_card_transport_remote.dart';
@@ -90,11 +89,6 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   bool _scoreboardShown = false;
   // Instant de fin de partie vu par CET appareil : fige chrono et pièces.
   DateTime? _finishedAt;
-  // Distingue "c'est moi qui viens d'abandonner" (voir _confirmAbandon,
-  // déjà géré par le pop immédiat) de "le binôme vient d'abandonner à
-  // distance" (voir _onState) — seul ce second cas doit afficher la
-  // pop-up dédiée plutôt que de rester silencieux.
-  bool _leavingMyself = false;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -134,6 +128,31 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   // si ce déclenchement était sauté (voir demande utilisateur : "Guerre"
   // resté affiché derrière des cartes qui n'étaient plus à égalité).
   bool _duelActive = false;
+
+  // Animation de ramassage (voir demande utilisateur : "en cliquant sur
+  // ramasser on voit les cartes se réunir et qui descendent dans les
+  // cartes du gagnant") — instantané pris dans _onState juste avant que le
+  // pot ne soit vidé par le serveur, purement pour l'animation de SORTIE
+  // (jamais relu comme source de vérité, toujours refermé par
+  // _closeCollectAnimation après un délai fixe — ne peut donc jamais rester
+  // bloqué comme les anciens champs figés).
+  bool _collecting = false;
+  List<String> _collectingCards = const [];
+  String? _collectingWinnerId;
+
+  // Historique fiable des cartes de guerre par côté (voir demande
+  // utilisateur : "les premières cartes ont disparu et sa carte est
+  // apparue directement" une fois la manche devenue décisive) — construit
+  // manche après manche depuis `state.lastRoundResult` (TOUJOURS
+  // correctement attribué créateur/partenaire, jamais mélangé), plutôt que
+  // depuis `state.pendingPot` : ce dernier est mélangé par le serveur dès
+  // qu'une manche décisive survient (juste avant le ramassage), ce qui
+  // rendait impossible de savoir de façon fiable quelle carte appartenait
+  // à qui à partir de ce moment-là. Remis à zéro uniquement au ramassage
+  // effectif (voir `justCollected` dans _onState) — jamais entre deux
+  // manches d'une MÊME guerre.
+  List<String> _warStackCreator = const [];
+  List<String> _warStackPartner = const [];
 
   bool get _isLocalPassAndPlay => widget.transport is LocalWarCardTransport;
 
@@ -383,26 +402,100 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     final isNewRound = state.roundsCount > _lastAnimatedRoundsCount && state.lastRoundResult.isNotEmpty;
     if (isNewRound) _lastAnimatedRoundsCount = state.roundsCount;
 
-    // Le pot vient d'être ramassé (voir demande utilisateur : bouton
-    // dédié plutôt qu'un ramassage automatique) — referme la séquence
-    // "duel" restée en attente (voir la fin de _runDuelAnimation, qui
-    // s'arrête sans se refermer tant que `pendingCollectorId` reste
-    // non-null).
+    // Complète l'historique fiable des cartes de guerre par côté (voir
+    // _warStackCreator/_warStackPartner ci-dessus) — chaque manche résolue
+    // (égalité OU décisive) ajoute sa paire, lue depuis `lastRoundResult`
+    // qui reste correct même une fois le pot mélangé côté serveur.
+    List<String>? newWarStackCreator;
+    List<String>? newWarStackPartner;
+    if (isNewRound) {
+      final round = state.lastRoundResult.last;
+      final roundCreatorCard = round['creator'];
+      final roundPartnerCard = round['partner'];
+      newWarStackCreator = roundCreatorCard == null ? _warStackCreator : [..._warStackCreator, roundCreatorCard];
+      newWarStackPartner = roundPartnerCard == null ? _warStackPartner : [..._warStackPartner, roundPartnerCard];
+    }
+
+    // Une manche non-décisive (égalité) est la SEULE où les deux cartes
+    // qui viennent d'être jouées sont à égalité (voir demande utilisateur :
+    // "les deux cartes restent toujours en place... jusqu'à ce que l'un
+    // gagne à ramasser", pas de cartes cachées) — dérivé des cartes
+    // elles-mêmes (voir WarCardEngine.isTieRound), PAS de
+    // `pendingCollectorId` : ce dernier n'est jamais exposé par
+    // LocalWarCardTransport (pass-and-play, ramassage toujours
+    // automatique), ce qui aurait fait passer CHAQUE manche décisive pour
+    // une guerre en pass-and-play (voir demande utilisateur : appliquer la
+    // même règle validée à distance aux deux autres modes).
+    bool isOngoingWar = false;
+    if (isNewRound) {
+      final round = state.lastRoundResult.last;
+      final roundCreatorCard = round['creator'];
+      final roundPartnerCard = round['partner'];
+      isOngoingWar = !state.finished &&
+          roundCreatorCard != null &&
+          roundPartnerCard != null &&
+          WarCardEngine.isTieRound(roundCreatorCard, roundPartnerCard);
+    }
+
+    // Le pot vient d'être ramassé via le bouton dédié (à distance/
+    // présentiel connecté, voir demande utilisateur) — déclenche
+    // l'animation de ramassage ("on voit les cartes se réunir et qui
+    // descendent dans les cartes du gagnant") ; c'est ELLE, via
+    // _closeCollectAnimation, qui referme la séquence "duel" restée en
+    // attente (voir la fin de _runDuelAnimation, qui s'arrête sans se
+    // refermer tant que `pendingCollectorId` reste non-null) — capture le
+    // pot et le vainqueur AVANT l'écrasement de `_state` ci-dessous, sinon
+    // il n'y aurait plus rien à animer.
     final justCollected = _duelActive && _state.pendingCollectorId != null && state.pendingCollectorId == null;
+    final collectedPot = justCollected ? List<String>.of(_state.pendingPot) : null;
+    final collectedWinnerId = justCollected ? _state.pendingCollectorId : null;
+
+    // Manche DÉCISIVE ramassée AUTOMATIQUEMENT (voir LocalWarCardTransport,
+    // pass-and-play : pas de bouton "Ramasser", le pot est déjà vide dans
+    // `state` dès cette mise à jour) — voir demande utilisateur : "s'assurer
+    // que lors du retour, les cartes on le voit revenir pour le gagnant"
+    // même dans ce mode, où il n'y a pourtant aucun tap explicite à
+    // intercepter. Détecté par élimination : une nouvelle manche, pas une
+    // guerre, la partie continue, et pourtant aucun ramassage en attente
+    // n'a jamais été exposé — signature propre au ramassage automatique.
+    final isDecisiveAutoCollected =
+        isNewRound && !isOngoingWar && !state.finished && state.pendingCollectorId == null;
+    final autoCollectedCards =
+        isDecisiveAutoCollected ? [...?newWarStackCreator, ...?newWarStackPartner] : null;
+    final autoCollectedWinnerId = isDecisiveAutoCollected ? state.winnerUserId : null;
 
     setState(() {
       _state = state;
       if (state.finished) _finishedAt ??= ServerClock.instance.now();
-      if (justCollected) _duelActive = false;
+      if (newWarStackCreator != null) _warStackCreator = newWarStackCreator;
+      if (newWarStackPartner != null) _warStackPartner = newWarStackPartner;
+      if (justCollected) {
+        _collecting = true;
+        _collectingCards = collectedPot!;
+        _collectingWinnerId = collectedWinnerId;
+      } else if (isDecisiveAutoCollected) {
+        // Contrairement au ramassage explicite (bouton "Ramasser", où le
+        // délai de lecture vient naturellement du temps que met la personne
+        // à taper), ici RIEN ne fait attendre — voir demande utilisateur :
+        // "si les deux cartes sont en haut, patienter 2 à 3 secondes avant
+        // de la ramener vers le lot gagnant pour permettre de lire". Les
+        // deux cartes restent donc d'abord affichées normalement (voir
+        // _autoCollectAfterPause, qui déclenche `_collecting` seulement
+        // après cette pause).
+        _duelActive = true;
+      }
     });
 
-    if (isNewRound) {
-      // Une manche non-décisive (égalité) laisse `pendingCollectorId` à
-      // `null` SANS terminer la partie — c'est le seul cas où on est en
-      // pleine "guerre" (voir demande utilisateur : "les deux cartes
-      // restent toujours en place... jusqu'à ce que l'un gagne à
-      // ramasser", pas de cartes cachées).
-      unawaited(_runDuelAnimation(isOngoingWar: !state.finished && state.pendingCollectorId == null));
+    if (justCollected) unawaited(_closeCollectAnimation());
+    if (isDecisiveAutoCollected) unawaited(_autoCollectAfterPause(autoCollectedCards!, autoCollectedWinnerId));
+
+    // Le ramassage automatique (ci-dessus) gère déjà entièrement
+    // l'ouverture/fermeture de `_duelActive` pour cette manche — appeler
+    // _runDuelAnimation en plus ferait doublon (elle attend elle-même 1500ms
+    // avant de vérifier `pendingCollectorId`, toujours `null` en
+    // pass-and-play, et refermerait une deuxième fois pour rien).
+    if (isNewRound && !isDecisiveAutoCollected) {
+      unawaited(_runDuelAnimation(isOngoingWar: isOngoingWar));
     }
 
     if (state.finished && !_scoreboardShown && !_duelActive) {
@@ -411,11 +504,60 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       // le solde dès que la partie est vraiment terminée plutôt que
       // d'attendre le retour au tableau de bord.
       if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
-      if (state.abandoned && !_leavingMyself) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
-      }
+      // Le tableau de score s'affiche maintenant systématiquement, y
+      // compris après un abandon (voir demande utilisateur : "faire pareil
+      // si on abandonne, on a le score en bas pour tous les jeux, il faut
+      // proposer de quitter et pour rejouer c'est pour celui qui a lancé
+      // le jeu") — _showScoreboard gère déjà "Quitter" pour tous, et
+      // "Rejouer" réservé à widget.isLauncher (voir showWarCardMatchScoreboard).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
+    }
+  }
+
+  /// Pass-and-play uniquement (voir LocalWarCardTransport, ramassage
+  /// toujours automatique) — les deux cartes de la manche décisive restent
+  /// d'abord affichées normalement (déjà fait par le `setState` de
+  /// `_onState` juste avant l'appel), le temps de les LIRE (voir demande
+  /// utilisateur : "patienter 2 à 3 secondes avant de la ramener vers le
+  /// lot gagnant pour permettre de lire"), puis seulement ENSUITE déclenche
+  /// la même animation de ramassage que le bouton "Ramasser" (voir
+  /// `_closeCollectAnimation`, qui referme tout à la fin).
+  Future<void> _autoCollectAfterPause(List<String> cards, String? winnerId) async {
+    await Future.delayed(const Duration(milliseconds: 2500));
+    if (!mounted) return;
+    setState(() {
+      _collecting = true;
+      _collectingCards = cards;
+      _collectingWinnerId = winnerId;
+    });
+    await _closeCollectAnimation();
+  }
+
+  /// Laisse le temps de voir les cartes du pot se réunir et descendre dans
+  /// la pile du côté vainqueur (voir demande utilisateur, animation gérée
+  /// par _WarCardDuelArea via `collecting`/`collectingCards`) avant de
+  /// refermer le duel — durée alignée sur celle de cette animation. Borné
+  /// dans le temps (contrairement à un état figé indéfiniment) : cette
+  /// méthode se termine toujours, quoi qu'il arrive côté serveur.
+  Future<void> _closeCollectAnimation() async {
+    await Future.delayed(const Duration(milliseconds: 520));
+    if (!mounted) return;
+    setState(() {
+      _collecting = false;
+      _duelActive = false;
+      // Le pot vient d'être réellement ramassé — l'historique de CETTE
+      // guerre n'a plus lieu d'être (voir _warStackCreator/_warStackPartner
+      // ci-dessus, remis à zéro uniquement ici, jamais entre deux manches
+      // d'une même guerre).
+      _warStackCreator = const [];
+      _warStackPartner = const [];
+    });
+    if (_state.finished && !_scoreboardShown) {
+      _scoreboardShown = true;
+      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
+      // Voir demande utilisateur : scoreboard systématique, même après un
+      // abandon (voir même correctif plus haut dans _onState).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
     }
   }
 
@@ -463,45 +605,26 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       return;
     }
 
-    setState(() => _duelActive = false);
+    setState(() {
+      _duelActive = false;
+      // Atteint ici pour TOUTE manche décisive dont `_duelActive` n'a pas
+      // déjà été refermé par _closeCollectAnimation — notamment en
+      // pass-and-play (voir LocalWarCardTransport, ramassage toujours
+      // automatique, `pendingCollectorId` jamais exposé, donc
+      // `_closeCollectAnimation` n'y est jamais déclenché) — l'historique de
+      // cette guerre n'a plus lieu d'être (voir _warStackCreator/
+      // _warStackPartner).
+      _warStackCreator = const [];
+      _warStackPartner = const [];
+    });
 
     if (_state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
       if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
-      if (_state.abandoned && !_leavingMyself) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
-      }
+      // Voir demande utilisateur : scoreboard systématique, même après un
+      // abandon (voir même correctif plus haut dans _onState).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
     }
-  }
-
-  /// Affichée UNIQUEMENT quand le binôme vient d'abandonner à distance
-  /// (voir _onState) — jamais quand c'est nous qui venons de le faire (voir
-  /// _confirmAbandon, qui referme déjà l'écran tout seul). "OK" laisse
-  /// consulter le plateau tel qu'il était ; "Sortir" referme l'écran tout de
-  /// suite (voir demande utilisateur).
-  Future<void> _showPartnerLeftDialog() async {
-    if (!mounted) return;
-    final box = BoxScope.of(context).currentBox;
-    final partner = box?.partnerOf(widget.user.id);
-    final label = partnerReferenceLabel(context, partner, widget.game.id);
-    final exit = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(LocaleScope.t(ctx, 'game_board_partner_left_title')),
-        content: Text(LocaleScope.t(ctx, 'game_board_partner_left_content', {'partner': label})),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'game_board_partner_left_ok'))),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(LocaleScope.t(ctx, 'game_board_partner_left_exit'), style: const TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-    if (exit == true && mounted) Navigator.of(context).pop();
   }
 
   /// Même dialogue pour le bouton drapeau ET la flèche retour (voir
@@ -591,16 +714,33 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
   // Vrai tant que la dernière manche affichée est une "guerre" en cours
   // (égalité, voir demande utilisateur) — recalculé depuis `_state`,
-  // jamais figé (voir doc de classe de _runDuelAnimation).
-  bool get _isOngoingWarNow => _duelActive && !_state.finished && _state.pendingCollectorId == null;
+  // jamais figé (voir doc de classe de _runDuelAnimation). Dérivé des deux
+  // cartes réellement jouées (voir WarCardEngine.isTieRound), PAS de
+  // `_state.pendingCollectorId` : ce dernier n'est jamais exposé par
+  // LocalWarCardTransport (pass-and-play, ramassage toujours automatique),
+  // ce qui aurait fait passer CHAQUE manche décisive pour une guerre en
+  // pass-and-play — voir demande utilisateur : appliquer la même règle
+  // validée à distance aux deux autres modes.
+  bool get _isOngoingWarNow {
+    if (!_duelActive || _state.finished) return false;
+    if (_state.lastRoundResult.isEmpty) return false;
+    final round = _state.lastRoundResult.last;
+    final creatorCard = round['creator'];
+    final partnerCard = round['partner'];
+    if (creatorCard == null || partnerCard == null) return false;
+    return WarCardEngine.isTieRound(creatorCard, partnerCard);
+  }
 
   // Bloque les taps SEULEMENT pendant l'attente de ramassage d'une
   // manche DÉCISIVE (l'état va bientôt changer) — pas pendant une
   // "guerre" (égalité) : là, les deux cartes restent affichées mais
   // chacun doit pouvoir retaper pour jouer sa carte suivante (voir
   // demande utilisateur : "on attend que les gens sortent d'autre
-  // carte").
-  bool get _duelBlocksInput => _duelActive && !_isOngoingWarNow;
+  // carte"). Toujours bloqué pendant `_collecting` : à ce moment,
+  // `_state.pendingCollectorId` est déjà revenu à `null` côté serveur
+  // (pot ramassé), ce qui ferait sinon passer `_isOngoingWarNow` à vrai
+  // par erreur pendant que l'animation de ramassage joue encore.
+  bool get _duelBlocksInput => _collecting || (_duelActive && !_isOngoingWarNow);
 
   /// "Battre" SA PROPRE pile en cours de partie (voir demande
   /// utilisateur : "je peux regarder mes propres cartes, est-ce possible
@@ -628,7 +768,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   /// mise à jour optimiste locale ici, un geste trop rare/délibéré pour
   /// justifier la complexité.
   Future<void> _collectPot() async {
-    if (!_state.iMustCollect) return;
+    if (!_state.iMustCollect || _collecting) return;
     await widget.transport.collectPot();
   }
 
@@ -715,12 +855,13 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       canPop: _state.finished,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        // Ne referme plus l'écran soi-même (voir demande utilisateur :
+        // scoreboard systématique après un abandon, même geste que le
+        // bouton drapeau ci-dessous) — _onState détecte `state.finished`
+        // et affiche le tableau de score (avec "Rejouer" pour le lanceur,
+        // "Quitter" pour tous), qui referme l'écran lui-même.
         if (await _confirmAbandon()) {
-          _leavingMyself = true;
           await widget.transport.abandon();
-          // Voir demande utilisateur : "ça doit être instantané".
-          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
-          if (context.mounted) Navigator.of(context).pop();
         }
       },
       child: Stack(
@@ -778,7 +919,6 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
               onPressed: () async {
                 if (await _confirmAbandon()) {
-                  _leavingMyself = true;
                   await widget.transport.abandon();
                 }
               },
@@ -863,6 +1003,11 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                       flipGuideKey: _flipGuideKey,
                       guideFlipped: _guideFlipped,
                       onGuideFlipTap: _guideStep == _WarCardGuideStep.flip ? _onGuideFlipTap : null,
+                      collecting: _collecting,
+                      collectingCards: _collectingCards,
+                      collectingWinnerId: _collectingWinnerId,
+                      warStackCreator: _warStackCreator,
+                      warStackPartner: _warStackPartner,
                     ),
                   ),
                 ],
@@ -1677,6 +1822,22 @@ class _WarCardDuelArea extends StatelessWidget {
   final GlobalKey? flipGuideKey;
   final bool guideFlipped;
   final VoidCallback? onGuideFlipTap;
+  // Animation de ramassage (voir demande utilisateur : "on voit les cartes
+  // se réunir et qui descendent dans les cartes du gagnant") — pilotée par
+  // _WarCardBoardScreenState (voir _onState/justCollected), qui capture un
+  // instantané de [state.pendingPot] juste avant qu'il ne soit vidé par le
+  // serveur, borné dans le temps (voir _closeCollectAnimation), jamais un
+  // état qui pourrait rester bloqué indéfiniment.
+  final bool collecting;
+  final List<String> collectingCards;
+  final String? collectingWinnerId;
+  // Historique fiable des cartes de guerre par côté (voir
+  // _WarCardBoardScreenState._warStackCreator/_warStackPartner) — construit
+  // depuis `lastRoundResult`, jamais depuis `state.pendingPot` (mélangé par
+  // le serveur dès qu'une manche décisive survient), pour que l'empilement
+  // affiché reste complet et correctement attribué jusqu'au ramassage.
+  final List<String> warStackCreator;
+  final List<String> warStackPartner;
 
   const _WarCardDuelArea({
     required this.theme,
@@ -1695,6 +1856,11 @@ class _WarCardDuelArea extends StatelessWidget {
     this.flipGuideKey,
     this.guideFlipped = false,
     this.onGuideFlipTap,
+    this.collecting = false,
+    this.collectingCards = const [],
+    this.collectingWinnerId,
+    this.warStackCreator = const [],
+    this.warStackPartner = const [],
   });
 
   @override
@@ -1719,27 +1885,59 @@ class _WarCardDuelArea extends StatelessWidget {
     // utilisateur : "Guerre" resté affiché derrière des cartes qui
     // n'étaient plus à égalité — un champ figé pouvait rester bloqué sur
     // une manche périmée si son déclenchement était manqué).
-    final lastRound = state.lastRoundResult.isNotEmpty ? state.lastRoundResult.last : null;
-    final duelRoundCreatorCard = lastRound?['creator'];
-    final duelRoundPartnerCard = lastRound?['partner'];
     // Vrai tant que la manche affichée est une "guerre" (égalité) — voir
     // demande utilisateur : "GUERRE ⚔️... les deux cartes restent en
     // place" — plutôt qu'une manche décisive en attente de ramassage.
-    final duelIsWarStep = duelActive && !state.finished && state.pendingCollectorId == null;
+    // Dérivé des DEUX cartes réellement jouées (voir WarCardEngine.
+    // isTieRound), PAS de `pendingCollectorId` : ce dernier n'est JAMAIS
+    // exposé par LocalWarCardTransport (pass-and-play), qui ramasse
+    // toujours automatiquement — s'y fier aurait fait passer CHAQUE manche
+    // décisive pour une guerre en pass-and-play (voir demande
+    // utilisateur : appliquer la même règle validée à distance aux deux
+    // autres modes).
+    final lastRound = state.lastRoundResult.isNotEmpty ? state.lastRoundResult.last : null;
+    final lastRoundCreatorCard = lastRound?['creator'];
+    final lastRoundPartnerCard = lastRound?['partner'];
+    final lastRoundWasTie = lastRoundCreatorCard != null &&
+        lastRoundPartnerCard != null &&
+        WarCardEngine.isTieRound(lastRoundCreatorCard, lastRoundPartnerCard);
+    final duelIsWarStep = duelActive && !state.finished && lastRoundWasTie;
 
     // "En attente de l'autre" — lu EN LIVE depuis la pile actuelle, jamais
     // une copie figée au moment du tap (voir _tapFlip) : la carte engagée
     // ne bouge pas tant que la manche n'est pas résolue (voir
     // WarCardEngine.flip), donc la relire à chaque rendu ne peut jamais
     // diverger de ce que le moteur va effectivement comparer.
-    final leftCard = guideFlipped
-        ? (leftPile.isNotEmpty ? leftPile.first : null)
-        : (duelActive
-            ? (leftIsCreator ? duelRoundCreatorCard : duelRoundPartnerCard)
-            : (leftTapped && leftPile.isNotEmpty ? leftPile.first : null));
-    final rightCard = duelActive
-        ? (leftIsCreator ? duelRoundPartnerCard : duelRoundCreatorCard)
-        : (rightTapped && rightPile.isNotEmpty ? rightPile.first : null);
+    // Cartes de guerre SUPERPOSÉES par côté — voir demande utilisateur :
+    // "pas de remplacement... on voit qu'il a sorti 2 cartes, pareil pour
+    // le binôme ou l'adversaire" — puis, une fois la guerre devenue
+    // décisive, "les premières cartes ont disparu, il ne restait que la
+    // dernière". Source = [warStackCreator]/[warStackPartner] (voir
+    // _WarCardBoardScreenState), JAMAIS `state.pendingPot` : ce dernier est
+    // mélangé par le serveur dès la résolution décisive (juste avant le
+    // ramassage), donc plus fiable pour reconstituer qui a joué quoi à ce
+    // moment précis — l'historique reconstruit ici reste donc complet et
+    // correctement attribué jusqu'au ramassage effectif. On y ajoute EN
+    // LIVE la carte que ce côté vient de tapoter pendant une guerre encore
+    // en cours (avant même que l'autre ait répondu) — le dessus d'une pile
+    // est déterministe (voir WarCardEngine._resolveRound, jamais de pioche
+    // aléatoire), donc jamais en contradiction avec ce que le moteur
+    // comparera réellement une fois les deux tapées.
+    List<String> sideCards({required bool isCreatorSide, required bool tapped, required List<String> pile}) {
+      final accumulated = isCreatorSide ? warStackCreator : warStackPartner;
+      if (duelActive) {
+        return [
+          ...accumulated,
+          if (duelIsWarStep && tapped && pile.isNotEmpty) pile.first,
+        ];
+      }
+      return tapped && pile.isNotEmpty ? [pile.first] : const <String>[];
+    }
+
+    final leftCards = guideFlipped
+        ? (leftPile.isNotEmpty ? [leftPile.first] : const <String>[])
+        : sideCards(isCreatorSide: leftIsCreator, tapped: leftTapped, pile: leftPile);
+    final rightCards = sideCards(isCreatorSide: !leftIsCreator, tapped: rightTapped, pile: rightPile);
 
     // Voir demande utilisateur : le compteur descend à n-1 DÈS le tap
     // (avant résolution) — une fois la manche résolue (voir duelActive),
@@ -1765,84 +1963,203 @@ class _WarCardDuelArea extends StatelessWidget {
       children: [
         // "GUERRE ⚔️" — uniquement pendant une manche non-décisive (voir
         // demande utilisateur), pas pendant la convergence finale.
+        // Au-dessus de la boîte des cartes sorties (au-dessus de
+        // _kLeftStageAlign/_kRightStageAlign, Y=-0.75) — voir demande
+        // utilisateur : chevauchait auparavant les étiquettes des piles
+        // en dessous.
         if (duelActive && duelIsWarStep)
-          Align(
-            alignment: const Alignment(0, -0.15),
-            child: Text(
-              LocaleScope.t(context, 'war_card_battle_label'),
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 18, color: _kRedColor),
+          Positioned.fill(
+            key: const ValueKey('war_card_guerre_label'),
+            child: Align(
+              alignment: const Alignment(0, -0.92),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    LocaleScope.t(context, 'war_card_battle_label'),
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 18, color: _kRedColor),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    LocaleScope.t(context, 'war_card_war_hint'),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                  ),
+                ],
+              ),
             ),
           ),
+        // Badge du nombre de cartes dans la boîte — TOUJOURS affiché,
+        // jamais retiré de l'arbre (voir demande utilisateur : "même si
+        // c'est 0 il ne doit pas disparaître") — compte les cartes
+        // RÉELLEMENT visibles à cet instant ([leftCards]+[rightCards], voir
+        // sideCards ci-dessus), donc passe à 1 dès que la toute première
+        // carte sort (avant même la résolution de la manche), pas
+        // seulement une fois le pot constitué — cohérent sur les 3 modes
+        // (à distance, présentiel connecté, pass-and-play), puisque
+        // [leftCards]/[rightCards] sont déjà calculés de façon fiable pour
+        // chacun (voir demande utilisateur : "pour tous les options...
+        // même règle").
+        Positioned.fill(
+          key: const ValueKey('war_card_pot_badge'),
+          child: Align(
+            alignment: const Alignment(0.95, -0.95),
+            // Repasse à 0 dès le tap sur "Ramasser" (voir demande
+            // utilisateur), sans attendre la confirmation serveur.
+            child: _WarCardPotBadge(count: collecting ? 0 : leftCards.length + rightCards.length),
+          ),
+        ),
         // Le VS reste centré ENTRE les deux piles (voir demande
         // utilisateur) — remonté avec elles pour réduire le grand vide
         // laissé en haut de l'écran.
-        Align(
-          alignment: const Alignment(0, -0.1),
-          child: Text('VS', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16, color: theme.textOnBackgroundMuted)),
-        ),
-        Align(
-          alignment: _kLeftBottomAlign,
-          child: _WarCardPileBase(
-            label: playerNames[leftId] ?? '',
-            color: leftColor,
-            count: leftCount,
-            canPlay: canActLeft && !leftTapped && leftPile.isNotEmpty,
-            canPeek: true,
-            // 2 max par manche (voir demande utilisateur et
-            // _WarCardBoardScreenState._maxShufflesPerTurn, seule source de
-            // vérité pour l'application réelle de la limite).
-            canShuffle: canActLeft && !leftTapped && leftPile.length > 1 && shuffleCountFor(leftId) < 2,
-            onTapFlip: () => onTapFlip(leftId),
-            onTapPeek: () => onTapPeek(leftId),
-            onTapShuffle: () => onTapShuffle(leftId),
-            guideKey: flipGuideKey,
-            guideTitle: guideFlipped ? 'Elle attend ton binôme' : 'Tape pour retourner',
-            guideDescription: guideFlipped
-                ? "Ta carte est révélée et attend au centre. Dès que ton binôme tape la sienne aussi, elles s'affrontent : la plus forte gagne les deux. Égalité ? C'est la bataille : trois cartes cachées de chaque côté, puis on retourne à nouveau."
-                : "Tape ta pile pour retourner ta carte. Dès que ton binôme aura fait pareil, vos deux cartes s'affrontent au centre — la plus forte gagne les deux.",
-            onGuideTap: onGuideFlipTap,
+        Positioned.fill(
+          key: const ValueKey('war_card_vs'),
+          child: Align(
+            alignment: const Alignment(0, -0.1),
+            child: Text('VS', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16, color: theme.textOnBackgroundMuted)),
           ),
         ),
-        Align(
-          alignment: _kRightBottomAlign,
-          child: _WarCardPileBase(
-            label: playerNames[rightId] ?? '',
-            color: rightColor,
-            count: rightCount,
-            canPlay: canActRight && !rightTapped && rightPile.isNotEmpty,
-            canPeek: isLocalMode,
-            canShuffle: canActRight && !rightTapped && rightPile.length > 1 && shuffleCountFor(rightId) < 2,
-            onTapFlip: () => onTapFlip(rightId),
-            onTapPeek: () => onTapPeek(rightId),
-            onTapShuffle: () => onTapShuffle(rightId),
+        // Positioned.fill sur CHAQUE enfant de ce Stack (voir demande
+        // utilisateur : "quand le btn Ramasser apparaît ça fait bouger
+        // légèrement les cartes de la box") — sans ça, un simple `Align`
+        // compte dans le calcul de la taille du Stack ; l'apparition d'un
+        // nouvel enfant (le bouton "Ramasser", absent de l'arbre jusque-là)
+        // pouvait agrandir cette taille calculée et décaler en pixels tous
+        // les pourcentages d'alignement des AUTRES enfants, dont les
+        // cartes. `Positioned.fill` sort chaque enfant du calcul de taille
+        // du Stack (fixée par son parent, déjà contraint) sans changer son
+        // positionnement visuel.
+        //
+        // CHAQUE enfant a aussi sa propre `key` explicite (voir demande
+        // utilisateur : "on ne voit pas le mouvement de la carte qui
+        // quitte pour aller rejoindre la box... précédé de la disparition
+        // et de l'apparition de la première carte") — sans clé, Flutter
+        // associe l'ancien et le nouvel enfant par leur POSITION dans
+        // cette liste. Or le badge et le label "Guerre" ci-dessus
+        // apparaissent/disparaissent selon l'état (`duelActive`,
+        // `duelIsWarStep`) — leur apparition décale d'un cran tous les
+        // enfants suivants dans la liste, ce qui faisait perdre à Flutter
+        // la correspondance avec les enfants déjà montés (dont les cartes
+        // et leur `AnimatedAlign`) : il les détruisait et recréait tous,
+        // d'où le clignotement de la carte déjà affichée et l'absence
+        // d'animation pour la carte qui vient d'arriver (son état
+        // d'animation "précédent" n'existait plus). Une clé stable par
+        // enfant permet à Flutter de les reconnaître individuellement,
+        // peu importe leur position.
+        Positioned.fill(
+          key: const ValueKey('war_card_left_pile_base'),
+          child: Align(
+            alignment: _kLeftBottomAlign,
+            child: _WarCardPileBase(
+              label: playerNames[leftId] ?? '',
+              color: leftColor,
+              count: leftCount,
+              canPlay: canActLeft && !leftTapped && leftPile.isNotEmpty,
+              canPeek: true,
+              // 2 max par manche (voir demande utilisateur et
+              // _WarCardBoardScreenState._maxShufflesPerTurn, seule source
+              // de vérité pour l'application réelle de la limite).
+              canShuffle: canActLeft && !leftTapped && leftPile.length > 1 && shuffleCountFor(leftId) < 2,
+              onTapFlip: () => onTapFlip(leftId),
+              onTapPeek: () => onTapPeek(leftId),
+              onTapShuffle: () => onTapShuffle(leftId),
+              guideKey: flipGuideKey,
+              guideTitle: guideFlipped ? 'Elle attend ton binôme' : 'Tape pour retourner',
+              guideDescription: guideFlipped
+                  ? "Ta carte est révélée et attend au centre. Dès que ton binôme tape la sienne aussi, elles s'affrontent : la plus forte gagne les deux. Égalité ? C'est la bataille : trois cartes cachées de chaque côté, puis on retourne à nouveau."
+                  : "Tape ta pile pour retourner ta carte. Dès que ton binôme aura fait pareil, vos deux cartes s'affrontent au centre — la plus forte gagne les deux.",
+              onGuideTap: onGuideFlipTap,
+            ),
+          ),
+        ),
+        Positioned.fill(
+          key: const ValueKey('war_card_right_pile_base'),
+          child: Align(
+            alignment: _kRightBottomAlign,
+            child: _WarCardPileBase(
+              label: playerNames[rightId] ?? '',
+              color: rightColor,
+              count: rightCount,
+              canPlay: canActRight && !rightTapped && rightPile.isNotEmpty,
+              canPeek: isLocalMode,
+              canShuffle: canActRight && !rightTapped && rightPile.length > 1 && shuffleCountFor(rightId) < 2,
+              onTapFlip: () => onTapFlip(rightId),
+              onTapPeek: () => onTapPeek(rightId),
+              onTapShuffle: () => onTapShuffle(rightId),
+            ),
           ),
         ),
         // Toujours montés (jamais insérés/retirés de l'arbre) pour que
         // l'alignement puisse s'ANIMER en douceur dès la révélation —
-        // voir demande utilisateur : "elle monte immédiatement".
-        AnimatedAlign(
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeInOut,
-          alignment: alignFor(isLeft: true, revealed: leftCard != null),
-          child: leftCard == null ? const SizedBox.shrink() : _WarCardFaceCard(card: leftCard, color: leftColor),
-        ),
-        AnimatedAlign(
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeInOut,
-          alignment: alignFor(isLeft: false, revealed: rightCard != null),
-          child: rightCard == null ? const SizedBox.shrink() : _WarCardFaceCard(card: rightCard, color: rightColor),
-        ),
+        // voir demande utilisateur : "elle monte immédiatement". Masqués
+        // pendant l'animation de ramassage (voir bloc `collecting`
+        // ci-dessous, qui prend le relais avec son propre instantané des
+        // cartes).
+        if (!collecting) ...[
+          Positioned.fill(
+            key: const ValueKey('war_card_left_cards'),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeInOut,
+              alignment: alignFor(isLeft: true, revealed: leftCards.isNotEmpty),
+              child: leftCards.isEmpty ? const SizedBox.shrink() : _WarCardStack(cards: leftCards, color: leftColor),
+            ),
+          ),
+          Positioned.fill(
+            key: const ValueKey('war_card_right_cards'),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeInOut,
+              alignment: alignFor(isLeft: false, revealed: rightCards.isNotEmpty),
+              child: rightCards.isEmpty ? const SizedBox.shrink() : _WarCardStack(cards: rightCards, color: rightColor),
+            ),
+          ),
+        ],
+        // "Ramasser" tapé (voir demande utilisateur : "on voit les cartes
+        // se réunir et qui descendent dans les cartes du gagnant") — les
+        // cartes du pot (instantané pris juste avant que le serveur ne le
+        // vide, voir _WarCardBoardScreenState._onState) convergent vers la
+        // pile du côté vainqueur puis s'estompent. Durée alignée sur
+        // _closeCollectAnimation, qui referme le duel une fois terminé.
+        if (collecting)
+          Positioned.fill(
+            key: const ValueKey('war_card_collecting'),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 520),
+              curve: Curves.easeInCubic,
+              builder: (context, t, child) {
+                final target = collectingWinnerId == leftId ? _kLeftBottomAlign : _kRightBottomAlign;
+                const start = Alignment(0, -0.75);
+                final align = Alignment.lerp(start, target, t)!;
+                return Align(
+                  alignment: align,
+                  child: Opacity(
+                    opacity: 1 - t * 0.9,
+                    child: Transform.scale(scale: 1 - t * 0.35, child: child),
+                  ),
+                );
+              },
+              child: _WarCardStack(
+                cards: collectingCards,
+                color: collectingWinnerId == leftId ? leftColor : rightColor,
+              ),
+            ),
+          ),
         // "touche ta carte pour la jouer" (voir demande utilisateur) —
         // remontée avec les piles, pas collée au bord de l'écran. Masqué
         // pendant l'attente de ramassage (voir bloc suivant) : les DEUX
         // ont déjà tapé pour CETTE manche, ce serait trompeur.
-        if (!(duelActive && state.pendingCollectorId != null) && canActLeft && (!leftTapped || (isLocalMode && !rightTapped)))
-          Align(
-            alignment: const Alignment(0, 0.3),
-            child: Text(
-              LocaleScope.t(context, 'war_card_tap_hint'),
-              textAlign: TextAlign.center,
-              style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+        if (!collecting && !(duelActive && state.pendingCollectorId != null) && canActLeft && (!leftTapped || (isLocalMode && !rightTapped)))
+          Positioned.fill(
+            key: const ValueKey('war_card_tap_hint'),
+            child: Align(
+              alignment: const Alignment(0, 0.3),
+              child: Text(
+                LocaleScope.t(context, 'war_card_tap_hint'),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+              ),
             ),
           ),
         // "Ramasser mes cartes" (voir demande utilisateur : "un bouton
@@ -1851,26 +2168,29 @@ class _WarCardDuelArea extends StatelessWidget {
         // après la courte pause de _runDuelAnimation qui reste
         // délibérément figée tant que le ramassage n'a pas eu lieu. Le
         // binôme voit qui doit ramasser, pas de bouton actif pour lui.
-        if (duelActive && !duelIsWarStep && state.pendingCollectorId != null)
-          Align(
-            // Position fixe, la même des deux côtés, juste en dessous des
-            // cartes qui restent dans leur "boîte" du haut (voir demande
-            // utilisateur : plus de convergence, cartes toujours au même
-            // niveau).
-            alignment: const Alignment(0, -0.35),
-            child: state.iMustCollect
-                ? FilledButton.icon(
-                    onPressed: onTapCollect,
-                    icon: const Icon(Icons.back_hand_rounded, size: 18),
-                    label: Text(LocaleScope.t(context, 'war_card_collect_button')),
-                  )
-                : Text(
-                    LocaleScope.t(context, 'war_card_collect_waiting', {
-                      'partner': playerNames[state.pendingCollectorId] ?? '',
-                    }),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
-                  ),
+        if (!collecting && duelActive && !duelIsWarStep && state.pendingCollectorId != null)
+          Positioned.fill(
+            key: const ValueKey('war_card_collect_button'),
+            child: Align(
+              // Position fixe, la même des deux côtés, juste en dessous des
+              // cartes qui restent dans leur "boîte" du haut (voir demande
+              // utilisateur : plus de convergence, cartes toujours au même
+              // niveau).
+              alignment: const Alignment(0, -0.35),
+              child: state.iMustCollect
+                  ? FilledButton.icon(
+                      onPressed: onTapCollect,
+                      icon: const Icon(Icons.back_hand_rounded, size: 18),
+                      label: Text(LocaleScope.t(context, 'war_card_collect_button')),
+                    )
+                  : Text(
+                      LocaleScope.t(context, 'war_card_collect_waiting', {
+                        'partner': playerNames[state.pendingCollectorId] ?? '',
+                      }),
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                    ),
+            ),
           ),
       ],
     );
@@ -2224,6 +2544,80 @@ class _WarCardFaceCard extends StatelessWidget {
   }
 }
 
+/// Cartes de guerre superposées d'un même côté — voir demande utilisateur :
+/// "pas de remplacement... on voit qu'il a sorti 2 cartes" — chaque carte
+/// jouée pendant la guerre en cours reste visible, légèrement décalée en
+/// diagonale derrière la suivante (la plus récente au-dessus). Le décalage
+/// est plafonné (voir [_maxVisibleOffset]) : au-delà, les cartes
+/// supplémentaires restent bien présentes dans la liste (comptées par le
+/// badge, voir _WarCardPotBadge) mais se superposent exactement pour ne
+/// pas faire déborder l'écran lors d'une longue guerre.
+class _WarCardStack extends StatelessWidget {
+  static const _offset = 9.0;
+  static const _maxVisibleOffset = 4;
+
+  final List<String> cards;
+  final Color color;
+
+  const _WarCardStack({required this.cards, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final depth = (cards.length - 1).clamp(0, _maxVisibleOffset);
+    return SizedBox(
+      width: _kCardWidth + depth * _offset,
+      height: _kCardHeight + depth * _offset,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = 0; i < cards.length; i++)
+            Positioned(
+              left: i.clamp(0, _maxVisibleOffset) * _offset,
+              top: i.clamp(0, _maxVisibleOffset) * _offset,
+              // Clé par carte+position (voir demande utilisateur : "voir la
+              // carte se déplacer... comme ça se fait") — une NOUVELLE carte
+              // ajoutée au tas obtient une clé inédite, donc un nouveau
+              // widget monté à cet endroit, ce qui relance son animation
+              // d'entrée depuis zéro (voir _WarCardStackEntry) ; les cartes
+              // déjà là gardent la leur et ne rejouent pas l'animation.
+              child: _WarCardStackEntry(
+                key: ValueKey('${cards[i]}_$i'),
+                card: cards[i],
+                color: color,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Anime l'entrée d'UNE carte dans le tas — monte depuis la pile du joueur
+/// (en dessous) jusqu'à sa position empilée, voir demande utilisateur :
+/// "je veux que l'on voie la carte se déplacer pour monter dans la boîte
+/// comme ça se fait" (jusqu'ici la carte apparaissait instantanément dans
+/// le tas dès qu'elle s'y ajoutait).
+class _WarCardStackEntry extends StatelessWidget {
+  final String card;
+  final Color color;
+
+  const _WarCardStackEntry({super.key, required this.card, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Transform.translate(
+        offset: Offset(0, (1 - t) * 70),
+        child: Opacity(opacity: t, child: child),
+      ),
+      child: _WarCardFaceCard(card: card, color: color),
+    );
+  }
+}
+
 /// Le paquet complet, empilé — voir demande utilisateur : "on doit voir en
 /// premier lieu toutes les cartes empilées ensemble", donc un seul tas
 /// visuel bien épais (pas deux piles distinctes comme en cours de partie).
@@ -2281,6 +2675,33 @@ class _WarCardFullStack extends StatelessWidget {
         angle: angle,
         alignment: Alignment.bottomLeft,
         child: _CardBack(color: color, dimmed: i > 1),
+      ),
+    );
+  }
+}
+
+/// Pot de guerre accumulé (voir demande utilisateur : "toutes les cartes
+/// empilées visibles + un petit badge X cartes") — réutilise le même
+/// visuel de pile épaisse que le paquet ([_WarCardFullStack]), réduit,
+/// avec un badge numéroté par-dessus plutôt que de dessiner chaque carte
+/// individuellement (peu lisible dès qu'une guerre s'éternise).
+// Juste le badge (voir demande utilisateur : "supprimer les cartes jaunes
+// et garder juste le badge") — plus de dessin de pile, uniquement le
+// nombre de cartes en jeu dans le pot de guerre, toujours affiché tel
+// quel (y compris "0").
+class _WarCardPotBadge extends StatelessWidget {
+  final int count;
+
+  const _WarCardPotBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(color: Colors.amber.shade700, borderRadius: BorderRadius.circular(12)),
+      child: Text(
+        '$count',
+        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
       ),
     );
   }

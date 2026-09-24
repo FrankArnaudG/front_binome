@@ -908,6 +908,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Un aperçu avant de le battre ou de le distribuer.',
     'war_card_battle_label': 'Guerre ⚔️',
+    'war_card_war_hint': 'Touchez pour rejouer une carte',
     'war_card_tap_hint': 'Touchez votre carte pour la jouer',
     'war_card_collect_button': 'Ramasser mes cartes',
     'war_card_collect_waiting': 'En attente que {partner} ramasse ses cartes…',
@@ -1756,6 +1757,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_title': 'The deck ({count} cards)',
     'war_card_predeal_peek_subtitle': 'A peek before shuffling or dealing it.',
     'war_card_battle_label': 'War ⚔️',
+    'war_card_war_hint': 'Tap to play another card',
     'war_card_tap_hint': 'Tap your card to play it',
     'war_card_collect_button': 'Collect my cards',
     'war_card_collect_waiting': 'Waiting for {partner} to collect their cards…',
@@ -2645,6 +2647,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Ein Blick darauf, bevor er gemischt oder ausgeteilt wird.',
     'war_card_battle_label': 'Krieg ⚔️',
+    'war_card_war_hint': 'Tippe, um eine weitere Karte zu spielen',
     'war_card_tap_hint': 'Tippen Sie auf Ihre Karte, um sie zu spielen',
     'war_card_collect_button': 'Meine Karten einsammeln',
     'war_card_collect_waiting': 'Warte, bis {partner} seine Karten einsammelt…',
@@ -3516,6 +3519,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Un vistazo antes de barajarlo o repartirlo.',
     'war_card_battle_label': 'Guerra ⚔️',
+    'war_card_war_hint': 'Toca para jugar otra carta',
     'war_card_tap_hint': 'Toca tu carta para jugarla',
     'war_card_collect_button': 'Recoger mis cartas',
     'war_card_collect_waiting': 'Esperando a que {partner} recoja sus cartas…',
@@ -4292,6 +4296,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_title': '牌堆（{count} 张）',
     'war_card_predeal_peek_subtitle': '洗牌或发牌前先看一眼。',
     'war_card_battle_label': '战争 ⚔️',
+    'war_card_war_hint': '点击出一张新牌',
     'war_card_tap_hint': '点击你的牌来出牌',
     'war_card_collect_button': '收走我的牌',
     'war_card_collect_waiting': '等待{partner}收走他们的牌…',
@@ -5111,6 +5116,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_title': 'الحزمة ({count} ورقة)',
     'war_card_predeal_peek_subtitle': 'لمحة قبل خلطها أو توزيعها.',
     'war_card_battle_label': 'حرب ⚔️',
+    'war_card_war_hint': 'اضغط للعب ورقة جديدة',
     'war_card_tap_hint': 'اضغط على ورقتك لتلعبها',
     'war_card_collect_button': 'جمع أوراقي',
     'war_card_collect_waiting': 'في انتظار أن يجمع {partner} أوراقه…',
@@ -5980,6 +5986,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_title': 'Tumpukan ({count} kartu)',
     'war_card_predeal_peek_subtitle': 'Sekilas sebelum dikocok atau dibagikan.',
     'war_card_battle_label': 'Perang ⚔️',
+    'war_card_war_hint': 'Ketuk untuk memainkan kartu lagi',
     'war_card_tap_hint': 'Ketuk kartumu untuk memainkannya',
     'war_card_collect_button': 'Ambil kartuku',
     'war_card_collect_waiting': 'Menunggu {partner} mengambil kartunya…',
@@ -6853,6 +6860,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Взгляд перед тем, как её перемешать или раздать.',
     'war_card_battle_label': 'Война ⚔️',
+    'war_card_war_hint': 'Коснитесь, чтобы сыграть другую карту',
     'war_card_tap_hint': 'Коснитесь своей карты, чтобы сыграть её',
     'war_card_collect_button': 'Забрать мои карты',
     'war_card_collect_waiting': 'Ожидание, пока {partner} заберёт свои карты…',
@@ -7728,6 +7736,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Uma espiada antes de embaralhar ou distribuir.',
     'war_card_battle_label': 'Guerra ⚔️',
+    'war_card_war_hint': 'Toque para jogar outra carta',
     'war_card_tap_hint': 'Toque na sua carta para jogá-la',
     'war_card_collect_button': 'Recolher minhas cartas',
     'war_card_collect_waiting': 'Aguardando {partner} recolher as cartas…',
@@ -8591,6 +8600,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Karıştırmadan veya dağıtmadan önce bir bakış.',
     'war_card_battle_label': 'Savaş ⚔️',
+    'war_card_war_hint': 'Başka bir kart oynamak için dokun',
     'war_card_tap_hint': 'Oynamak için kartına dokun',
     'war_card_collect_button': 'Kartlarımı topla',
     'war_card_collect_waiting': '{partner} kartlarını toplayana kadar bekleniyor…',
@@ -9455,6 +9465,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_subtitle':
         'Погляд перед тим, як її перемішати чи роздати.',
     'war_card_battle_label': 'Війна ⚔️',
+    'war_card_war_hint': 'Торкніть, щоб зіграти іншу карту',
     'war_card_tap_hint': 'Торкніться своєї карти, щоб зіграти нею',
     'war_card_collect_button': 'Забрати мої карти',
     'war_card_collect_waiting': 'Очікування, поки {partner} забере свої карти…',
@@ -10245,6 +10256,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_predeal_peek_title': '山札（{count}枚）',
     'war_card_predeal_peek_subtitle': 'シャッフルや配布の前にちょっと確認。',
     'war_card_battle_label': '戦争 ⚔️',
+    'war_card_war_hint': 'タップして別のカードを出す',
     'war_card_tap_hint': 'カードをタップしてプレイ',
     'war_card_collect_button': '自分のカードを回収',
     'war_card_collect_waiting': '{partner}がカードを回収するのを待っています…',

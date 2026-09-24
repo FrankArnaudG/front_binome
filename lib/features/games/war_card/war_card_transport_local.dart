@@ -123,6 +123,9 @@ class LocalWarCardTransport extends WarCardTransport {
       winnerUserId: outcome.winnerUserId,
       isTie: outcome.isTie,
       finished: outcome.finished,
+      // Voir demande utilisateur : affiche le pot accumulé pendant une
+      // guerre (déjà vide ici une fois auto-ramassé, voir ci-dessus).
+      pendingPot: _battlePot,
     );
     _controller.add(_state);
   }

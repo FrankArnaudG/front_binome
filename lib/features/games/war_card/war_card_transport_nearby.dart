@@ -284,7 +284,11 @@ class NearbyWarCardTransport extends WarCardTransport {
       isTie: outcome.isTie,
       finished: outcome.finished,
       pendingCollectorId: outcome.pendingCollectorId,
-      pendingPot: outcome.pendingCollectorId != null ? _battlePot : const [],
+      // Toujours refléter `_battlePot` (voir demande utilisateur : afficher
+      // le pot accumulé pendant une guerre, pas seulement une fois
+      // décisif) — déjà vide côté moteur si la manche a été fusionnée
+      // immédiatement (fin de partie) ou n'a jamais commencé.
+      pendingPot: _battlePot,
       clearPendingCollector: outcome.pendingCollectorId == null,
     );
     _controller.add(_state);
@@ -311,6 +315,7 @@ class NearbyWarCardTransport extends WarCardTransport {
     _state = _state.copyWith(
       pileCreator: _pileHost,
       pilePartner: _pileGuest,
+      pendingPot: _battlePot,
       clearPendingCollector: true,
     );
     _controller.add(_state);

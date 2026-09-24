@@ -199,17 +199,20 @@ class RemoteWarCardTransport extends WarCardTransport {
     // (ne fait que marquer mon propre "pendingFlip"). Si les deux ont déjà
     // tapé, la manche se résout avec un mélange aléatoire qui peut différer
     // du résultat serveur — sans conséquence visible, la réponse HTTP
-    // arrive presque aussitôt et écrase cette prédiction. `battlePot` est
-    // toujours vide entre deux appels (voir WarCardEngine._resolveRound,
-    // qui le vide systématiquement avant de retourner), donc sûr de passer
-    // `const []` ici même si l'état affiché ne le porte pas.
+    // arrive presque aussitôt et écrase cette prédiction. Le vrai pot
+    // courant (`_state.pendingPot`) est passé tel quel : lors d'une guerre
+    // qui SE POURSUIT, il n'est PAS vide entre deux appels (seule une
+    // résolution DÉCISIVE le vide, voir WarCardEngine._resolveRound) —
+    // passer `const []` ici faisait perdre les cartes déjà accumulées
+    // (voir retour utilisateur : "les deux cartes disparaissent avant de
+    // réapparaître avec le texte guerre").
     try {
       final outcome = WarCardEngine.flip(
         pileCreator: _state.pileCreator,
         pilePartner: _state.pilePartner,
         pendingFlipCreator: _state.pendingFlipCreator,
         pendingFlipPartner: _state.pendingFlipPartner,
-        battlePot: const [],
+        battlePot: _state.pendingPot,
         roundsCount: _state.roundsCount,
         userId: myUserId,
         creatorId: creatorId,
@@ -220,11 +223,32 @@ class RemoteWarCardTransport extends WarCardTransport {
         pilePartner: outcome.pilePartner,
         pendingFlipCreator: outcome.pendingFlipCreator,
         pendingFlipPartner: outcome.pendingFlipPartner,
-        lastRoundResult: outcome.lastRoundResult,
+        // Comme LocalWarCardTransport/NearbyWarCardTransport : tant que
+        // l'autre n'a pas encore tapé, `outcome.lastRoundResult` est vide
+        // (manche non résolue) — l'écraser aurait fait disparaître les
+        // cartes de guerre affichées le temps que la vraie réponse serveur
+        // arrive (voir capture utilisateur : cartes qui disparaissent puis
+        // réapparaissent après un tap pendant une guerre).
+        lastRoundResult: outcome.resolved ? outcome.lastRoundResult : _state.lastRoundResult,
         roundsCount: outcome.roundsCount,
         winnerUserId: outcome.winnerUserId,
         isTie: outcome.isTie,
         finished: outcome.finished,
+        // Comme NearbyWarCardTransport (`pendingPot: _battlePot`) : sans
+        // ça, le pot affiché pendant une guerre restait figé sur sa valeur
+        // d'AVANT ce tap (souvent vide) le temps que la vraie réponse
+        // serveur arrive, ce qui faisait disparaître les cartes de guerre
+        // juste après avoir tapé (voir retour utilisateur, même symptôme).
+        pendingPot: outcome.resolved ? outcome.battlePot : _state.pendingPot,
+        // Comme NearbyWarCardTransport : sans ça, `pendingCollectorId`
+        // restait à sa valeur d'avant ce tap (donc `null`) le temps que la
+        // vraie réponse serveur arrive, ce qui faisait passer
+        // `duelIsWarStep` à vrai par erreur pour une manche pourtant
+        // DÉCISIVE (pas une égalité) — d'où le terme "Guerre" qui
+        // apparaissait puis disparaissait à chaque manche jouée (voir
+        // retour utilisateur).
+        pendingCollectorId: outcome.resolved ? outcome.pendingCollectorId : _state.pendingCollectorId,
+        clearPendingCollector: outcome.resolved && outcome.pendingCollectorId == null,
       );
       _controller.add(_state);
     } catch (_) {

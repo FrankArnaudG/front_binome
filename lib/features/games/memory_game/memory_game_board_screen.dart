@@ -14,8 +14,6 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import 'package:showcaseview/showcaseview.dart';
 
-import '../../box/box_scope.dart';
-import '../widgets/game_card_widgets.dart' show partnerReferenceLabel;
 import '../nearby/nearby_comms.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
@@ -122,11 +120,6 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // Instant où la partie s'est terminée (vu par CET appareil) : fige le chrono
   // et le compteur de pièces au lieu de les laisser tourner après la fin.
   DateTime? _finishedAt;
-  // Distingue "c'est moi qui viens d'abandonner" (voir _confirmAbandon,
-  // déjà géré par le pop immédiat) de "le binôme vient d'abandonner à
-  // distance" (voir _onState) — seul ce second cas doit afficher la
-  // pop-up dédiée plutôt que de rester silencieux.
-  bool _leavingMyself = false;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -525,40 +518,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
       // suit laisse largement le temps à cet appel réseau d'aboutir
       // avant que l'écran ne se ferme.
       if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
-      if (state.abandoned && !_leavingMyself) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showPartnerLeftDialog());
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
-      }
+      // Scoreboard systématique, même après un abandon (voir demande
+      // utilisateur : "si on abandonne, on a le score en bas pour tous les
+      // jeux, il faut proposer de quitter et pour rejouer c'est pour celui
+      // qui a lancé le jeu") — _showScoreboard gère déjà "Quitter" pour
+      // tous et "Rejouer" réservé à widget.isLauncher.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
     }
-  }
-
-  /// Affichée UNIQUEMENT quand le binôme vient d'abandonner à distance
-  /// (voir _onState) — jamais quand c'est nous qui venons de le faire
-  /// (voir _confirmAbandon, qui referme déjà l'écran tout seul). "OK"
-  /// laisse consulter le plateau tel qu'il était ; "Sortir" referme
-  /// l'écran tout de suite (voir demande utilisateur).
-  Future<void> _showPartnerLeftDialog() async {
-    if (!mounted) return;
-    final box = BoxScope.of(context).currentBox;
-    final partner = box?.partnerOf(widget.user.id);
-    final label = partnerReferenceLabel(context, partner, widget.game.id);
-    final exit = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(LocaleScope.t(ctx, 'game_board_partner_left_title')),
-        content: Text(LocaleScope.t(ctx, 'game_board_partner_left_content', {'partner': label})),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'game_board_partner_left_ok'))),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(LocaleScope.t(ctx, 'game_board_partner_left_exit'), style: const TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-    if (exit == true && mounted) Navigator.of(context).pop();
   }
 
   /// Même dialogue de confirmation pour les deux façons de quitter une
@@ -727,17 +693,13 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
       canPop: _state.finished,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        // Ne referme plus l'écran soi-même (voir demande utilisateur :
+        // scoreboard systématique après un abandon, même geste que le
+        // bouton drapeau ci-dessous) — _onState détecte `state.finished`
+        // et affiche le tableau de score (avec "Rejouer" pour le lanceur,
+        // "Quitter" pour tous), qui referme l'écran lui-même.
         if (await _confirmAbandon()) {
-          _leavingMyself = true;
           await widget.transport.abandon();
-          // Le solde en cache peut encore refléter le dernier tick reçu,
-          // pas le règlement final de la minute en cours — voir demande
-          // utilisateur : "ça doit être instantané". Attendu AVANT de
-          // sortir pour que le tableau de bord affiche déjà le bon
-          // montant dès son premier rendu, sans "flash" d'un ancien
-          // solde suivi d'une correction visible.
-          if (commentsBoxId != null) await WalletBalanceNotifier.instance.refresh();
-          if (context.mounted) Navigator.of(context).pop();
         }
       },
       child: Stack(
@@ -810,7 +772,6 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
               onPressed: () async {
                 if (await _confirmAbandon()) {
-                  _leavingMyself = true;
                   await widget.transport.abandon();
                   // Ce bouton ne quitte pas l'écran lui-même (voir
                   // _onState, qui affiche le score une fois `finished`
