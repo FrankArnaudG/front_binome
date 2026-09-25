@@ -19,22 +19,30 @@ class SuitBattleLeadOutcome {
   });
 }
 
-/// Résultat d'un respondCard() — voir SuitBattleEngine.respondCard.
+/// Résultat d'un respondCard() — voir SuitBattleEngine.respondCard. Le
+/// vainqueur de l'échange ([winnerId]) est déjà connu, mais PAS fusionné
+/// dans sa pile de gains — voir demande utilisateur : "les deux cartes
+/// sorties se disposent côte à côte... un bouton Balayer" — sauf si cette
+/// carte termine la partie ([finished]), auquel cas [mergedWonPile] porte
+/// la fusion déjà faite (pas de pause "reveal" juste avant le tableau des
+/// scores, même principe que WarCardEngine).
 class SuitBattleRespondOutcome {
   final List<String> spread;
-  final List<String> wonPile;
+  final String card;
   final String winnerId;
   final int roundsCount;
   final String? winnerUserId;
   final bool finished;
+  final List<String>? mergedWonPile;
 
   const SuitBattleRespondOutcome({
     required this.spread,
-    required this.wonPile,
+    required this.card,
     required this.winnerId,
     required this.roundsCount,
     this.winnerUserId,
     this.finished = false,
+    this.mergedWonPile,
   });
 }
 
@@ -177,8 +185,12 @@ class SuitBattleEngine {
   }
 
   /// Le répondant joue une carte de la même couleur que la carte sur
-  /// table, ou un Joker — sinon rejeté. Résout aussitôt l'échange (voir
-  /// doc de classe).
+  /// table, ou un Joker — sinon rejeté. Le vainqueur de l'échange est
+  /// déterminé tout de suite, mais PAS fusionné dans sa pile de gains
+  /// (voir doc de classe [SuitBattleRespondOutcome]) — sauf si cette carte
+  /// vide la main du répondant, auquel cas la partie se termine
+  /// immédiatement et la fusion est faite ici (pas de pause "reveal" juste
+  /// avant le tableau des scores).
   static SuitBattleRespondOutcome respondCard({
     required List<String> spread,
     required String userId,
@@ -210,19 +222,35 @@ class SuitBattleEngine {
       winnerId = rankValue(tableCard) > rankValue(card) ? leaderId : userId;
     }
 
-    final wonPile = List.of(winnerId == leaderId ? leaderWonPile : responderWonPile)
-      ..add(tableCard)
-      ..add(card);
     final finished = newSpread.isEmpty;
+    final mergedWonPile = finished
+        ? (List.of(winnerId == leaderId ? leaderWonPile : responderWonPile)
+          ..add(tableCard)
+          ..add(card))
+        : null;
 
     return SuitBattleRespondOutcome(
       spread: newSpread,
-      wonPile: wonPile,
+      card: card,
       winnerId: winnerId,
       roundsCount: roundsCount + 1,
       winnerUserId: finished ? userId : null,
       finished: finished,
+      mergedWonPile: mergedWonPile,
     );
+  }
+
+  /// Fusionne l'échange révélé ([tableCard] + [responseCard]) dans la pile
+  /// de gains du vainqueur déjà déterminé — voir demande utilisateur :
+  /// bouton "Balayer".
+  static List<String> sweepExchange({
+    required String tableCard,
+    required String responseCard,
+    required List<String> currentWinnerWonPile,
+  }) {
+    return List.of(currentWinnerWonPile)
+      ..add(tableCard)
+      ..add(responseCard);
   }
 
   /// Le répondant capture la carte sur table directement, sans jouer de

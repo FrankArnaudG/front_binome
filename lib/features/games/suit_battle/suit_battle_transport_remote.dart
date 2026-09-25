@@ -101,6 +101,8 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
         wonPartner: session.wonPartner,
         tableCard: session.tableCard,
         tableOwnerUserId: session.tableOwnerUserId,
+        responseCard: session.responseCard,
+        pendingRoundWinnerId: session.pendingRoundWinnerId,
         turnUserId: session.turnUserId,
         phase: session.phase,
         roundsCount: session.roundsCount,
@@ -202,17 +204,63 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
           responderWonPile: userId == creatorId ? _state.wonCreator : _state.wonPartner,
           roundsCount: _state.roundsCount,
         );
-        final winnerIsCreator = outcome.winnerId == creatorId;
+        if (outcome.finished) {
+          // Fin de partie sur cette carte : fusion immédiate, pas de pause
+          // "reveal" (voir doc de classe SuitBattleRespondOutcome).
+          final winnerIsCreator = outcome.winnerId == creatorId;
+          _state = _state.copyWith(
+            spreadCreator: _state.iAmCreator ? outcome.spread : _state.spreadCreator,
+            spreadPartner: _state.iAmCreator ? _state.spreadPartner : outcome.spread,
+            wonCreator: winnerIsCreator ? outcome.mergedWonPile : _state.wonCreator,
+            wonPartner: winnerIsCreator ? _state.wonPartner : outcome.mergedWonPile,
+            turnUserId: outcome.winnerId,
+            phase: 'lead',
+            roundsCount: outcome.roundsCount,
+            winnerUserId: outcome.winnerUserId,
+            finished: true,
+            clearTable: true,
+          );
+        } else {
+          // Voir demande utilisateur : "les deux cartes sorties se
+          // disposent côte à côte... un bouton Balayer" — la carte du
+          // répondant reste visible à côté de `tableCard` jusqu'au
+          // balayage explicite (voir sweepExchange).
+          _state = _state.copyWith(
+            spreadCreator: _state.iAmCreator ? outcome.spread : _state.spreadCreator,
+            spreadPartner: _state.iAmCreator ? _state.spreadPartner : outcome.spread,
+            responseCard: outcome.card,
+            pendingRoundWinnerId: outcome.winnerId,
+            phase: 'reveal',
+            roundsCount: outcome.roundsCount,
+          );
+        }
+        _controller.add(_state);
+      }
+    } catch (_) {
+      // Coup localement invalide — le serveur tranchera.
+    }
+
+    await _syncWith(() => GameService.instance.respondSuitBattle(sessionId, card));
+  }
+
+  @override
+  Future<void> sweepExchange() async {
+    try {
+      final tableCard = _state.tableCard;
+      final responseCard = _state.responseCard;
+      final winnerId = _state.pendingRoundWinnerId;
+      if (tableCard != null && responseCard != null && winnerId != null) {
+        final winnerIsCreator = winnerId == creatorId;
+        final mergedWonPile = SuitBattleEngine.sweepExchange(
+          tableCard: tableCard,
+          responseCard: responseCard,
+          currentWinnerWonPile: winnerIsCreator ? _state.wonCreator : _state.wonPartner,
+        );
         _state = _state.copyWith(
-          spreadCreator: _state.iAmCreator ? outcome.spread : _state.spreadCreator,
-          spreadPartner: _state.iAmCreator ? _state.spreadPartner : outcome.spread,
-          wonCreator: winnerIsCreator ? outcome.wonPile : _state.wonCreator,
-          wonPartner: winnerIsCreator ? _state.wonPartner : outcome.wonPile,
-          turnUserId: outcome.winnerId,
+          wonCreator: winnerIsCreator ? mergedWonPile : _state.wonCreator,
+          wonPartner: winnerIsCreator ? _state.wonPartner : mergedWonPile,
+          turnUserId: winnerId,
           phase: 'lead',
-          roundsCount: outcome.roundsCount,
-          winnerUserId: outcome.winnerUserId,
-          finished: outcome.finished,
           clearTable: true,
         );
         _controller.add(_state);
@@ -221,7 +269,7 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
       // Coup localement invalide — le serveur tranchera.
     }
 
-    await _syncWith(() => GameService.instance.respondSuitBattle(sessionId, card));
+    await _syncWith(() => GameService.instance.sweepSuitBattle(sessionId));
   }
 
   @override

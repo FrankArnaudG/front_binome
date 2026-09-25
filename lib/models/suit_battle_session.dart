@@ -32,6 +32,8 @@ class SuitBattleSession {
   final List<String> wonPartner;
   final String? tableCard;
   final String? tableOwnerUserId;
+  final String? responseCard;
+  final String? pendingRoundWinnerId;
   final String? turnUserId;
   final String? phase;
   final int roundsCount;
@@ -62,6 +64,8 @@ class SuitBattleSession {
     this.wonPartner = const [],
     this.tableCard,
     this.tableOwnerUserId,
+    this.responseCard,
+    this.pendingRoundWinnerId,
     this.turnUserId,
     this.phase,
     this.roundsCount = 0,
@@ -97,6 +101,8 @@ class SuitBattleSession {
         wonPartner: (json['won_partner'] as List?)?.map((e) => e as String).toList() ?? const [],
         tableCard: json['table_card'] as String?,
         tableOwnerUserId: json['table_owner_user_id'] as String?,
+        responseCard: json['response_card'] as String?,
+        pendingRoundWinnerId: json['pending_round_winner_id'] as String?,
         turnUserId: json['turn_user_id'] as String?,
         phase: json['phase'] as String?,
         roundsCount: json['rounds_count'] as int? ?? 0,

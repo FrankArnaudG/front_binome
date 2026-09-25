@@ -1114,6 +1114,14 @@ class GameService {
     return SuitBattleSession.fromJson(data);
   }
 
+  /// "Balayer" — fusionne l'échange révélé dans la pile de gains du
+  /// vainqueur déjà déterminé, et relance une manche (voir demande
+  /// utilisateur).
+  Future<SuitBattleSession> sweepSuitBattle(String sessionId) async {
+    final data = await ApiClient.instance.put('/suit-battle-sessions/$sessionId/sweep') as Map<String, dynamic>;
+    return SuitBattleSession.fromJson(data);
+  }
+
   /// Le répondant capture la carte sur table sans jouer — le meneur
   /// original reprend la main.
   Future<SuitBattleSession> captureLeadSuitBattle(String sessionId) async {

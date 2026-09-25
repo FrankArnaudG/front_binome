@@ -88,6 +88,8 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
       'wonGuest': _wonGuest,
       'tableCard': _state.tableCard,
       'tableOwnerUserId': _state.tableOwnerUserId,
+      'responseCard': _state.responseCard,
+      'pendingRoundWinnerId': _state.pendingRoundWinnerId,
       'turnUserId': _state.turnUserId,
       'phase': _state.phase,
       'roundsCount': _state.roundsCount,
@@ -139,6 +141,8 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
           wonPartner: (message['wonGuest'] as List).map((e) => e as String).toList(),
           tableCard: message['tableCard'] as String?,
           tableOwnerUserId: message['tableOwnerUserId'] as String?,
+          responseCard: message['responseCard'] as String?,
+          pendingRoundWinnerId: message['pendingRoundWinnerId'] as String?,
           turnUserId: message['turnUserId'] as String?,
           phase: message['phase'] as String?,
           roundsCount: message['roundsCount'] as int,
@@ -150,6 +154,7 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
           pausedByUserId: pausedByUserId,
           pausedAt: message['pausedAt'] != null ? DateTime.parse(message['pausedAt'] as String) : null,
           clearTable: message['tableCard'] == null,
+          clearReveal: message['responseCard'] == null,
           clearPause: pausedByUserId == null,
         );
         _controller.add(_state);
@@ -163,6 +168,8 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
         if (isHost) _applyHostPlayLead(kSuitBattleGuestRole, message['card'] as String);
       case 'respond_card':
         if (isHost) _applyHostRespondCard(kSuitBattleGuestRole, message['card'] as String);
+      case 'sweep_request':
+        if (isHost) _applyHostSweepExchange();
       case 'capture_lead':
         if (isHost) _applyHostCaptureLead(kSuitBattleGuestRole);
       case 'pause_request':
@@ -276,28 +283,77 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
       } else {
         _spreadGuest = outcome.spread;
       }
-      if (outcome.winnerId == kSuitBattleHostRole) {
-        _wonHost = outcome.wonPile;
+      if (outcome.finished) {
+        // Fin de partie sur cette carte : fusion immédiate, pas de pause
+        // "reveal" (voir doc de classe SuitBattleRespondOutcome).
+        final mergedWonPile = outcome.mergedWonPile!;
+        if (outcome.winnerId == kSuitBattleHostRole) {
+          _wonHost = mergedWonPile;
+        } else {
+          _wonGuest = mergedWonPile;
+        }
+        _state = _state.copyWith(
+          spreadCreator: _spreadHost,
+          spreadPartner: _spreadGuest,
+          wonCreator: _wonHost,
+          wonPartner: _wonGuest,
+          turnUserId: outcome.winnerId,
+          phase: 'lead',
+          roundsCount: outcome.roundsCount,
+          winnerUserId: outcome.winnerUserId,
+          finished: true,
+          clearTable: true,
+        );
       } else {
-        _wonGuest = outcome.wonPile;
+        // Voir demande utilisateur : "les deux cartes sorties se disposent
+        // côte à côte... un bouton Balayer" — la carte du répondant reste
+        // visible à côté de `tableCard` jusqu'au balayage explicite (voir
+        // _applyHostSweepExchange).
+        _state = _state.copyWith(
+          spreadCreator: _spreadHost,
+          spreadPartner: _spreadGuest,
+          responseCard: outcome.card,
+          pendingRoundWinnerId: outcome.winnerId,
+          phase: 'reveal',
+          roundsCount: outcome.roundsCount,
+        );
       }
-      _state = _state.copyWith(
-        spreadCreator: _spreadHost,
-        spreadPartner: _spreadGuest,
-        wonCreator: _wonHost,
-        wonPartner: _wonGuest,
-        turnUserId: outcome.winnerId,
-        phase: 'lead',
-        roundsCount: outcome.roundsCount,
-        winnerUserId: outcome.winnerUserId,
-        finished: outcome.finished,
-        clearTable: true,
-      );
       _controller.add(_state);
       _sendState();
     } catch (_) {
       // Coup invalide — ignoré.
     }
+  }
+
+  /// "Balayer" — voir demande utilisateur. N'importe lequel des deux rôles
+  /// peut le déclencher : l'issue de l'échange est déjà tranchée, balayer
+  /// ne fait que la valider visuellement pour continuer.
+  void _applyHostSweepExchange() {
+    if (_state.finished || _state.isPaused || _state.phase != 'reveal') return;
+    final tableCard = _state.tableCard;
+    final responseCard = _state.responseCard;
+    final winnerId = _state.pendingRoundWinnerId;
+    if (tableCard == null || responseCard == null || winnerId == null) return;
+
+    final mergedWonPile = SuitBattleEngine.sweepExchange(
+      tableCard: tableCard,
+      responseCard: responseCard,
+      currentWinnerWonPile: winnerId == kSuitBattleHostRole ? _wonHost : _wonGuest,
+    );
+    if (winnerId == kSuitBattleHostRole) {
+      _wonHost = mergedWonPile;
+    } else {
+      _wonGuest = mergedWonPile;
+    }
+    _state = _state.copyWith(
+      wonCreator: _wonHost,
+      wonPartner: _wonGuest,
+      turnUserId: winnerId,
+      phase: 'lead',
+      clearTable: true,
+    );
+    _controller.add(_state);
+    _sendState();
   }
 
   void _applyHostCaptureLead(String byRole) {
@@ -396,6 +452,15 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
       _applyHostRespondCard(kSuitBattleHostRole, card);
     } else {
       _send({'type': 'respond_card', 'card': card});
+    }
+  }
+
+  @override
+  Future<void> sweepExchange() async {
+    if (isHost) {
+      _applyHostSweepExchange();
+    } else {
+      _send({'type': 'sweep_request'});
     }
   }
 

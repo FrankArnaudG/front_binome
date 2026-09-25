@@ -19,6 +19,14 @@ class SuitBattleBoardState {
   final List<String> wonPartner;
   final String? tableCard;
   final String? tableOwnerUserId;
+  // Phase "reveal" (voir demande utilisateur : "les deux cartes sorties se
+  // disposent côte à côte... un bouton Balayer") — carte du répondant,
+  // visible en même temps que [tableCard] jusqu'au balayage explicite.
+  final String? responseCard;
+  // Vainqueur DÉJÀ déterminé de l'échange en cours de révélation (pour la
+  // couronne) — distinct de [winnerUserId], qui ne concerne que la fin de
+  // PARTIE.
+  final String? pendingRoundWinnerId;
   final String? turnUserId;
   final String? phase;
   final int roundsCount;
@@ -47,6 +55,8 @@ class SuitBattleBoardState {
     this.wonPartner = const [],
     this.tableCard,
     this.tableOwnerUserId,
+    this.responseCard,
+    this.pendingRoundWinnerId,
     this.turnUserId,
     this.phase,
     this.roundsCount = 0,
@@ -76,6 +86,11 @@ class SuitBattleBoardState {
 
   bool get isMyTurn => turnUserId == myUserId;
 
+  // Vrai tant que l'échange précédent reste à balayer (voir demande
+  // utilisateur) — les deux cartes restent affichées, aucune main n'est
+  // jouable tant que ce n'est pas fait.
+  bool get isRevealing => phase == 'reveal';
+
   List<String> get mySpread => iAmCreator ? spreadCreator : spreadPartner;
   List<String> get partnerSpread => iAmCreator ? spreadPartner : spreadCreator;
   List<String> get myWonPile => iAmCreator ? wonCreator : wonPartner;
@@ -93,6 +108,8 @@ class SuitBattleBoardState {
     List<String>? wonPartner,
     String? tableCard,
     String? tableOwnerUserId,
+    String? responseCard,
+    String? pendingRoundWinnerId,
     String? turnUserId,
     String? phase,
     int? roundsCount,
@@ -103,7 +120,18 @@ class SuitBattleBoardState {
     DateTime? startedAt,
     String? pausedByUserId,
     DateTime? pausedAt,
+    // Vide tout l'état de la carte/de l'échange en cours (`tableCard` +
+    // `tableOwnerUserId` + `responseCard` + `pendingRoundWinnerId`) — que
+    // ce soit un ramassage direct (captureLead) ou un balayage
+    // (sweepExchange) après une phase "reveal" (voir doc de classe).
     bool clearTable = false,
+    // Vide UNIQUEMENT `responseCard`/`pendingRoundWinnerId`, sans toucher
+    // `tableCard` — nécessaire pour NearbySuitBattleTransport (voir sa
+    // reconstruction depuis un message 'state') : une manche qui vient de
+    // passer en phase "response" a `tableCard` posé mais PAS encore de
+    // `responseCard`, un simple `?? this.responseCard` conserverait alors à
+    // tort une valeur de l'ÉCHANGE PRÉCÉDENT.
+    bool clearReveal = false,
     bool clearPause = false,
   }) =>
       SuitBattleBoardState(
@@ -118,6 +146,8 @@ class SuitBattleBoardState {
         wonPartner: wonPartner ?? this.wonPartner,
         tableCard: clearTable ? null : (tableCard ?? this.tableCard),
         tableOwnerUserId: clearTable ? null : (tableOwnerUserId ?? this.tableOwnerUserId),
+        responseCard: (clearTable || clearReveal) ? null : (responseCard ?? this.responseCard),
+        pendingRoundWinnerId: (clearTable || clearReveal) ? null : (pendingRoundWinnerId ?? this.pendingRoundWinnerId),
         turnUserId: turnUserId ?? this.turnUserId,
         phase: phase ?? this.phase,
         roundsCount: roundsCount ?? this.roundsCount,
@@ -160,8 +190,16 @@ abstract class SuitBattleTransport {
   Future<void> playLead(String userId, String card);
 
   /// Le répondant joue [card] (même couleur que la carte sur table, ou un
-  /// Joker) — résout l'échange.
+  /// Joker) — détermine le vainqueur de l'échange, phase → "reveal" (voir
+  /// demande utilisateur : "les deux cartes sorties se disposent côte à
+  /// côte... un bouton Balayer"), sauf si cette carte termine la partie
+  /// (fusion immédiate, pas de pause).
   Future<void> respondCard(String userId, String card);
+
+  /// "Balayer" — fusionne l'échange révélé dans la pile de gains du
+  /// vainqueur déjà déterminé, et relance une manche (voir demande
+  /// utilisateur). N'importe lequel des deux joueurs peut le déclencher.
+  Future<void> sweepExchange();
 
   /// Le répondant capture la carte sur table sans jouer — le meneur
   /// original reprend la main.

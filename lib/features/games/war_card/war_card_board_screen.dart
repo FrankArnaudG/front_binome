@@ -22,6 +22,7 @@ import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_guide_voice_demo.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
+import '../widgets/playing_card_face.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../widgets/war_card_match_scoreboard.dart';
 import '../../shop/wallet_balance_notifier.dart';
@@ -2320,215 +2321,6 @@ class _WarCardPileBaseState extends State<_WarCardPileBase> with SingleTickerPro
   }
 }
 
-/// Position d'un pip dans le champ central d'une carte — [dx]/[dy] en
-/// coordonnées d'Alignment (-1..1), [rotated] = retourné à 180° (pips de
-/// la moitié basse, comme sur une vraie carte).
-class _PipSpot {
-  final double dx;
-  final double dy;
-  final bool rotated;
-
-  const _PipSpot(this.dx, this.dy, {this.rotated = false});
-}
-
-/// Disposition RÉELLE des pips par rang (voir demande utilisateur : être
-/// fidèle à chaque carte, pas juste un chiffre + un symbole) — mise en
-/// page classique d'un jeu de 52 cartes françaises/anglaises. Les rangs
-/// non listés ('A', 'J', 'Q', 'K') n'ont pas de champ de pips (voir
-/// _PlayingCardFace : as = un seul gros pip central, figures = lettre).
-const Map<String, List<_PipSpot>> _kPipLayouts = {
-  '2': [_PipSpot(0, -0.75), _PipSpot(0, 0.75, rotated: true)],
-  '3': [_PipSpot(0, -0.75), _PipSpot(0, 0), _PipSpot(0, 0.75, rotated: true)],
-  '4': [
-    _PipSpot(-0.6, -0.75),
-    _PipSpot(0.6, -0.75),
-    _PipSpot(-0.6, 0.75, rotated: true),
-    _PipSpot(0.6, 0.75, rotated: true),
-  ],
-  '5': [
-    _PipSpot(-0.6, -0.85),
-    _PipSpot(0.6, -0.85),
-    _PipSpot(0, 0),
-    _PipSpot(-0.6, 0.85, rotated: true),
-    _PipSpot(0.6, 0.85, rotated: true),
-  ],
-  '6': [
-    _PipSpot(-0.6, -0.85),
-    _PipSpot(0.6, -0.85),
-    _PipSpot(-0.6, 0),
-    _PipSpot(0.6, 0),
-    _PipSpot(-0.6, 0.85, rotated: true),
-    _PipSpot(0.6, 0.85, rotated: true),
-  ],
-  '7': [
-    _PipSpot(-0.6, -0.9),
-    _PipSpot(0.6, -0.9),
-    _PipSpot(0, -0.45),
-    _PipSpot(-0.6, 0),
-    _PipSpot(0.6, 0),
-    _PipSpot(-0.6, 0.9, rotated: true),
-    _PipSpot(0.6, 0.9, rotated: true),
-  ],
-  '8': [
-    _PipSpot(-0.6, -0.9),
-    _PipSpot(0.6, -0.9),
-    _PipSpot(0, -0.45),
-    _PipSpot(-0.6, 0),
-    _PipSpot(0.6, 0),
-    _PipSpot(0, 0.45, rotated: true),
-    _PipSpot(-0.6, 0.9, rotated: true),
-    _PipSpot(0.6, 0.9, rotated: true),
-  ],
-  '9': [
-    _PipSpot(-0.6, -0.9),
-    _PipSpot(0.6, -0.9),
-    _PipSpot(-0.6, -0.42),
-    _PipSpot(0.6, -0.42),
-    _PipSpot(0, 0),
-    _PipSpot(-0.6, 0.42, rotated: true),
-    _PipSpot(0.6, 0.42, rotated: true),
-    _PipSpot(-0.6, 0.9, rotated: true),
-    _PipSpot(0.6, 0.9, rotated: true),
-  ],
-  '10': [
-    _PipSpot(-0.6, -0.9),
-    _PipSpot(0.6, -0.9),
-    _PipSpot(-0.6, -0.42),
-    _PipSpot(0.6, -0.42),
-    _PipSpot(0, -0.65),
-    _PipSpot(0, 0.65, rotated: true),
-    _PipSpot(-0.6, 0.42, rotated: true),
-    _PipSpot(0.6, 0.42, rotated: true),
-    _PipSpot(-0.6, 0.9, rotated: true),
-    _PipSpot(0.6, 0.9, rotated: true),
-  ],
-};
-
-String _suitSymbolFor(String suit) => switch (suit) {
-      'S' => '♠',
-      'H' => '♥',
-      'D' => '♦',
-      'C' => '♣',
-      _ => '',
-    };
-
-/// Le visage complet d'une carte — indices en coin (haut-gauche, et
-/// bas-droit retourné à 180°, comme sur une vraie carte) + champ central
-/// fidèle au rang (voir demande utilisateur) : un pip pour l'as, la
-/// disposition réelle pour 2 à 10 (voir [_kPipLayouts]), une lettre pour
-/// les figures (J/Q/K — un vrai portrait illustré serait hors de portée
-/// à cette taille, la lettre + les indices en coin restent la convention
-/// standard pour identifier la figure sans ambiguïté).
-class _PlayingCardFace extends StatelessWidget {
-  final String card;
-  final Color color;
-  final double width;
-  final double height;
-  final Color? borderColor;
-  final double borderWidth;
-  final double borderRadius;
-
-  const _PlayingCardFace({
-    required this.card,
-    required this.color,
-    required this.width,
-    required this.height,
-    this.borderColor,
-    this.borderWidth = 2,
-    this.borderRadius = 12,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final rank = card.substring(0, card.length - 1);
-    final suit = card.substring(card.length - 1);
-    final suitSymbol = _suitSymbolFor(suit);
-    final isRedSuit = suit == 'H' || suit == 'D';
-    final pipColor = isRedSuit ? _kRedColor : Colors.black87;
-    final cornerFontSize = width * 0.15;
-    // Voir demande utilisateur : "les motifs se chevauchent" — pips plus
-    // petits, encore réduits pour les rangs à 4 rangées (9/10) qui ont le
-    // moins de marge verticale disponible.
-    final denseRank = rank == '9' || rank == '10';
-    final pipFontSize = width * (denseRank ? 0.09 : 0.105);
-    // Boîte réservée à CHAQUE pip (voir centerField) — en la dimensionnant
-    // explicitement, deux pips proches ne peuvent jamais se chevaucher
-    // visuellement, contrairement à un Align nu sur du texte "brut" dont
-    // la boîte suit le glyphe et peut déborder sur sa voisine.
-    final pipBoxSize = pipFontSize * 1.15;
-
-    Widget corner({required bool flipped}) {
-      final child = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(rank, style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: cornerFontSize, color: pipColor, height: 1)),
-          Text(suitSymbol, style: TextStyle(fontSize: cornerFontSize * 0.8, color: pipColor, height: 1)),
-        ],
-      );
-      return flipped ? Transform.rotate(angle: 3.14159, child: child) : child;
-    }
-
-    Widget centerField() {
-      if (rank == 'A') {
-        return Center(child: Text(suitSymbol, style: TextStyle(fontSize: width * 0.4, color: pipColor)));
-      }
-      if (rank == 'J' || rank == 'Q' || rank == 'K') {
-        return Center(
-          child: Text(rank, style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: width * 0.38, color: pipColor)),
-        );
-      }
-      final layout = _kPipLayouts[rank];
-      if (layout == null) return const SizedBox.shrink();
-
-      return Stack(
-        children: [
-          for (final spot in layout)
-            Align(
-              alignment: Alignment(spot.dx, spot.dy),
-              child: SizedBox(
-                width: pipBoxSize,
-                height: pipBoxSize,
-                child: Center(
-                  child: Transform.rotate(
-                    angle: spot.rotated ? 3.14159 : 0,
-                    child: Text(
-                      suitSymbol,
-                      style: TextStyle(fontSize: pipFontSize, color: pipColor, height: 1, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
-    return Container(
-      width: width,
-      height: height,
-      padding: EdgeInsets.all(width * 0.07),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: borderColor ?? color.withValues(alpha: 0.5), width: borderWidth),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 3))],
-      ),
-      child: Stack(
-        children: [
-          Positioned(top: 0, left: 0, child: corner(flipped: false)),
-          Positioned(bottom: 0, right: 0, child: corner(flipped: true)),
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: width * 0.26, vertical: height * 0.13),
-              child: centerField(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// La face d'une carte révélée — extrait de l'ancien `_CardSlot` pour
 /// être positionnée indépendamment (voir `_WarCardDuelArea`, la carte
 /// voyage désormais de la pile vers le centre puis vers le vainqueur).
@@ -2540,7 +2332,7 @@ class _WarCardFaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PlayingCardFace(card: card, color: color, width: _kCardWidth, height: _kCardHeight);
+    return PlayingCardFace(card: card, color: color, width: _kCardWidth, height: _kCardHeight);
   }
 }
 
@@ -2940,7 +2732,7 @@ class _FanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PlayingCardFace(
+    return PlayingCardFace(
       card: card,
       color: color,
       width: 62,
