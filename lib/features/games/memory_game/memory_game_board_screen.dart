@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/app_router.dart' show AppRouter;
 import '../../../core/server_clock.dart';
 import '../../../l10n/locale_scope.dart';
@@ -118,6 +119,14 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   Timer? _mismatchTimer;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
+  // Voir demande utilisateur : "le modèle qui affiche le score ne doit pas
+  // cacher le micro" — showMemoryGameMatchScoreboard utilise `showBottomSheet`
+  // (non modal), qui exige un Scaffold ANCÊTRE (`Scaffold.of`) ; `context`
+  // (celui de CET État) est au-dessus du Scaffold que ce build() retourne,
+  // jamais en dessous, et AUCUN autre Scaffold n'englobe cet écran pendant
+  // une partie (barre de nav globale masquée, voir AppRouter.showGlobalNavBar
+  // dans initState) — cette clé donne donc accès au bon Scaffold, LE SIEN.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   // Instant où la partie s'est terminée (vu par CET appareil) : fige le chrono
   // et le compteur de pièces au lieu de les laisser tourner après la fin.
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
@@ -551,10 +560,29 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     return confirmed == true;
   }
 
+  /// Voir demande utilisateur : "j'abandonne, je clique mais rien ne se
+  /// passe" — `widget.transport.abandon()` n'avait AUCUNE gestion d'erreur
+  /// (un raté réseau/serveur échouait en silence total, sans aucun retour
+  /// visible) — désormais utilisé aux deux points d'appel (drapeau ET
+  /// retour arrière) pour au moins prévenir au lieu de ne rien montrer.
+  Future<void> _abandonWithFeedback() async {
+    try {
+      await widget.transport.abandon();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'abandonner la partie, réessaie.")),
+      );
+    }
+  }
+
   Future<void> _showScoreboard() async {
     if (!mounted) return;
     final rematch = await showMemoryGameMatchScoreboard(
-      context,
+      _scaffoldKey,
       state: _state,
       playerNames: widget.playerNames,
       playerAvatars: widget.playerAvatars,
@@ -718,7 +746,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
         // et affiche le tableau de score (avec "Rejouer" pour le lanceur,
         // "Quitter" pour tous), qui referme l'écran lui-même.
         if (await _confirmAbandon()) {
-          await widget.transport.abandon();
+          await _abandonWithFeedback();
         }
       },
       child: Stack(
@@ -733,6 +761,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
           context: context,
           removeBottom: true,
           child: Scaffold(
+      key: _scaffoldKey,
       backgroundColor: theme.background,
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
@@ -791,7 +820,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
               tooltip: LocaleScope.t(context, 'memory_board_abandon_tooltip'),
               onPressed: () async {
                 if (await _confirmAbandon()) {
-                  await widget.transport.abandon();
+                  await _abandonWithFeedback();
                   // Ce bouton ne quitte pas l'écran lui-même (voir
                   // _onState, qui affiche le score une fois `finished`
                   // reçu) — le rafraîchissement s'y fait déjà (voir

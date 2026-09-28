@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -16,29 +18,61 @@ import '../memory_game/memory_game_transport.dart';
 /// temps réel), jamais via un aller-retour réseau supplémentaire — les 3
 /// modes affichent ce même popup de la même façon.
 ///
+/// Voir demande utilisateur : "le modèle qui affiche le score ne doit pas
+/// cacher le micro, et la caméra" — feuille NON modale (`ScaffoldState.
+/// showBottomSheet`, pas `showModalBottomSheet`) : elle se pose DANS le
+/// Scaffold de cet écran, donc EN DESSOUS de VoiceCallOverlay dans le Stack
+/// qui l'entoure (voir *BoardScreen.build) au lieu de le recouvrir en
+/// passant par-dessus tout via le Navigator racine ; sans barrière modale
+/// non plus, le micro reste tapable. [scaffoldKey] (pas un `BuildContext`) :
+/// appelée directement sur le ScaffoldState pour éviter toute recherche
+/// d'ancêtre — CET écran de jeu n'a plus AUCUN Scaffold ancêtre pendant une
+/// partie (barre de nav globale masquée), `Scaffold.of(context)` échouerait.
+/// Volontairement PAS de changement côté VoiceCallOverlay/sa connexion —
+/// voir demande utilisateur : une tentative précédente qui déplaçait CET
+/// écran-ci a cassé la connexion voix, jamais retenter par ce biais.
+///
 /// Retourne `true` si le joueur a tapé "Rejouer" (voir [allowRematch]) —
 /// à l'appelant de relancer une partie via `startMemoryGameAndPush`,
 /// jamais fait ici pour ne pas coupler ce widget à la logique de
-/// démarrage d'une session.
+/// démarrage d'une session. `false` pour "Quitter" COMME pour une fermeture
+/// par glissement (voir demande utilisateur : "on peut quitter sans
+/// forcément cliquer sur le bouton").
 Future<bool?> showMemoryGameMatchScoreboard(
-  BuildContext context, {
+  GlobalKey<ScaffoldState> scaffoldKey, {
   required MemoryGameBoardState state,
   required Map<String, String> playerNames,
   required Map<String, String?> playerAvatars,
   bool allowRematch = false,
 }) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    useRootNavigator: true,
-    isScrollControlled: true,
+  final scaffold = scaffoldKey.currentState;
+  if (scaffold == null) return Future.value(null);
+
+  final completer = Completer<bool?>();
+  late final PersistentBottomSheetController controller;
+
+  void close(bool? result) {
+    if (!completer.isCompleted) completer.complete(result);
+    controller.close();
+  }
+
+  controller = scaffold.showBottomSheet(
     backgroundColor: Colors.transparent,
-    builder: (_) => _MemoryScoreboardSheet(
+    (_) => _MemoryScoreboardSheet(
       state: state,
       playerNames: playerNames,
       playerAvatars: playerAvatars,
       allowRematch: allowRematch,
+      onClose: close,
     ),
   );
+  // Glissée pour la fermer (enableDrag, par défaut vrai ici) sans passer
+  // par un bouton : même résultat qu'un "Quitter" (voir doc ci-dessus).
+  controller.closed.then((_) {
+    if (!completer.isCompleted) completer.complete(false);
+  });
+
+  return completer.future;
 }
 
 class _MemoryScoreboardSheet extends StatelessWidget {
@@ -46,12 +80,14 @@ class _MemoryScoreboardSheet extends StatelessWidget {
   final Map<String, String> playerNames;
   final Map<String, String?> playerAvatars;
   final bool allowRematch;
+  final ValueChanged<bool?> onClose;
 
   const _MemoryScoreboardSheet({
     required this.state,
     required this.playerNames,
     required this.playerAvatars,
     required this.allowRematch,
+    required this.onClose,
   });
 
   @override
@@ -132,7 +168,7 @@ class _MemoryScoreboardSheet extends StatelessWidget {
             if (allowRematch) ...[
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => onClose(true),
                 icon: const Icon(Icons.replay_rounded),
                 label: Text(LocaleScope.t(context, 'memory_score_rematch')),
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
@@ -142,7 +178,7 @@ class _MemoryScoreboardSheet extends StatelessWidget {
             // utilisateur) — taper à côté de la feuille revient au même (résultat null).
             SizedBox(height: allowRematch ? 10 : 20),
             OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () => onClose(false),
               style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               child: Text(LocaleScope.t(context, 'game_score_quit')),
             ),
