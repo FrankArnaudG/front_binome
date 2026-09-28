@@ -48,7 +48,9 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
   int _page = 1;
   bool _hasMore = false;
   bool _loadingMore = false;
-  bool _opening = false;
+  // Id de la discussion en cours d'ouverture (voir _open) — `null` = aucune
+  // (permet de teinter UNIQUEMENT la ligne tapée, voir GameHistoryRow.opening).
+  String? _openingSendId;
   final _scrollController = ScrollController();
 
   List<GameBox>? _boxes;
@@ -315,8 +317,11 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
 
   Future<void> _open(Send send) async {
     final card = send.gameCard;
-    if (card == null || _opening) return;
-    setState(() => _opening = true);
+    if (card == null || _openingSendId != null) return;
+    // Voir demande utilisateur : "colorier légèrement pour montrer que
+    // l'on a cliqué en attendant que ça s'ouvre" — teinte UNIQUEMENT la
+    // ligne tapée (voir GameHistoryRow.opening), pas tout l'écran.
+    setState(() => _openingSendId = send.id);
     try {
       var game = widget.game;
       var box = await _boxFor(card.gameBoxId);
@@ -334,7 +339,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
         );
         return;
       }
-      setState(() => _opening = false);
+      setState(() => _openingSendId = null);
       AppRouter.showGlobalNavBar.value = false;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -349,7 +354,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
         SnackBar(content: Text(LocaleScope.of(context).t('game_history_load_error'))),
       );
     } finally {
-      if (mounted && _opening) setState(() => _opening = false);
+      if (mounted && _openingSendId == send.id) setState(() => _openingSendId = null);
     }
   }
 
@@ -370,15 +375,11 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
         ),
       ),
+      // Voir demande utilisateur : plus de voile plein écran — la teinte
+      // sur la ligne tapée (voir GameHistoryRow.opening) suffit à montrer
+      // que le clic a été pris en compte, sans assombrir toute la liste.
       body: ThemedBackground(
-        child: SafeArea(
-          child: Stack(
-            children: [
-              _buildBody(theme, localeCode),
-              if (_opening) const Positioned.fill(child: Center(child: CircularProgressIndicator())),
-            ],
-          ),
-        ),
+        child: SafeArea(child: _buildBody(theme, localeCode)),
       ),
     );
   }
@@ -434,6 +435,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
         time: _formattedTime(lastMessage.createdAt),
         tick: isMine ? sendTickFor(lastMessage) : null,
         unread: lastMessage.recipientId == widget.user.id && !lastMessage.isSeen,
+        opening: _openingSendId == send.id,
         onTap: () => _open(send),
       );
 

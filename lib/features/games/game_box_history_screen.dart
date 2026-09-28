@@ -575,6 +575,13 @@ class GameHistoryRow extends StatelessWidget {
   // cohérent partout où l'app liste des discussions.
   final bool unread;
   final VoidCallback onTap;
+  // Voir demande utilisateur : "dès que je clique pour ouvrir une
+  // conversation, colorier légèrement pour montrer que l'on a cliqué en
+  // attendant que ça s'ouvre" — vrai UNIQUEMENT sur la ligne tapée, le
+  // temps de la résolution réseau (voir GameConversationsScreen._open).
+  // `false` partout ailleurs (comportement inchangé, voir
+  // GameBoxHistoryScreen qui ne le distingue pas par ligne).
+  final bool opening;
 
   const GameHistoryRow({
     super.key,
@@ -588,6 +595,7 @@ class GameHistoryRow extends StatelessWidget {
     required this.tick,
     required this.unread,
     required this.onTap,
+    this.opening = false,
   });
 
   @override
@@ -620,11 +628,11 @@ class GameHistoryRow extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Material(
-                color: theme.surface,
+                color: opening ? theme.primary.withValues(alpha: 0.1) : theme.surface,
                 borderRadius: BorderRadius.circular(20),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(20),
-                  onTap: onTap,
+                  onTap: opening ? null : onTap,
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Row(
