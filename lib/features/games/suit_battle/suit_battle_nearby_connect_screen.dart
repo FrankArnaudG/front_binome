@@ -14,6 +14,8 @@ import '../../box/box_scope.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
 import 'suit_battle_board_screen.dart';
+import 'suit_battle_difficulty_screen.dart';
+import 'suit_battle_engine.dart';
 import 'suit_battle_transport_nearby.dart';
 
 const _kNearbyServiceId = 'app.binome.suit_battle';
@@ -33,7 +35,7 @@ class SuitBattleNearbyConnectScreen extends StatefulWidget {
   State<SuitBattleNearbyConnectScreen> createState() => _SuitBattleNearbyConnectScreenState();
 }
 
-enum _ConnectStep { choose, hosting, discovering, connected }
+enum _ConnectStep { choose, hosting, discovering, choosingDifficulty, connected }
 
 class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectScreen> {
   final _nearby = Nearby();
@@ -44,6 +46,7 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
   String _permissionProblemKey = 'memory_nearby_permission_denied';
   NearbySuitBattleTransport? _transport;
   NearbyComms? _comms;
+  String? _pendingEndpointId;
 
   Future<bool> _ensurePermissions() async {
     // Seules les permissions qui existent sur CE téléphone sont demandées (voir NearbyPermissions).
@@ -131,9 +134,11 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
     if (status == Status.CONNECTED) {
       if (_isHost) {
         _nearby.stopAdvertising();
-        final transport = NearbySuitBattleTransport.host(nearby: _nearby, endpointId: endpointId);
-        _transport = transport;
-        _openBoard(transport);
+        // Voir demande utilisateur : "on peut jouer plusieurs niveaux de
+        // difficulté comme dans Bataille" — seul l'hôte choisit, APRÈS la
+        // connexion (même principe que WarCardNearbyConnectScreen).
+        _pendingEndpointId = endpointId;
+        setState(() => _step = _ConnectStep.choosingDifficulty);
       } else {
         _nearby.stopDiscovery();
         setState(() => _step = _ConnectStep.connected);
@@ -160,7 +165,15 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
     });
   }
 
-  void _openBoard(NearbySuitBattleTransport transport) {
+  void _startHostGame(int deckSize) {
+    final endpointId = _pendingEndpointId;
+    if (endpointId == null) return;
+    final transport = NearbySuitBattleTransport.host(nearby: _nearby, endpointId: endpointId, deckSize: deckSize);
+    _transport = transport;
+    _openBoard(transport, deckSize);
+  }
+
+  void _openBoard(NearbySuitBattleTransport transport, [int deckSize = SuitBattleEngine.deckSize]) {
     final box = BoxScope.of(context).currentBox;
     // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
     // telephone" — plus aucun suivi/déclaration de forfait journalier.
@@ -184,11 +197,11 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
     );
 
     if (_isHost) {
-      unawaited(_postResultWhenFinished(transport, partner?.id));
+      unawaited(_postResultWhenFinished(transport, partner?.id, deckSize));
     }
   }
 
-  Future<void> _postResultWhenFinished(NearbySuitBattleTransport transport, String? partnerUserId) async {
+  Future<void> _postResultWhenFinished(NearbySuitBattleTransport transport, String? partnerUserId, int deckSize) async {
     if (partnerUserId == null) return;
     await for (final state in transport.stateStream) {
       if (state.finished) {
@@ -203,6 +216,7 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
             durationSeconds: duration,
             winnerUserId: winnerUserId,
             isTie: state.isTie,
+            deckSize: deckSize,
           );
         } catch (_) {
           // Best-effort.
@@ -285,6 +299,8 @@ class _SuitBattleNearbyConnectScreenState extends State<SuitBattleNearbyConnectS
                     textAlign: TextAlign.center,
                     style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
                   ),
+                ] else if (_step == _ConnectStep.choosingDifficulty) ...[
+                  Expanded(child: SuitBattleLevelList(theme: theme, onSelected: _startHostGame)),
                 ] else if (_step == _ConnectStep.connected) ...[
                   const SizedBox(height: 40),
                   Center(child: CircularProgressIndicator(color: theme.primary)),

@@ -45,6 +45,13 @@ class VoiceCallOverlay extends StatefulWidget {
   // donc vérifier que la cible existe avant de l'inclure.
   final GlobalKey? micGuideKey;
   final GlobalKey? cameraGuideKey;
+  // Voir demande utilisateur : "vérifier... si l'un des deux micros est
+  // actif (au vert)" — prévient le parent (voir GameService.pingGameSessionMic
+  // côté appelants) chaque fois que NOTRE PROPRE micro passe vert/plus
+  // vert (connecté ET non coupé), pour repousser la coupure automatique
+  // d'inactivité après la fin d'une manche. `null` = personne à prévenir
+  // (comportement d'avant, ex. pendant une partie encore en cours).
+  final ValueChanged<bool>? onMicActiveChanged;
 
   const VoiceCallOverlay({
     super.key,
@@ -56,6 +63,7 @@ class VoiceCallOverlay extends StatefulWidget {
     this.forceEnded = false,
     this.micGuideKey,
     this.cameraGuideKey,
+    this.onMicActiveChanged,
   });
 
   @override
@@ -84,6 +92,21 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   StreamSubscription<void>? _changesSubscription;
   Timer? _noteTimer;
   bool _noteExpanded = false;
+  // Dernière valeur transmise à widget.onMicActiveChanged — évite de
+  // spammer l'appel réseau (voir GameService.pingGameSessionMic) à chaque
+  // reconstruction, seulement quand le micro passe RÉELLEMENT vert/plus vert.
+  bool? _lastNotifiedMicActive;
+
+  /// Voir doc de [VoiceCallOverlay.onMicActiveChanged] — même définition
+  /// du "vert" que [_colorFor]/[_iconFor] ci-dessous.
+  bool get _micActive => !widget.paused && _status == VoiceCallStatus.connected && !_muted;
+
+  void _notifyMicActiveIfChanged() {
+    final active = _micActive;
+    if (_lastNotifiedMicActive == active) return;
+    _lastNotifiedMicActive = active;
+    widget.onMicActiveChanged?.call(active);
+  }
 
   @override
   void initState() {
@@ -113,6 +136,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
           _cameraInviteFrom = null;
         });
       }
+      _notifyMicActiveIfChanged();
     });
     _remoteVideoSubscription = service.remoteVideoActiveStream.listen((active) {
       if (!mounted) return;
@@ -142,6 +166,10 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
       _createService();
       if (!widget.forceEnded) unawaited(_service?.enable());
     }
+    // `paused` entre dans la définition du "vert" (voir _micActive) — une
+    // pause/reprise de la partie doit aussi être signalée, pas seulement
+    // un tap sur le bouton micro.
+    if (widget.paused != oldWidget.paused) _notifyMicActiveIfChanged();
   }
 
   @override
@@ -255,6 +283,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     final muted = !_muted;
     service.setMuted(muted);
     setState(() => _muted = muted);
+    _notifyMicActiveIfChanged();
   }
 
   Future<void> _hangup() async {

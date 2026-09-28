@@ -36,8 +36,9 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
   NearbySuitBattleTransport.host({
     required this.nearby,
     required this.endpointId,
+    int deckSize = SuitBattleEngine.deckSize,
   }) : isHost = true {
-    _deck = SuitBattleEngine.shuffledDeck();
+    _deck = SuitBattleEngine.shuffledDeck(deckSize: deckSize);
     _state = SuitBattleBoardState(
       deck: _deck,
       myUserId: kSuitBattleHostRole,
@@ -366,17 +367,17 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
     final outcome = SuitBattleEngine.captureLead(
       tableCard: tableCard,
       leaderId: leaderId,
-      responderWonPile: byRole == kSuitBattleHostRole ? _wonHost : _wonGuest,
+      responderSpread: byRole == kSuitBattleHostRole ? _spreadHost : _spreadGuest,
       roundsCount: _state.roundsCount,
     );
     if (byRole == kSuitBattleHostRole) {
-      _wonHost = outcome.wonPile;
+      _spreadHost = outcome.spread;
     } else {
-      _wonGuest = outcome.wonPile;
+      _spreadGuest = outcome.spread;
     }
     _state = _state.copyWith(
-      wonCreator: _wonHost,
-      wonPartner: _wonGuest,
+      spreadCreator: _spreadHost,
+      spreadPartner: _spreadGuest,
       turnUserId: outcome.leaderId,
       phase: 'lead',
       roundsCount: outcome.roundsCount,
@@ -492,7 +493,20 @@ class NearbySuitBattleTransport extends SuitBattleTransport {
 
   void _applyHostAbandon() {
     if (_state.finished) return;
-    _state = _state.copyWith(finished: true, abandoned: true);
+    // Voir demande utilisateur : le moins de cartes restantes en main
+    // gagne, même nombre = match nul (même règle que
+    // SuitBattleEngine::resultByRemainingCards côté serveur).
+    final creatorLeft = _state.spreadCreator.length;
+    final partnerLeft = _state.spreadPartner.length;
+    final started = _state.started;
+    _state = _state.copyWith(
+      finished: true,
+      abandoned: true,
+      isTie: started && creatorLeft == partnerLeft,
+      winnerUserId: !started || creatorLeft == partnerLeft
+          ? null
+          : (creatorLeft < partnerLeft ? _state.creatorId : _state.partnerId),
+    );
     _controller.add(_state);
     _sendState();
   }

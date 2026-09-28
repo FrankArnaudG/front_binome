@@ -21,6 +21,7 @@ class SuitBattleSession {
   final String? playerTwoId;
   final String gameId;
   final String? createdBy;
+  final int deckSize;
   final List<String> deck;
   final bool dealt;
   final bool readyCreator;
@@ -53,6 +54,7 @@ class SuitBattleSession {
     this.playerTwoId,
     required this.gameId,
     this.createdBy,
+    this.deckSize = 54,
     this.deck = const [],
     this.dealt = true,
     this.readyCreator = false,
@@ -90,6 +92,7 @@ class SuitBattleSession {
         playerTwoId: json['player_two_id'] as String?,
         gameId: json['game_id'] as String,
         createdBy: json['created_by'] as String?,
+        deckSize: json['deck_size'] as int? ?? 54,
         deck: (json['deck'] as List?)?.map((e) => e as String).toList() ?? const [],
         dealt: json['dealt'] as bool? ?? true,
         readyCreator: json['ready_creator'] as bool? ?? false,

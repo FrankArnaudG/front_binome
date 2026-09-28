@@ -79,6 +79,27 @@ class GameService {
     return ApiClient.instance.post('/games/$gameId/boxes/$gameBoxId/complete');
   }
 
+  /// Voir GameSessionLifecycleController::close et demande utilisateur :
+  /// ferme VRAIMENT une session déjà terminée (arrête micro/caméra/chrono/
+  /// facturation pour les DEUX) — jamais appelé pendant une partie encore
+  /// en cours, seulement quand on quitte l'écran de score, quel que soit
+  /// le moyen (bouton "Quitter", tap à côté, retour arrière...). Best-
+  /// effort volontaire (voir les appelants) : un raté ici n'empêche jamais
+  /// de quitter, le filet des 30 min d'inactivité côté serveur reprend le
+  /// relais (voir BillGameSessions).
+  Future<void> closeGameSession(String sessionType, String sessionId) {
+    return ApiClient.instance.post('/game-sessions/$sessionType/$sessionId/close');
+  }
+
+  /// Voir GameSessionLifecycleController::micPing et demande utilisateur :
+  /// repousse de 30 min la coupure automatique de la session — à appeler
+  /// UNIQUEMENT quand SON PROPRE micro passe au vert APRÈS la fin de la
+  /// manche (voir VoiceCallOverlay.onMicActiveChanged), jamais pendant une
+  /// partie encore en cours.
+  Future<void> pingGameSessionMic(String sessionType, String sessionId) {
+    return ApiClient.instance.post('/game-sessions/$sessionType/$sessionId/mic-ping');
+  }
+
   /// Envoie une carte-question précise au/à la partenaire (voir
   /// GameCardController::send côté backend).
   /// [replyToSendId] : envoyée depuis la bulle "Envoyer une autre carte"
@@ -1069,8 +1090,11 @@ class GameService {
   // "Bataille", mais tour par tour avec sous-état lead/response plutôt que
   // "les deux doivent taper" (voir SuitBattleEngine).
 
-  Future<SuitBattleSession> startSuitBattle(String gameId) async {
-    final data = await ApiClient.instance.post('/games/$gameId/suit-battle-sessions/start') as Map<String, dynamic>;
+  Future<SuitBattleSession> startSuitBattle(String gameId, {int? deckSize}) async {
+    final data = await ApiClient.instance.post(
+      '/games/$gameId/suit-battle-sessions/start',
+      body: {if (deckSize != null) 'deck_size': deckSize},
+    ) as Map<String, dynamic>;
     return SuitBattleSession.fromJson(data);
   }
 
@@ -1177,6 +1201,7 @@ class GameService {
     required int durationSeconds,
     String? winnerUserId,
     required bool isTie,
+    int? deckSize,
   }) async {
     final data = await ApiClient.instance.post(
       '/games/$gameId/suit-battle-results',
@@ -1185,6 +1210,7 @@ class GameService {
         'duration_seconds': durationSeconds,
         if (winnerUserId != null) 'winner_user_id': winnerUserId,
         'is_tie': isTie,
+        if (deckSize != null) 'deck_size': deckSize,
       },
     ) as Map<String, dynamic>;
     return SuitBattleSession.fromJson(data);

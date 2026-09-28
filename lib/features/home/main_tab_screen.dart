@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
 import '../content/timeline_screen.dart';
+import '../games/game_discussions_screen.dart';
 import '../games/games_menu_screen.dart';
 import '../settings/settings_screen.dart';
 import 'dashboard_tab.dart';
 import 'tab_navigation_controller.dart';
 
-/// Coquille à 4 onglets (navigation façon WhatsApp) : Dashboard (Cœur),
-/// Galerie (Livre), Jeux et Profil. Bascule via [IndexedStack] — aucun
+/// Coquille à 5 onglets (navigation façon WhatsApp) : Dashboard (Cœur),
+/// Galerie (Livre), Jeux, Discussions (de jeu) et Profil. Bascule via [IndexedStack] — aucun
 /// rechargement, chaque onglet garde son état. La barre de navigation
 /// elle-même n'est plus dessinée ici : elle vit dans `AppShell`, montée
 /// globalement, pour rester visible aussi sur les écrans poussés
@@ -37,6 +38,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
     DashboardTab(user: widget.user, onNavigateToTab: _goToTab),
     TimelineScreen(user: widget.user),
     GamesMenuScreen(user: widget.user),
+    // Discussions de jeu, juste à côté de Jeux (voir GameDiscussionsScreen.tabIndex).
+    GameDiscussionsScreen(user: widget.user),
     SettingsScreen(user: widget.user),
   ];
 

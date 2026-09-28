@@ -281,13 +281,13 @@ class RemoteSuitBattleTransport extends SuitBattleTransport {
         final outcome = SuitBattleEngine.captureLead(
           tableCard: tableCard,
           leaderId: leaderId,
-          responderWonPile: userId == creatorId ? _state.wonCreator : _state.wonPartner,
+          responderSpread: userId == creatorId ? _state.spreadCreator : _state.spreadPartner,
           roundsCount: _state.roundsCount,
         );
         final responderIsCreator = userId == creatorId;
         _state = _state.copyWith(
-          wonCreator: responderIsCreator ? outcome.wonPile : _state.wonCreator,
-          wonPartner: responderIsCreator ? _state.wonPartner : outcome.wonPile,
+          spreadCreator: responderIsCreator ? outcome.spread : _state.spreadCreator,
+          spreadPartner: responderIsCreator ? _state.spreadPartner : outcome.spread,
           turnUserId: outcome.leaderId,
           phase: 'lead',
           roundsCount: outcome.roundsCount,

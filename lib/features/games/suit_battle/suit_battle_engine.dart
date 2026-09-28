@@ -46,14 +46,17 @@ class SuitBattleRespondOutcome {
   });
 }
 
-/// Résultat d'un captureLead() — voir SuitBattleEngine.captureLead.
+/// Résultat d'un captureLead() — voir SuitBattleEngine.captureLead. La
+/// carte capturée n'est PAS un gain (contrairement à respondCard/
+/// sweepExchange) — elle repart dans [spread], la main du capturant,
+/// rejouable normalement plus tard.
 class SuitBattleCaptureOutcome {
-  final List<String> wonPile;
+  final List<String> spread;
   final String leaderId;
   final int roundsCount;
 
   const SuitBattleCaptureOutcome({
-    required this.wonPile,
+    required this.spread,
     required this.leaderId,
     required this.roundsCount,
   });
@@ -75,9 +78,9 @@ class SuitBattleCaptureOutcome {
 ///   à "response", le tour passe à l'autre.
 /// - Phase "response" : le répondant a exactement deux choix — suivre la
 ///   couleur de la carte sur table (ou jouer un Joker) via respondCard(),
-///   ou capturer la carte sur table directement dans sa pile de gains sans
-///   jouer de carte via captureLead() (le meneur ORIGINAL reprend alors la
-///   main).
+///   ou capturer la carte sur table sans jouer de carte via captureLead()
+///   — elle repart alors dans SA main (pas un gain, juste reportée à plus
+///   tard), et le meneur ORIGINAL reprend la main.
 /// - Résolution d'un échange (dans respondCard) : deux Jokers = égalité, le
 ///   meneur garde la main et les deux cartes ; un seul Joker = son
 ///   propriétaire gagne automatiquement ; ni l'un ni l'autre = comparaison
@@ -91,20 +94,32 @@ class SuitBattleEngine {
   static const deckSize = 54;
   static const handSize = 27;
   static const joker = 'JOK';
+  // Voir demande utilisateur : "on peut jouer plusieurs niveaux de
+  // difficulté comme dans Bataille. pas seulement 52 cartes" — copie
+  // conforme de WarCardEngine.levels. 26 = 9 à As (24 cartes) + 2 Jokers ;
+  // 54 = standard (52 + 2 Jokers) ; 108 = deux paquets combinés (104 + 4
+  // Jokers, doublons acceptés — même principe que la Bataille).
+  static const levels = [26, 54, 108];
 
-  /// 52 cartes standard + 2 Jokers, mélangées.
-  static List<String> shuffledDeck() {
+  /// Cartes standard + Jokers, mélangées — [deckSize] doit être une
+  /// valeur de [levels].
+  static List<String> shuffledDeck({int deckSize = SuitBattleEngine.deckSize}) {
     const suits = ['S', 'H', 'D', 'C'];
-    const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    final ranks = deckSize == 26
+        ? const ['9', '10', 'J', 'Q', 'K', 'A']
+        : const ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    final copies = deckSize == 108 ? 2 : 1;
 
     final deck = <String>[];
-    for (final suit in suits) {
-      for (final rank in ranks) {
-        deck.add('$rank$suit');
+    for (var c = 0; c < copies; c++) {
+      for (final suit in suits) {
+        for (final rank in ranks) {
+          deck.add('$rank$suit');
+        }
       }
+      deck.add(joker);
+      deck.add(joker);
     }
-    deck.add(joker);
-    deck.add(joker);
     deck.shuffle(Random());
 
     return deck;
@@ -205,7 +220,11 @@ class SuitBattleEngine {
     if (index == -1) {
       throw ArgumentError("Cette carte n'est pas dans ta main.");
     }
-    if (!isJoker(card) && suitOf(card) != suitOf(tableCard)) {
+    // Voir demande utilisateur : "face à un Joker on peut sortir
+    // n'importe laquelle des cartes et ça passe" — un Joker n'ayant pas de
+    // couleur, RIEN à suivre ; le meneur garde de toute façon toujours la
+    // main sur cet échange (voir plus bas, `leaderIsJoker`).
+    if (!isJoker(tableCard) && !isJoker(card) && suitOf(card) != suitOf(tableCard)) {
       throw ArgumentError('Cette carte ne correspond pas à la couleur demandée.');
     }
 
@@ -258,11 +277,11 @@ class SuitBattleEngine {
   static SuitBattleCaptureOutcome captureLead({
     required String tableCard,
     required String leaderId,
-    required List<String> responderWonPile,
+    required List<String> responderSpread,
     required int roundsCount,
   }) {
-    final wonPile = List.of(responderWonPile)..add(tableCard);
+    final spread = List.of(responderSpread)..add(tableCard);
 
-    return SuitBattleCaptureOutcome(wonPile: wonPile, leaderId: leaderId, roundsCount: roundsCount + 1);
+    return SuitBattleCaptureOutcome(spread: spread, leaderId: leaderId, roundsCount: roundsCount + 1);
   }
 }

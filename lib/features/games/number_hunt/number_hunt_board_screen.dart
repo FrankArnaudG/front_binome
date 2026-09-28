@@ -17,6 +17,7 @@ import '../../box/box_scope.dart';
 import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
+import '../widgets/always_on_top_layer.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_guide_voice_demo.dart';
@@ -122,7 +123,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   Timer? _clockTimer;
   bool _scoreboardShown = false;
   // Instant de fin de partie vu par CET appareil : fige chrono et pièces.
-  DateTime? _finishedAt;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -154,7 +154,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
-    if (_state.finished) _finishedAt = ServerClock.instance.now();
     _subscription = widget.transport.stateStream.listen(_onState);
     ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
     ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
@@ -352,7 +351,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
     final started = _state.startedAt;
     if (rate == null || started == null) return null;
     final graceSeconds = rate['grace_period_seconds'] ?? 0;
-    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     final elapsed = now.difference(started).inSeconds - graceSeconds;
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
@@ -393,7 +392,6 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
 
     setState(() {
       _state = state;
-      if (state.finished) _finishedAt ??= ServerClock.instance.now();
     });
 
     if (newlyFoundKey != null) {
@@ -449,15 +447,36 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
       allowRematch: widget.isLauncher && widget.onRematch != null,
     );
     if (rematch == true && widget.isLauncher && widget.onRematch != null && mounted) {
+      // Voir demande utilisateur : le chrono et l'appel continuent sans
+      // coupure entre deux manches — pas de closeGameSession ici.
       await widget.onRematch!(context);
     } else if (mounted) {
       // "Quitter", ou tap à côté de la feuille (voir demande utilisateur) : referme le jeu
       // (retour au choix de la difficulté pour l'invité·e, voir onQuit).
+      // Voir demande utilisateur : "on peut quitter sans forcément cliquer
+      // sur le bouton quitter" — ce branchement couvre déjà les deux cas.
+      // Ferme VRAIMENT la session (arrête micro/caméra/chrono/facturation
+      // pour les DEUX, voir GameSessionLifecycleController).
+      final transport = widget.transport;
+      if (transport is RemoteNumberHuntTransport) {
+        unawaited(GameService.instance.closeGameSession('number_hunt', transport.sessionId));
+      }
       if (widget.onQuit != null) {
         await widget.onQuit!(context);
       } else {
         Navigator.of(context).pop();
       }
+    }
+  }
+
+  /// Voir demande utilisateur : repousse la coupure automatique
+  /// d'inactivité tant que NOTRE PROPRE micro se rouvre après la fin de la
+  /// manche (voir VoiceCallOverlay.onMicActiveChanged).
+  void _onMicActiveChanged(bool active) {
+    if (!active || !_state.finished) return;
+    final transport = widget.transport;
+    if (transport is RemoteNumberHuntTransport) {
+      unawaited(GameService.instance.pingGameSessionMic('number_hunt', transport.sessionId));
     }
   }
 
@@ -470,7 +489,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     // Le chrono attend la même période de grâce que l'anneau de pièce
     // (voir CoinBillingRing/demande utilisateur) — reste à 0:00 tant que
     // la grâce n'est pas écoulée, nul en dehors du mode à distance.
@@ -780,17 +799,25 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
             partnerName: widget.nearbyPartnerName ?? '',
             guideKey: _chatGuideKey,
           ),
-        if (commentsBoxId != null && !_state.finished)
-          VoiceCallOverlay(
-            boxId: commentsBoxId,
-            myUserId: widget.user.id,
-            partnerUserId: _partnerUserId,
-            enabled: true,
-            paused: _state.isPaused,
-            forceEnded: _state.isPaused,
-          )
-        else if (widget.nearbyComms != null && !_state.finished)
-          NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+        // Voir demande utilisateur : micro/caméra restent actifs après la
+        // fin de la manche jusqu'à ce qu'on quitte vraiment (voir
+        // _showScoreboard) — la feuille de score, affichée PAR-DESSUS, ne
+        // doit ni les cacher ni empêcher d'y toucher (voir AlwaysOnTopLayer).
+        AlwaysOnTopLayer(
+          child: commentsBoxId != null
+              ? VoiceCallOverlay(
+                  boxId: commentsBoxId,
+                  myUserId: widget.user.id,
+                  partnerUserId: _partnerUserId,
+                  enabled: true,
+                  paused: _state.isPaused,
+                  forceEnded: _state.isPaused,
+                  onMicActiveChanged: _onMicActiveChanged,
+                )
+              : widget.nearbyComms != null
+                  ? NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused)
+                  : const SizedBox.shrink(),
+        ),
         _buildGuideVoiceDemo(),
         GameWalletGuard(
           boxId: commentsBoxId,

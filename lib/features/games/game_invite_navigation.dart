@@ -31,6 +31,7 @@ import 'war_card/war_card_difficulty_screen.dart';
 import 'war_card/war_card_mode_screen.dart';
 import 'war_card/war_card_transport_remote.dart';
 import 'suit_battle/suit_battle_board_screen.dart';
+import 'suit_battle/suit_battle_difficulty_screen.dart';
 import 'suit_battle/suit_battle_mode_screen.dart';
 import 'suit_battle/suit_battle_transport_remote.dart';
 
@@ -220,9 +221,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startSuitBattleAndPush(ctx, game: game, user: me, replaceCurrent: true)
+            ? (ctx) => startSuitBattleAndPush(ctx, game: game, user: me, deckSize: session.deckSize, replaceCurrent: true)
             : null,
-        onQuit: quitTo(() => SuitBattleModeScreen(game: game, user: me)),
+        onQuit: quitTo(() => SuitBattleDifficultyScreen(game: game, user: me)),
       );
     case 'battleship':
       final session = await GameService.instance.fetchBattleshipState(sessionId);

@@ -14,6 +14,7 @@ import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
 import '../auth/auth_service.dart';
 import '../content/unread_timeline_service.dart';
+import '../games/game_card_inbox_service.dart';
 import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
@@ -127,7 +128,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         final t = LocaleScope.of(context).t;
 
         return AnimatedBuilder(
-          animation: Listenable.merge([TabNavigationController.instance, UnreadTimelineService.instance]),
+          animation: Listenable.merge([
+            TabNavigationController.instance,
+            UnreadTimelineService.instance,
+            GameCardInboxService.instance,
+          ]),
           builder: (context, _) {
             final items = [
               // Duo en premier (page d'accueil, voir
@@ -140,6 +145,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 badgeCount: UnreadTimelineService.instance.count,
               ),
               NavItem(outlinedIcon: Icons.sports_esports_outlined, filledIcon: Icons.sports_esports_rounded, label: t('nav_games')),
+              // Toutes les discussions de jeu (voir GameDiscussionsScreen) —
+              // badge = cartes-questions reçues pas encore ouvertes.
+              NavItem(
+                outlinedIcon: Icons.forum_outlined,
+                filledIcon: Icons.forum_rounded,
+                label: t('nav_game_chats'),
+                badgeCount: GameCardInboxService.instance.pending.where((s) => s.isGameCard).length,
+              ),
               NavItem(outlinedIcon: Icons.person_outline_rounded, filledIcon: Icons.person_rounded, label: t('nav_profile')),
             ];
             return Scaffold(

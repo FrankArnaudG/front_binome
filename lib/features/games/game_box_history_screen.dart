@@ -222,7 +222,7 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
 
   void _onRealtimeEvent(RealtimeEvent event) {
     // Coches envoyé/reçu/lu du DERNIER message de chaque discussion (voir
-    // _HistoryRow.tick) — sans ça, elles ne se mettaient à jour qu'au
+    // GameHistoryRow.tick) — sans ça, elles ne se mettaient à jour qu'au
     // prochain rechargement complet de la liste, jamais en direct pendant
     // qu'elle reste ouverte (voir demande utilisateur, même trou déjà
     // corrigé sur TimelineScreen).
@@ -348,7 +348,7 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
 
   /// Même aplatissement en-têtes + éléments que TimelineScreen._groupByDate
   /// — les discussions d'une même date sont ainsi reliées par le même fil
-  /// vertical fin entre leurs avatars (voir _HistoryRow).
+  /// vertical fin entre leurs avatars (voir GameHistoryRow).
   List<_HistoryEntry> _groupByDate(List<Send> sends) {
     final entries = <_HistoryEntry>[];
     for (var i = 0; i < sends.length; i++) {
@@ -413,7 +413,7 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
         }
         final entry = entries[index];
         if (entry.isHeader) {
-          return _DateHeaderLabel(label: entry.header!, theme: theme);
+          return GameHistoryDateHeader(label: entry.header!, theme: theme);
         }
 
         final send = entry.send!;
@@ -428,7 +428,7 @@ class _GameBoxHistoryScreenState extends State<GameBoxHistoryScreen> {
         final isMine = lastMessage.senderId == widget.user.id;
         final senderName = lastMessage.sender?.prenom ?? lastMessage.sender?.name ?? LocaleScope.of(context).t('game_partner_name_fallback');
 
-        return _HistoryRow(
+        return GameHistoryRow(
           theme: theme,
           send: send,
           isFirstInGroup: entry.isFirstInGroup,
@@ -503,11 +503,11 @@ class _HistoryEntry {
 }
 
 /// Même étiquette que TimelineScreen._DateHeaderLabel.
-class _DateHeaderLabel extends StatelessWidget {
+class GameHistoryDateHeader extends StatelessWidget {
   final String label;
   final ThemePalette theme;
 
-  const _DateHeaderLabel({required this.label, required this.theme});
+  const GameHistoryDateHeader({super.key, required this.label, required this.theme});
 
   @override
   Widget build(BuildContext context) {
@@ -522,7 +522,7 @@ class _DateHeaderLabel extends StatelessWidget {
 }
 
 /// Séparateur de date DANS un fil de discussion (voir GameCardThreadScreen)
-/// — pastille centrée, pas l'étiquette alignée à gauche de _DateHeaderLabel
+/// — pastille centrée, pas l'étiquette alignée à gauche de GameHistoryDateHeader
 /// (celle-ci sert à la LISTE des discussions, un contexte différent) : même
 /// forme que la capture de référence WhatsApp fournie par l'utilisateur.
 class _ThreadDateHeader extends StatelessWidget {
@@ -557,7 +557,7 @@ class _ThreadDateHeader extends StatelessWidget {
 /// précédent/suivant par un fil vertical fin quand ils partagent la même
 /// date — même traitement que TimelineScreen._TimelineRow, pour que les
 /// deux écrans se lisent comme un seul système visuel.
-class _HistoryRow extends StatelessWidget {
+class GameHistoryRow extends StatelessWidget {
   final ThemePalette theme;
   final Send send;
   final bool isFirstInGroup;
@@ -576,7 +576,8 @@ class _HistoryRow extends StatelessWidget {
   final bool unread;
   final VoidCallback onTap;
 
-  const _HistoryRow({
+  const GameHistoryRow({
+    super.key,
     required this.theme,
     required this.send,
     required this.isFirstInGroup,

@@ -17,6 +17,8 @@ import '../game_guide_storage.dart';
 import '../game_invite_waiting_screen.dart';
 import '../game_service.dart';
 import '../widgets/game_mode_info_sheet.dart';
+import 'suit_battle_difficulty_screen.dart';
+import 'suit_battle_engine.dart';
 import 'suit_battle_nearby_connect_screen.dart';
 
 enum SuitBattleMode { remote, nearby }
@@ -28,11 +30,15 @@ const _kSuitBattleGuideKey = 'suit_battle';
 /// [SuitBattleBoardScreen] pour "Rejouer", même principe que
 /// startWarCardAndPush. Contrairement à "Bataille", ce jeu n'offre PAS de
 /// mode pass-and-play (voir demande utilisateur : seuls "à distance" et
-/// "présentiel connecté" pour cette v1).
+/// "présentiel connecté" pour cette v1). [deckSize] est le PALIER choisi
+/// sur [SuitBattleDifficultyScreen] (voir SuitBattleEngine.levels — "on
+/// peut jouer plusieurs niveaux de difficulté comme dans Bataille. pas
+/// seulement 52 cartes", voir demande utilisateur).
 Future<void> startSuitBattleAndPush(
   BuildContext context, {
   required Game game,
   required AppUser user,
+  int deckSize = SuitBattleEngine.deckSize,
   bool replaceCurrent = false,
 }) async {
   final box = BoxScope.of(context).currentBox;
@@ -47,7 +53,11 @@ Future<void> startSuitBattleAndPush(
   }
 
   try {
-    final invite = await GameService.instance.createGameInvite(game.id, sessionType: 'suit_battle');
+    final invite = await GameService.instance.createGameInvite(
+      game.id,
+      sessionType: 'suit_battle',
+      payload: {'deck_size': deckSize},
+    );
     if (!context.mounted) return;
     final route = MaterialPageRoute<void>(builder: (_) => GameInviteWaitingScreen(invite: invite, user: user));
     if (replaceCurrent) {
@@ -74,8 +84,6 @@ class SuitBattleModeScreen extends StatefulWidget {
 }
 
 class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
-  bool _starting = false;
-
   bool get _nearbySupported => !kIsWeb && Platform.isAndroid;
 
   Map<String, int>? _economyRate;
@@ -137,11 +145,16 @@ class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
       "Ce mode se joue sans connexion internet, en direct entre les deux téléphones (Bluetooth ou Wifi Direct). "
       "Pratique quand vous êtes ensemble mais sans réseau disponible. Il est gratuit.";
 
-  Future<void> _startRemote() async {
-    if (_starting) return;
-    setState(() => _starting = true);
-    await startSuitBattleAndPush(context, game: widget.game, user: widget.user);
-    if (mounted) setState(() => _starting = false);
+  // Voir demande utilisateur : "on peut jouer plusieurs niveaux de
+  // difficulté comme dans Bataille" — passe d'abord par l'écran de choix
+  // du format, copie structurelle conforme de
+  // WarCardModeScreen._goToDifficulty.
+  void _goToDifficulty() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SuitBattleDifficultyScreen(game: widget.game, user: widget.user),
+      ),
+    );
   }
 
   @override
@@ -166,9 +179,7 @@ class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
       ),
       body: ThemedBackground(
         child: SafeArea(
-          child: _starting
-              ? Center(child: CircularProgressIndicator(color: theme.primary))
-              : ListView(
+          child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
                     Text(
@@ -193,7 +204,7 @@ class _SuitBattleModeScreenState extends State<SuitBattleModeScreen> {
                         title: LocaleScope.t(context, 'memory_mode_remote_title'),
                         subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                         infoText: _remoteInfoText,
-                        onTap: _startRemote,
+                        onTap: _goToDifficulty,
                       ),
                     ),
                     const SizedBox(height: 14),

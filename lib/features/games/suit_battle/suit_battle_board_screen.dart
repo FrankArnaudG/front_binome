@@ -17,6 +17,7 @@ import '../../../theme/themed_background.dart';
 import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
+import '../widgets/always_on_top_layer.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_guide_voice_demo.dart';
@@ -91,8 +92,6 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   late SuitBattleBoardState _state;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
-  // Instant de fin de partie vu par CET appareil : fige chrono et pièces.
-  DateTime? _finishedAt;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
   // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
@@ -103,6 +102,7 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   // (validation cliente identique à SuitBattleEngine.respondCard).
   late final AnimationController _rejectController;
   int? _rejectingIndex;
+  bool _handSorted = false;
 
   // Guide pas-à-pas (voir doc de classe de _SuitBattleGuideStep et
   // demande utilisateur : "prends le même soin pour les autres jeux").
@@ -125,11 +125,25 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
   int? _guidePlayedIndex;
   String? _guidePlayedCard;
 
+  // Animation de balayage (voir demande utilisateur : "quand je balaie on
+  // doit voir les cartes se réunir et aller se ranger en haut") —
+  // instantané pris au tap sur "Balayer" (voir _tapSweep), juste pour
+  // l'animation de SORTIE, jamais relu comme source de vérité. Borné dans
+  // le temps (toujours refermé après un délai fixe), ne peut donc jamais
+  // rester bloqué.
+  bool _collecting = false;
+  String? _collectingMyCard;
+  String? _collectingPartnerCard;
+  // Vrai pour "Capturer" (voir demande utilisateur : "si je capture une
+  // carte c'est pour la garder dans ma pile de cartes EN MAIN" — repart
+  // dans ma main, PAS un gain) — la carte vole alors vers le BAS (ma main),
+  // pas vers le badge de pile en haut (réservé à "Balayer", un vrai gain).
+  bool _collectingToHand = false;
+
   @override
   void initState() {
     super.initState();
     _state = widget.transport.currentState;
-    if (_state.finished) _finishedAt = ServerClock.instance.now();
     _subscription = widget.transport.stateStream.listen(_onState);
     ShowcaseView.get().addOnCompleteCallback(_onGuideStepTapped);
     ShowcaseView.get().addOnDismissCallback(_onGuideDismissed);
@@ -307,7 +321,10 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
     final started = _state.startedAt;
     if (rate == null || started == null) return null;
     final graceSeconds = rate['grace_period_seconds'] ?? 0;
-    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
+    // Voir demande utilisateur : le chrono continue de tourner après la fin
+    // de la manche, tant que la session n'est pas VRAIMENT fermée (voir
+    // GameSessionLifecycleController) — plus de repli sur un instant figé.
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     final elapsed = now.difference(started).inSeconds - graceSeconds;
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
@@ -336,7 +353,6 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
     if (!mounted) return;
     setState(() {
       _state = state;
-      if (state.finished) _finishedAt ??= ServerClock.instance.now();
     });
 
     if (state.finished && !_scoreboardShown) {
@@ -386,10 +402,25 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
       ),
     );
     if (rematch == true && widget.isLauncher && widget.onRematch != null && mounted) {
+      // Voir demande utilisateur : "le chrono et l'appel doivent continuer
+      // sans coupure entre les deux manches" — pas de closeGameSession ici,
+      // seule une VRAIE sortie ferme la session (voir la branche ci-dessous).
       await widget.onRematch!(context);
     } else if (mounted) {
       // "Quitter", ou tap à côté de la feuille (voir demande utilisateur) : referme le jeu
       // (retour au choix de la difficulté pour l'invité·e, voir onQuit).
+      // Voir demande utilisateur : "on peut quitter sans forcément cliquer
+      // sur le bouton quitter" — CE branchement couvre déjà les deux cas
+      // (bouton "Quitter" ET tap en dehors de la feuille/retour arrière,
+      // qui resolvent tous deux `rematch` à autre chose que `true`), donc
+      // un seul point d'appel suffit. Ferme VRAIMENT la session (arrête
+      // micro/caméra/chrono/facturation pour les DEUX, voir
+      // GameSessionLifecycleController) — seulement en mode à distance, où
+      // une vraie session serveur existe.
+      final transport = widget.transport;
+      if (transport is RemoteSuitBattleTransport) {
+        unawaited(GameService.instance.closeGameSession('suit_battle', transport.sessionId));
+      }
       if (widget.onQuit != null) {
         await widget.onQuit!(context);
       } else {
@@ -398,10 +429,24 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
     }
   }
 
+  /// Voir demande utilisateur : "vérifier... si l'un des deux micros est
+  /// actif" — repousse la coupure automatique d'inactivité tant que NOTRE
+  /// PROPRE micro se rouvre après la fin de la manche (voir
+  /// VoiceCallOverlay.onMicActiveChanged). Sans effet pendant une partie
+  /// encore en cours (rien à repousser) ni hors mode à distance (pas de
+  /// session serveur à prévenir).
+  void _onMicActiveChanged(bool active) {
+    if (!active || !_state.finished) return;
+    final transport = widget.transport;
+    if (transport is RemoteSuitBattleTransport) {
+      unawaited(GameService.instance.pingGameSessionMic('suit_battle', transport.sessionId));
+    }
+  }
+
   String _elapsed() {
     final started = _state.startedAt;
     if (started == null) return '0:00';
-    final now = _state.pausedAt ?? _finishedAt ?? ServerClock.instance.now();
+    final now = _state.pausedAt ?? ServerClock.instance.now();
     // Le chrono attend la même période de grâce que l'anneau de pièce
     // (voir CoinBillingRing/demande utilisateur) — reste à 0:00 tant que
     // la grâce n'est pas écoulée, nul en dehors du mode à distance.
@@ -436,7 +481,14 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
       return;
     }
 
-    if (!_state.isMyTurn) return;
+    // Voir demande utilisateur : "que se passe-t-il si je clique sur une
+    // carte alors que c'est mon binôme qui doit jouer" — jusqu'ici
+    // silencieux, aucun retour visuel ; message d'info désormais, comme
+    // pour la phase "reveal" ci-dessus.
+    if (!_state.isMyTurn) {
+      _showHint("Ce n'est pas ton tour.");
+      return;
+    }
 
     if (_state.phase == 'lead') {
       await widget.transport.playLead(widget.user.id, card);
@@ -446,35 +498,159 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
     if (_state.phase == 'response') {
       final tableCard = _state.tableCard;
       if (tableCard == null) return;
-      final valid = SuitBattleEngine.isJoker(card) || SuitBattleEngine.suitOf(card) == SuitBattleEngine.suitOf(tableCard);
+      // Voir demande utilisateur : "face à un Joker on peut sortir
+      // n'importe laquelle des cartes" — doit rester synchronisé avec la
+      // même règle dans SuitBattleEngine.respondCard, sinon cette
+      // pré-validation locale rejetterait à tort (secousse) une carte que
+      // le moteur accepterait bel et bien.
+      final valid = SuitBattleEngine.isJoker(tableCard) ||
+          SuitBattleEngine.isJoker(card) ||
+          SuitBattleEngine.suitOf(card) == SuitBattleEngine.suitOf(tableCard);
       if (!valid) {
         setState(() => _rejectingIndex = index);
         unawaited(_rejectController.forward(from: 0));
+        // Voir demande utilisateur : la secousse seule ne suffisait pas,
+        // un message explicite en plus.
+        _showHint('Cette carte ne correspond pas à la couleur demandée.');
         return;
       }
       await widget.transport.respondCard(widget.user.id, card);
     }
   }
 
-  void _showSweepFirstHint() {
+  /// Voir demande utilisateur : "on n'utilise pas de modèle. on dispose et
+  /// le reste peut déborder descendre... je peux défiler" — bascule
+  /// l'affichage de MA main, EN PLACE (jamais de popup par-dessus le
+  /// plateau), entre l'éventail normal et les colonnes groupées par même
+  /// symbole/couleur, triées du plus petit au plus grand, Jokers à part.
+  void _toggleHandSorted() => setState(() => _handSorted = !_handSorted);
+
+  /// Même règles que `_tapMyCard`, mais sans la secousse locale par index
+  /// (propre à la rangée compacte, voir `_rejectingIndex`) — un message
+  /// suffit ici.
+  Future<void> _tapSortedCard(String card) async {
+    if (_state.finished || _state.isPaused) return;
+
+    if (_state.isRevealing) {
+      _showSweepFirstHint();
+      return;
+    }
+
+    if (!_state.isMyTurn) {
+      _showHint("Ce n'est pas ton tour.");
+      return;
+    }
+
+    if (_state.phase == 'lead') {
+      if (!await _confirmPlaySortedCard(card)) return;
+      await widget.transport.playLead(widget.user.id, card);
+      return;
+    }
+
+    if (_state.phase == 'response') {
+      final tableCard = _state.tableCard;
+      if (tableCard == null) return;
+      final valid = SuitBattleEngine.isJoker(tableCard) ||
+          SuitBattleEngine.isJoker(card) ||
+          SuitBattleEngine.suitOf(card) == SuitBattleEngine.suitOf(tableCard);
+      if (!valid) {
+        _showHint('Cette carte ne correspond pas à la couleur demandée.');
+        return;
+      }
+      if (!await _confirmPlaySortedCard(card)) return;
+      await widget.transport.respondCard(widget.user.id, card);
+    }
+  }
+
+  /// Voir demande utilisateur : "il faut demander confirmation en
+  /// affichant la carte qui sera jouée" — uniquement pour la vue triée en
+  /// place (l'éventail normal `_tapMyCard` n'a pas ce risque de clic
+  /// approximatif entre cartes serrées, donc reste inchangé).
+  Future<bool> _confirmPlaySortedCard(String card) async {
+    final theme = ThemeScope.paletteOf(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Jouer cette carte ?'),
+        content: SizedBox(
+          height: 130,
+          child: Center(
+            child: PlayingCardFace(card: card, isJoker: SuitBattleEngine.isJoker(card), width: 80, height: 112),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(LocaleScope.t(ctx, 'common_cancel'))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Jouer', style: TextStyle(color: theme.primary, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  void _showSweepFirstHint() => _showHint('Balaie les deux cartes avant de rejouer.');
+
+  void _showHint(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Balaie les deux cartes avant de rejouer.'), duration: Duration(seconds: 2)),
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        // Voir demande utilisateur : "l'info... est cachée par les icônes
+        // micro" — VoiceCallOverlay/NearbyVoiceOverlay/GameCommentOverlay
+        // flottent en Positioned(bottom: 24, ...) par-dessus tout l'écran
+        // (voir build()) ; un SnackBar "floating" avec une marge basse
+        // dédiée passe au-dessus au lieu de se coller au bord.
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      ),
     );
   }
 
+  /// Voir demande utilisateur : "si je capture une carte c'est pour la
+  /// garder dans ma pile de cartes EN MAIN, et je pourrai la jouer plus
+  /// tard" — la carte repart donc dans MA MAIN (pas un gain), l'animation
+  /// vole vers le bas au lieu du badge de pile en haut (voir
+  /// _collectingToHand).
   Future<void> _tapCapture() async {
-    if (_state.finished || _state.isPaused) return;
+    if (_state.finished || _state.isPaused || _collecting) return;
     if (!_state.isMyTurn || _state.phase != 'response') return;
-    await widget.transport.captureLead(widget.user.id);
+    final tableCard = _state.tableCard;
+    setState(() {
+      _collecting = true;
+      _collectingToHand = true;
+      _collectingMyCard = tableCard;
+      _collectingPartnerCard = null;
+    });
+    unawaited(widget.transport.captureLead(widget.user.id));
+    await Future.delayed(const Duration(milliseconds: 520));
+    if (!mounted) return;
+    setState(() => _collecting = false);
   }
 
   /// "Balayer" (voir demande utilisateur) — n'importe lequel des deux
   /// joueurs peut le déclencher, l'issue de l'échange est déjà tranchée.
-  Future<void> _tapSweep() async {
-    if (_state.finished || _state.isPaused || !_state.isRevealing) return;
-    await widget.transport.sweepExchange();
+  /// [myCard]/[partnerCard] : instantané pris au moment du tap (voir
+  /// build(), qui les calcule déjà pour l'affichage) — sans lui, il n'y
+  /// aurait plus rien à animer dès que `widget.transport.sweepExchange()`
+  /// fait sortir `_state` de la phase "reveal". Destination commune (voir
+  /// demande utilisateur : "une seule pile"), peu importe qui a gagné cet
+  /// échange.
+  Future<void> _tapSweep(String? myCard, String? partnerCard) async {
+    if (_state.finished || _state.isPaused || !_state.isRevealing || _collecting) return;
+    setState(() {
+      _collecting = true;
+      _collectingToHand = false;
+      _collectingMyCard = myCard;
+      _collectingPartnerCard = partnerCard;
+    });
+    unawaited(widget.transport.sweepExchange());
+    await Future.delayed(const Duration(milliseconds: 550));
+    if (!mounted) return;
+    setState(() => _collecting = false);
   }
 
   @override
@@ -716,6 +892,8 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                                       child: _TableArea(
                                         theme: theme,
                                         tableCard: _guidePlayedCard ?? _state.tableCard,
+                                        tableCardName: null,
+                                        fromBelow: true,
                                         canCapture: canRespond,
                                         onCapture: _tapCapture,
                                       ),
@@ -725,21 +903,49 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                                   // côte... couronne... bouton Balayer" —
                                   // le guide (démo, jamais de vraie phase
                                   // "reveal") reste sur l'affichage simple.
-                                  : _state.isRevealing
+                                  // Masqué pendant l'animation de balayage
+                                  // (voir _collecting ci-dessous, qui prend
+                                  // le relais avec son propre instantané).
+                                  : _state.isRevealing && !_collecting
                                       ? _DuelRevealArea(
                                           myCard: myRevealCard,
                                           partnerCard: partnerRevealCard,
                                           myCardWins: myRevealWins,
-                                          onSweep: _tapSweep,
+                                          myName: widget.playerNames[widget.user.id] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+                                          partnerName: widget.playerNames[partnerId] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
+                                          onSweep: () => _tapSweep(myRevealCard, partnerRevealCard),
                                         )
                                       : _TableArea(
                                           theme: theme,
                                           tableCard: _guidePlayedCard ?? _state.tableCard,
+                                          tableCardName: _state.tableOwnerUserId == null
+                                              ? null
+                                              : (_state.tableOwnerUserId == widget.user.id
+                                                  ? (widget.playerNames[widget.user.id] ?? LocaleScope.t(context, 'memory_score_player_fallback'))
+                                                  : (widget.playerNames[partnerId] ?? LocaleScope.t(context, 'memory_score_player_fallback'))),
+                                          fromBelow: _state.tableOwnerUserId == widget.user.id,
                                           canCapture: canRespond,
                                           onCapture: _tapCapture,
                                         ),
                             ),
                           ),
+                          if (!_state.finished)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                // Voir demande utilisateur : "tu peux déplacer
+                                // le bouton de tri directement au-dessus de
+                                // la main" — juste au-dessus de la zone de
+                                // main, plus dans l'AppBar.
+                                child: TextButton.icon(
+                                  onPressed: _toggleHandSorted,
+                                  icon: Icon(_handSorted ? Icons.view_agenda_rounded : Icons.sort_rounded, size: 18),
+                                  label: Text(_handSorted ? 'Vue normale' : 'Trier mes cartes'),
+                                  style: TextButton.styleFrom(foregroundColor: theme.textOnBackgroundMuted, padding: EdgeInsets.zero),
+                                ),
+                              ),
+                            ),
                           Padding(
                             // Voir demande utilisateur : "faire remonter les
                             // cartes d'en bas pour éviter que les icônes
@@ -750,35 +956,76 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
                             // marge dédiée, ils recouvraient le bas de cette
                             // main, la seule interactive.
                             padding: EdgeInsets.fromLTRB(12, 4, 12, (commentsBoxId != null || widget.nearbyComms != null) ? 84 : 10),
-                            child: AnimatedBuilder(
-                                animation: _rejectController,
-                                builder: (context, _) => _HandFan(
-                                  cards: _state.mySpread,
-                                  color: myColor,
-                                  interactive: canLead || canRespond,
-                                  faceUp: true,
-                                  rejectingIndex: _rejectingIndex,
-                                  rejectProgress: _rejectController.value,
-                                  onTapCard: _tapMyCard,
-                                  excludeIndex: _guidePlayedIndex,
-                                  guideIndex: _state.mySpread.isEmpty ? null : 0,
-                                  guideKey: _guideStep == _SuitBattleGuideStep.hand ? _handGuideKey : null,
-                                  onGuideTap: _onGuideHandTap,
-                                ),
-                              ),
+                            child: _handSorted
+                                ? _SortedHandStrip(
+                                    cards: _state.mySpread,
+                                    interactive: canLead || canRespond,
+                                    onTapCard: _tapSortedCard,
+                                  )
+                                : AnimatedBuilder(
+                                    animation: _rejectController,
+                                    builder: (context, _) => _HandFan(
+                                      cards: _state.mySpread,
+                                      color: myColor,
+                                      interactive: canLead || canRespond,
+                                      faceUp: true,
+                                      rejectingIndex: _rejectingIndex,
+                                      rejectProgress: _rejectController.value,
+                                      onTapCard: _tapMyCard,
+                                      excludeIndex: _guidePlayedIndex,
+                                      guideIndex: _state.mySpread.isEmpty ? null : 0,
+                                      guideKey: _guideStep == _SuitBattleGuideStep.hand ? _handGuideKey : null,
+                                      onGuideTap: _onGuideHandTap,
+                                    ),
+                                  ),
                           ),
                         ],
                       ),
+                      // Pile de gains COMMUNE (voir demande utilisateur :
+                      // "une seule pile" — la répartition entre les deux
+                      // joueurs ne compte pas pour gagner la partie, voir
+                      // SuitBattleEngine, seul vide sa main en premier
+                      // importe) — un seul compteur, centré en haut, plutôt
+                      // que deux badges séparés dans les coins.
                       Positioned(
                         top: 4,
-                        right: 4,
-                        child: _WonPileBadge(color: myColor, count: _state.myWonPile.length),
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: _WonPileBadge(color: theme.primary, count: _state.myWonPile.length + _state.partnerWonPile.length),
+                        ),
                       ),
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        child: _WonPileBadge(color: partnerColor, count: _state.partnerWonPile.length),
-                      ),
+                      // "Balayer" tapé (voir demande utilisateur : "on doit
+                      // voir les cartes se réunir et aller se ranger en
+                      // haut") — les deux cartes (instantané pris au tap,
+                      // voir _tapSweep) convergent vers la pile commune,
+                      // centrée en haut, puis s'estompent. Positioned AU
+                      // NIVEAU DU STACK ENTIER (pas dans la zone centrale)
+                      // pour pouvoir voyager jusqu'en haut de l'écran.
+                      if (_collecting)
+                        Positioned.fill(
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0, end: 1),
+                            duration: const Duration(milliseconds: 520),
+                            curve: Curves.easeInCubic,
+                            builder: (context, t, child) {
+                              // Voir demande utilisateur : "Capturer" ->
+                              // vers ma main (bas), "Balayer" -> vers la
+                              // pile commune (haut) — voir _collectingToHand.
+                              final target = _collectingToHand ? const Alignment(0, 0.92) : const Alignment(0, -0.92);
+                              const start = Alignment(0, -0.05);
+                              final align = Alignment.lerp(start, target, t)!;
+                              return Align(
+                                alignment: align,
+                                child: Opacity(
+                                  opacity: 1 - t * 0.85,
+                                  child: Transform.scale(scale: 1 - t * 0.55, child: child),
+                                ),
+                              );
+                            },
+                            child: _CollectingCardsPair(cardA: _collectingMyCard, cardB: _collectingPartnerCard),
+                          ),
+                        ),
                       if (_state.isPaused && _guideStep == null)
                         Positioned.fill(
                           child: Container(
@@ -838,17 +1085,26 @@ class _SuitBattleBoardScreenState extends State<SuitBattleBoardScreen> with Sing
               partnerName: widget.nearbyPartnerName ?? '',
               guideKey: _chatGuideKey,
             ),
-          if (commentsBoxId != null && !_state.finished)
-            VoiceCallOverlay(
-              boxId: commentsBoxId,
-              myUserId: widget.user.id,
-              partnerUserId: partnerId,
-              enabled: true,
-              paused: _state.isPaused,
-              forceEnded: _state.isPaused,
-            )
-          else if (widget.nearbyComms != null && !_state.finished)
-            NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused),
+          // Voir demande utilisateur : micro/caméra restent actifs après la
+          // fin de la manche (plus de `!_state.finished` ici) jusqu'à ce
+          // qu'on quitte vraiment (voir _showScoreboard) — et la feuille de
+          // score, qui s'affiche PAR-DESSUS, ne doit ni les cacher ni
+          // empêcher d'y toucher (voir AlwaysOnTopLayer).
+          AlwaysOnTopLayer(
+            child: commentsBoxId != null
+                ? VoiceCallOverlay(
+                    boxId: commentsBoxId,
+                    myUserId: widget.user.id,
+                    partnerUserId: partnerId,
+                    enabled: true,
+                    paused: _state.isPaused,
+                    forceEnded: _state.isPaused,
+                    onMicActiveChanged: _onMicActiveChanged,
+                  )
+                : widget.nearbyComms != null
+                    ? NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused)
+                    : const SizedBox.shrink(),
+          ),
           _buildGuideVoiceDemo(),
           GameWalletGuard(
             boxId: commentsBoxId,
@@ -911,10 +1167,24 @@ class _TurnBanner extends StatelessWidget {
 class _TableArea extends StatelessWidget {
   final ThemePalette theme;
   final String? tableCard;
+  // Voir demande utilisateur : "ajouter aussi les prénoms de chacun à
+  // côté de sa carte" — `null` tant qu'aucune carte n'est encore posée.
+  final String? tableCardName;
+  // Sens d'arrivée de l'animation (voir _DuelCardEntry) : vrai si c'est
+  // MOI qui ai posé cette carte (monte depuis ma main, en bas), faux si
+  // c'est le binôme (descend depuis la sienne, en haut).
+  final bool fromBelow;
   final bool canCapture;
   final VoidCallback onCapture;
 
-  const _TableArea({required this.theme, required this.tableCard, required this.canCapture, required this.onCapture});
+  const _TableArea({
+    required this.theme,
+    required this.tableCard,
+    required this.tableCardName,
+    required this.fromBelow,
+    required this.canCapture,
+    required this.onCapture,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -933,6 +1203,7 @@ class _TableArea extends StatelessWidget {
               ? DottedTablePlaceholder(theme: theme)
               : _DuelCardEntry(
                   key: ValueKey(card),
+                  fromBelow: fromBelow,
                   child: PlayingCardFace(
                     card: card,
                     isJoker: SuitBattleEngine.isJoker(card),
@@ -941,6 +1212,15 @@ class _TableArea extends StatelessWidget {
                   ),
                 ),
         ),
+        if (tableCardName != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            tableCardName!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.nunito(fontSize: 11.5, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
+          ),
+        ],
         if (canCapture) ...[
           const SizedBox(height: 14),
           FilledButton.icon(
@@ -964,16 +1244,24 @@ class _DuelRevealArea extends StatelessWidget {
   final String? myCard;
   final String? partnerCard;
   final bool myCardWins;
+  final String myName;
+  final String partnerName;
   final VoidCallback onSweep;
 
   const _DuelRevealArea({
     required this.myCard,
     required this.partnerCard,
     required this.myCardWins,
+    required this.myName,
+    required this.partnerName,
     required this.onSweep,
   });
 
-  Widget _slot(String? card, bool crowned) {
+  // Voir demande utilisateur : "ajouter aussi les prénoms de chacun à
+  // côté de sa carte pour savoir quelle carte chacun a sorti" — [fromBelow]
+  // distingue le SENS d'arrivée (voir _DuelCardEntry) : ma carte vient de
+  // ma main, EN BAS de l'écran, celle du binôme de la sienne, EN HAUT.
+  Widget _slot(String? card, bool crowned, String name, bool fromBelow) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -989,8 +1277,16 @@ class _DuelRevealArea extends StatelessWidget {
               ? null
               : _DuelCardEntry(
                   key: ValueKey(card),
+                  fromBelow: fromBelow,
                   child: PlayingCardFace(card: card, isJoker: SuitBattleEngine.isJoker(card), width: _kTableCardWidth, height: _kTableCardHeight),
                 ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.nunito(fontSize: 11.5, fontWeight: FontWeight.w700, color: crowned ? Colors.amber.shade800 : null),
         ),
       ],
     );
@@ -1004,9 +1300,9 @@ class _DuelRevealArea extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _slot(partnerCard, !myCardWins),
+            _slot(partnerCard, !myCardWins, partnerName, false),
             const SizedBox(width: 18),
-            _slot(myCard, myCardWins),
+            _slot(myCard, myCardWins, myName, true),
           ],
         ),
         const SizedBox(height: 16),
@@ -1027,20 +1323,64 @@ class _DuelRevealArea extends StatelessWidget {
 /// war_card_board_screen.dart.
 class _DuelCardEntry extends StatelessWidget {
   final Widget child;
+  // Voir demande utilisateur : "mon œil ne perçoit pas la carte se
+  // déplacer" — trajet nettement plus long (depuis la main réelle du
+  // joueur : en bas pour moi, en haut pour le binôme) et plus lent, pour
+  // que le mouvement soit sans ambiguïté visible.
+  final bool fromBelow;
 
-  const _DuelCardEntry({super.key, required this.child});
+  const _DuelCardEntry({super.key, required this.child, required this.fromBelow});
 
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 550),
       curve: Curves.easeOutCubic,
       builder: (context, t, child) => Transform.translate(
-        offset: Offset(0, (1 - t) * 60),
-        child: Opacity(opacity: t, child: child),
+        offset: Offset(0, (1 - t) * (fromBelow ? 160 : -160)),
+        child: Opacity(opacity: t, child: Transform.scale(scale: 0.85 + 0.15 * t, child: child)),
       ),
       child: child,
+    );
+  }
+}
+
+/// Les deux cartes du dernier échange balayé, légèrement décalées l'une
+/// sur l'autre (voir demande utilisateur : "on doit voir les cartes se
+/// réunir") — utilisé UNIQUEMENT par l'animation de balayage ci-dessus,
+/// jamais affiché statiquement.
+class _CollectingCardsPair extends StatelessWidget {
+  final String? cardA;
+  final String? cardB;
+
+  const _CollectingCardsPair({required this.cardA, required this.cardB});
+
+  @override
+  Widget build(BuildContext context) {
+    const width = _kTableCardWidth * 0.7;
+    const height = _kTableCardHeight * 0.7;
+    const offset = 10.0;
+    return SizedBox(
+      width: width + offset,
+      height: height + offset,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (cardA != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              child: PlayingCardFace(card: cardA!, isJoker: SuitBattleEngine.isJoker(cardA!), width: width, height: height),
+            ),
+          if (cardB != null)
+            Positioned(
+              left: offset,
+              top: offset,
+              child: PlayingCardFace(card: cardB!, isJoker: SuitBattleEngine.isJoker(cardB!), width: width, height: height),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1240,10 +1580,135 @@ class _HandFan extends StatelessWidget {
   }
 }
 
+/// Disposition en colonnes de la main (voir demande utilisateur :
+/// "réorganise les cartes de façon groupée par même symbole et même
+/// couleur et du plus petit nombre au plus grand... les jokers ont leur
+/// propre groupe de leur côté") — une colonne par couleur (♠♥♦♣, dans cet
+/// ordre) + une colonne dédiée aux Jokers à la fin, cartes empilées
+/// verticalement en éventail, triées du plus petit rang au plus grand.
+/// En feuille modale plutôt que dans la rangée compacte du bas : une
+/// colonne peut compter jusqu'à 13 cartes, largement plus que la hauteur
+/// disponible dans la barre de main habituelle.
+/// Voir demande utilisateur : "on n'utilise pas de modèle. on dispose et
+/// le reste peut déborder descendre... je peux défiler sur le lot
+/// concerné... on clique la carte que l'on veut et elle sort si elle
+/// remplit les conditions" — affichage EN PLACE (jamais par-dessus le
+/// plateau) de la main groupée par même symbole/couleur, triée du plus
+/// petit au plus grand, Jokers dans leur propre groupe ; chaque groupe
+/// défile verticalement s'il dépasse la hauteur disponible, l'ensemble
+/// défile horizontalement.
+class _SortedHandStrip extends StatelessWidget {
+  final List<String> cards;
+  final bool interactive;
+  final void Function(String card) onTapCard;
+
+  const _SortedHandStrip({
+    required this.cards,
+    required this.interactive,
+    required this.onTapCard,
+  });
+
+  static const _suitOrder = ['S', 'H', 'D', 'C'];
+  static const _suitSymbols = {'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣'};
+
+  static const _cardWidth = 50.0;
+  static const _cardHeight = 70.0;
+  static const _overlap = 22.0;
+  // Voir demande utilisateur : le tri s'affiche EN PLACE, dans le même
+  // espace que l'éventail normal (_kHandCardHeight + 12 = 92) — jamais
+  // plus haut, sinon ça déborde sur les icônes micro/caméra du bas
+  // (bug observé par l'utilisateur en test).
+  static const _stripHeight = _kHandCardHeight + 12;
+
+  Widget _column(ThemePalette theme, String label, Color labelColor, List<String> group) {
+    if (group.isEmpty) return const SizedBox.shrink();
+    final stackHeight = _cardHeight + (group.length - 1) * _overlap;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      // Hauteur FIXE garantie (voir demande utilisateur : "ça déborde") —
+      // Expanded prend exactement l'espace restant sous le label, quelle
+      // que soit sa hauteur réelle de rendu, au lieu d'une soustraction
+      // approximative qui débordait selon la police/densité d'affichage.
+      child: SizedBox(
+        height: _stripHeight,
+        child: Column(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 12, color: labelColor)),
+            const SizedBox(height: 2),
+            Expanded(
+              child: SingleChildScrollView(
+                child: SizedBox(
+                  width: _cardWidth,
+                  height: stackHeight,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      for (var i = 0; i < group.length; i++)
+                        Positioned(
+                          top: i * _overlap,
+                          child: Opacity(
+                            opacity: interactive ? 1 : 0.6,
+                            // Tap reçu même hors tour/hors phase jouable
+                            // (même principe que _HandFan) : _tapSortedCard
+                            // affiche alors le message d'info ("pas ton
+                            // tour", "balaie d'abord"...) ; [interactive] ne
+                            // pilote que l'estompage.
+                            child: GestureDetector(
+                              onTap: () => onTapCard(group[i]),
+                              child: PlayingCardFace(
+                                card: group[i],
+                                isJoker: SuitBattleEngine.isJoker(group[i]),
+                                width: _cardWidth,
+                                height: _cardHeight,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+    final jokers = cards.where(SuitBattleEngine.isJoker).toList();
+    final bySuit = {for (final s in _suitOrder) s: <String>[]};
+    for (final card in cards) {
+      if (SuitBattleEngine.isJoker(card)) continue;
+      bySuit[SuitBattleEngine.suitOf(card)]?.add(card);
+    }
+    for (final group in bySuit.values) {
+      group.sort((a, b) => SuitBattleEngine.rankValue(a).compareTo(SuitBattleEngine.rankValue(b)));
+    }
+
+    return SizedBox(
+      height: _stripHeight,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final suit in _suitOrder)
+              _column(theme, _suitSymbols[suit]!, suit == 'H' || suit == 'D' ? _kRedColor : Colors.black87, bySuit[suit]!),
+            _column(theme, 'JOK', kPlayingCardJokerColor, jokers),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Score de fin de partie — copie structurelle de
 /// _WarCardScoreboardSheet, mais le "score" affiché est le nombre de
-/// cartes CAPTURÉES (pile de gains), pas la taille d'une pile de guerre.
+/// cartes RESTANT en main (voir _leftFor), pas la taille d'une pile.
 class _SuitBattleScoreboardSheet extends StatelessWidget {
   final SuitBattleBoardState state;
   final Map<String, String> playerNames;
@@ -1259,7 +1724,20 @@ class _SuitBattleScoreboardSheet extends StatelessWidget {
     required this.allowRematch,
   });
 
-  int _wonFor(String userId) => userId == state.creatorId ? state.wonCreator.length : state.wonPartner.length;
+  // Voir demande utilisateur : le score affiché est le nombre de cartes
+  // RESTANT en main — le moins gagne, même nombre = match nul.
+  int _leftFor(String userId) => userId == state.creatorId ? state.spreadCreator.length : state.spreadPartner.length;
+
+  /// Gagnant déclaré par le moteur/serveur, sinon déduit des cartes
+  /// restantes — l'écran de l'invité en présentiel peut s'ouvrir sur son
+  /// propre état "abandonné" avant que l'hôte n'ait diffusé le résultat.
+  String? get _winnerId {
+    if (state.winnerUserId != null || state.isTie) return state.winnerUserId;
+    final creatorLeft = _leftFor(state.creatorId);
+    final partnerLeft = _leftFor(state.partnerId);
+    if (creatorLeft == partnerLeft) return null;
+    return creatorLeft < partnerLeft ? state.creatorId : state.partnerId;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1269,12 +1747,8 @@ class _SuitBattleScoreboardSheet extends StatelessWidget {
     final minutes = state.startedAt != null ? ServerClock.instance.now().difference(state.startedAt!).inSeconds ~/ 60 : 0;
     final seconds = state.startedAt != null ? ServerClock.instance.now().difference(state.startedAt!).inSeconds % 60 : 0;
 
-    // Un abandon ne déclare jamais de gagnant — `winnerUserId` reste `null`
-    // sans que `isTie` soit posé pour autant (voir WarCardScoreboardSheet,
-    // même principe). Si les deux piles de gains sont malgré tout à égalité
-    // à ce moment-là, l'écran doit lire "Nul" plutôt que "Perdu" pour les
-    // deux à la fois.
-    final effectiveTie = state.isTie || (state.winnerUserId == null && _wonFor(state.creatorId) == _wonFor(state.partnerId));
+    final winnerId = _winnerId;
+    final effectiveTie = state.isTie || winnerId == null;
 
     return SafeArea(
       top: false,
@@ -1315,7 +1789,7 @@ class _SuitBattleScoreboardSheet extends StatelessWidget {
             Text(
               effectiveTie
                   ? 'Égalité !'
-                  : '${playerNames[state.winnerUserId] ?? LocaleScope.t(context, 'memory_score_player_fallback')} a gagné !',
+                  : '${playerNames[winnerId] ??LocaleScope.t(context, 'memory_score_player_fallback')} a gagné !',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w800, color: theme.textOnBackground),
             ),
@@ -1338,8 +1812,8 @@ class _SuitBattleScoreboardSheet extends StatelessWidget {
                         name: playerNames[players[i]] ?? LocaleScope.t(context, 'memory_score_player_fallback'),
                         avatar: playerAvatars[players[i]],
                         color: colorFor(players[i]),
-                        cardCount: _wonFor(players[i]),
-                        isWinner: players[i] == state.winnerUserId,
+                        cardCount: _leftFor(players[i]),
+                        isWinner: players[i] == winnerId,
                         isTie: effectiveTie,
                       ),
                     ),
@@ -1443,7 +1917,7 @@ class _PlayerResultCard extends StatelessWidget {
             style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800, color: color),
           ),
           Text(
-            'cartes',
+            cardCount > 1 ? 'cartes restantes' : 'carte restante',
             textAlign: TextAlign.center,
             style: GoogleFonts.nunito(fontSize: 10, color: theme.textOnBackgroundMuted),
           ),
