@@ -34,7 +34,7 @@ bool _isNetworkPath(String? path) =>
 
 /// Illustration choisie dans l'admin (hébergée sur le serveur) si elle
 /// existe, sinon repli sur l'icône affinée par mot-clé du nom du jeu.
-Widget _gameIcon(Game game, Color color) {
+Widget gameIcon(Game game, Color color) {
   if (_isNetworkPath(game.iconPath)) {
     // BoxFit.cover pour remplir toute la case (pas de bande de couleur
     // teintée qui dépasse autour) — le parent doit rester clipBehavior:
@@ -51,7 +51,7 @@ Widget _gameIcon(Game game, Color color) {
 }
 
 /// Icône affinée par mot-clé du nom du jeu — repli tant qu'aucune
-/// illustration n'a été choisie dans l'admin (voir [_gameIcon]).
+/// illustration n'a été choisie dans l'admin (voir [gameIcon]).
 IconData iconForGame(Game game) {
   // Comparé au nom français (clé d'identité stable), jamais à la langue
   // courante — sans ça, le mapping mot-clé -> icône se casserait dès
@@ -492,22 +492,22 @@ class _CategoryTab extends StatelessWidget {
   }
 }
 
-class _ModeMeta {
+class GameModeMeta {
   final String label;
   final IconData icon;
   final Color color;
 
-  const _ModeMeta(this.label, this.icon, this.color);
+  const GameModeMeta(this.label, this.icon, this.color);
 }
 
-Map<String, _ModeMeta> _modesFor(ThemePalette theme, String Function(String) t) => {
-  'remote': _ModeMeta(t('games_mode_remote'), Icons.smartphone_rounded, theme.secondary),
-  'in_person': _ModeMeta(
+Map<String, GameModeMeta> modesFor(ThemePalette theme, String Function(String) t) => {
+  'remote': GameModeMeta(t('games_mode_remote'), Icons.smartphone_rounded, theme.secondary),
+  'in_person': GameModeMeta(
     t('games_mode_in_person'),
     Icons.diversity_1_rounded,
     theme.accent,
   ),
-  'both': _ModeMeta(
+  'both': GameModeMeta(
     t('games_mode_both'),
     Icons.favorite_rounded,
     theme.primary,
@@ -577,8 +577,8 @@ class _GameFlipCardState extends State<_GameFlipCard>
     final theme = widget.theme;
     final t = LocaleScope.of(context).t;
     final mode =
-        _modesFor(theme, t)[widget.game.mode] ??
-        _ModeMeta('', Icons.sports_esports_rounded, theme.secondary);
+        modesFor(theme, t)[widget.game.mode] ??
+        GameModeMeta('', Icons.sports_esports_rounded, theme.secondary);
 
     return GestureDetector(
       onTapDown: (_) => _setPressed(true),
@@ -625,7 +625,7 @@ class _GameFlipCardState extends State<_GameFlipCard>
 class _CardFront extends StatelessWidget {
   final Game game;
   final ThemePalette theme;
-  final _ModeMeta mode;
+  final GameModeMeta mode;
 
   const _CardFront({
     required this.game,
@@ -670,7 +670,7 @@ class _CardFront extends StatelessWidget {
                   color: mode.color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: _gameIcon(game, mode.color),
+                child: gameIcon(game, mode.color),
               ),
               const SizedBox(width: 14),
               Expanded(

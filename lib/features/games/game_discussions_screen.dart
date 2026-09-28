@@ -137,9 +137,17 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final game = ordered[index];
+            // Même icône/couleur que la liste "Jeu classique" (voir demande
+            // utilisateur : "remplacer par les icônes utilisées dans jeu
+            // classique") — illustration choisie dans l'admin si elle
+            // existe, sinon repli par mot-clé (voir gameIcon/iconForGame),
+            // teintée selon le mode du jeu (voir modesFor/GameModeMeta,
+            // même mapping que _CardFront).
+            final mode = modesFor(theme, t)[game.mode] ?? GameModeMeta('', Icons.sports_esports_rounded, theme.secondary);
             return _GameDiscussionTile(
               theme: theme,
-              icon: iconForGame(game),
+              game: game,
+              mode: mode,
               name: game.nameFor(localeCode),
               unreadCount: _unreadFor(game),
               onTap: () => Navigator.of(context).push(
@@ -155,21 +163,27 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
 
 /// Tuile "un jeu" — voir demande utilisateur : "il y a des designs déjà
 /// dans l'app réutilisables pour lister" — copie structurelle de
-/// _GameBoxTile (game_boxes_screen.dart), même icône ronde en dégradé,
-/// même style de titre, ADAPTÉE d'une catégorie à un jeu entier (pas de
-/// "verrou" ici, tous les jeux sont accessibles) et dotée d'un badge de
-/// non-lu (voir demande utilisateur : "si y a des conversations non
-/// lues... marquer sur le badge de la liste du jeu concerné").
+/// _GameBoxTile (game_boxes_screen.dart) pour la forme, et de _CardFront
+/// (games_menu_screen.dart) pour l'icône (voir demande utilisateur :
+/// "remplacer par les icônes utilisées dans jeu classique") — même
+/// illustration admin ou repli par mot-clé, teintée selon le mode du jeu
+/// (voir gameIcon/GameModeMeta), plutôt qu'un dégradé générique. ADAPTÉE
+/// d'une catégorie à un jeu entier (pas de "verrou" ici, tous les jeux sont
+/// accessibles) et dotée d'un badge de non-lu (voir demande utilisateur :
+/// "si y a des conversations non lues... marquer sur le badge de la liste
+/// du jeu concerné").
 class _GameDiscussionTile extends StatelessWidget {
   final ThemePalette theme;
-  final IconData icon;
+  final Game game;
+  final GameModeMeta mode;
   final String name;
   final int unreadCount;
   final VoidCallback onTap;
 
   const _GameDiscussionTile({
     required this.theme,
-    required this.icon,
+    required this.game,
+    required this.mode,
     required this.name,
     required this.unreadCount,
     required this.onTap,
@@ -194,11 +208,12 @@ class _GameDiscussionTile extends StatelessWidget {
               Container(
                 width: 52,
                 height: 52,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+                  color: mode.color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: Colors.white, size: 24),
+                child: gameIcon(game, mode.color),
               ),
               const SizedBox(width: 14),
               Expanded(
