@@ -60,7 +60,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadCachedThenRefresh();
     BoxService.instance.addListener(_syncRealtimeSubscription);
     _syncRealtimeSubscription();
     _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _load());
@@ -83,6 +83,21 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
       RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
     }
     super.dispose();
+  }
+
+  /// Voir demande utilisateur : "y a-t-il un cache pour les plus
+  /// récentes" — affiche la dernière première page connue de CE jeu tout
+  /// de suite, avant même la réponse réseau (voir ContentService.
+  /// cachedSendsForGame), puis [_load] la remplace par une version à jour.
+  Future<void> _loadCachedThenRefresh() async {
+    final cached = await ContentService.instance.cachedSendsForGame(widget.game.id);
+    if (cached != null && mounted) {
+      setState(() {
+        _sends = cached;
+        _loading = false;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {

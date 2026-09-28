@@ -355,6 +355,16 @@ class ContentService {
     return cached.map((entry) => Send.fromJson(entry as Map<String, dynamic>)).toList();
   }
 
+  /// Même principe que [cachedSends], pour les discussions d'UN SEUL jeu
+  /// (voir GameConversationsScreen, demande utilisateur : "y a-t-il un
+  /// cache pour les plus récentes") — affiche instantanément la dernière
+  /// première page connue de CE jeu, avant même la réponse réseau.
+  Future<List<Send>?> cachedSendsForGame(String gameId) async {
+    final cached = await LocalCache.instance.readJson<List<dynamic>>('cache_sends_game_$gameId');
+    if (cached == null) return null;
+    return cached.map((entry) => Send.fromJson(entry as Map<String, dynamic>)).toList();
+  }
+
   /// Mis en cache (voir LocalCache) pour rester consultable hors ligne —
   /// uniquement la vue par défaut (première page, aucun filtre) : filtrer
   /// ou paginer plus loin nécessite déjà une connexion, pas la peine de
@@ -379,8 +389,14 @@ class ContentService {
       if (gameId != null) 'game_id': gameId,
     };
     final uri = Uri(path: '/sends', queryParameters: query);
-    final cacheable = page == 1 && !favoriteOnly && type == null;
-    const cacheKey = 'cache_sends_default';
+    // Voir cachedSendsForGame : la vue par défaut (aucun filtre) ET la vue
+    // d'UN SEUL jeu (type: 'game_card' + gameId) sont toutes deux mises en
+    // cache, chacune sous sa propre clé — jamais une vue favorite/paginée
+    // plus loin, ni "tous les jeux mélangés" (type sans gameId), cas
+    // d'usage marginal qui n'a plus d'écran dédié depuis la scission de
+    // GameDiscussionsScreen en une liste de jeux.
+    final cacheable = page == 1 && !favoriteOnly && (type == null || (type == 'game_card' && gameId != null));
+    final cacheKey = gameId != null ? 'cache_sends_game_$gameId' : 'cache_sends_default';
 
     try {
       final data = await ApiClient.instance.get(uri.toString()) as Map<String, dynamic>;

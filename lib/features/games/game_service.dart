@@ -22,8 +22,20 @@ class GameService {
   GameService._();
   static final GameService instance = GameService._();
 
+  /// Dernier catalogue connu (voir LocalCache), sans appel réseau — voir
+  /// demande utilisateur : "y a-t-il un cache pour les plus récentes" —
+  /// permet à GameDiscussionsScreen (liste des jeux, voir demande
+  /// utilisateur : "lister tout les jeux") de s'afficher instantanément.
+  /// `null` si jamais mis en cache (tout premier lancement).
+  Future<List<Game>?> cachedGames() async {
+    final cached = await LocalCache.instance.readJson<List<dynamic>>('cache_games');
+    if (cached == null) return null;
+    return cached.map((e) => Game.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<List<Game>> fetchGames() async {
     final data = await ApiClient.instance.get('/games') as List;
+    await LocalCache.instance.writeJson('cache_games', data);
     return data.map((e) => Game.fromJson(e as Map<String, dynamic>)).toList();
   }
 

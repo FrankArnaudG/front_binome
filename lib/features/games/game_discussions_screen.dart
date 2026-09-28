@@ -41,12 +41,27 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadCachedThenRefresh();
     // Voir demande utilisateur : "marquer sur le badge de la liste du jeu
     // concerné" — réutilise la même source que la bulle de notification/le
     // badge de l'onglet (voir GameCardInboxService), déjà tenue à jour en
     // temps réel ailleurs dans l'app ; aucun nouvel appel réseau ici.
     GameCardInboxService.instance.refresh();
+  }
+
+  /// Voir demande utilisateur : "y a-t-il un cache pour les plus
+  /// récentes" — affiche le dernier catalogue connu tout de suite (voir
+  /// GameService.cachedGames), avant même la réponse réseau, comme les
+  /// autres listes de jeux de l'app (GameBoxesScreen...).
+  Future<void> _loadCachedThenRefresh() async {
+    final cached = await GameService.instance.cachedGames();
+    if (cached != null && mounted) {
+      setState(() {
+        _games = cached.where((g) => g.usesBoxes).toList();
+        _loading = false;
+      });
+    }
+    await _load();
   }
 
   Future<void> _load() async {
