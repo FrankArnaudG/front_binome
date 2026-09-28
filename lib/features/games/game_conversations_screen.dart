@@ -400,7 +400,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
             EmptyState(
               icon: Icons.forum_rounded,
               message: t('game_chats_empty_for_game', {'name': widget.game.nameFor(localeCode)}),
-              actionLabel: t('game_chats_empty_cta_for_game'),
+              actionLabel: t('game_chats_empty_cta_for_game', {'name': widget.game.nameFor(localeCode)}),
               onAction: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => GameBoxesScreen(game: widget.game, user: widget.user)),
               ),
