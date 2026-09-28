@@ -250,12 +250,40 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
     return matches.isEmpty ? null : matches.first;
   }
 
+  /// Voir demande utilisateur : "impossible de charger les cartes déjà
+  /// jouées" — une catégorie peut avoir été RÉASSIGNÉE à un autre jeu depuis
+  /// (voir l'admin) : une vieille carte envoyée quand "L'ombre de l'ex"
+  /// appartenait encore à CE jeu ne s'y retrouve plus une fois la
+  /// catégorie déplacée vers un autre. Repli : cherche la catégorie parmi
+  /// TOUS les jeux, et ouvre le fil dans celui où elle vit VRAIMENT
+  /// aujourd'hui plutôt que d'échouer — même principe que l'ancien écran
+  /// "toutes discussions" (avant sa scission en un écran par jeu), qui ne
+  /// se posait jamais la question puisqu'il ne présupposait aucun jeu fixe.
+  Future<(Game, GameBox)?> _resolveElsewhere(String gameBoxId) async {
+    final games = await GameService.instance.fetchGames();
+    for (final game in games) {
+      if (game.id == widget.game.id) continue;
+      final boxes = await GameService.instance.fetchBoxes(game.id);
+      final matches = boxes.where((b) => b.id == gameBoxId);
+      if (matches.isNotEmpty) return (game, matches.first);
+    }
+    return null;
+  }
+
   Future<void> _open(Send send) async {
     final card = send.gameCard;
     if (card == null || _opening) return;
     setState(() => _opening = true);
     try {
-      final box = await _boxFor(card.gameBoxId);
+      var game = widget.game;
+      var box = await _boxFor(card.gameBoxId);
+      if (box == null) {
+        final elsewhere = await _resolveElsewhere(card.gameBoxId);
+        if (elsewhere != null) {
+          game = elsewhere.$1;
+          box = elsewhere.$2;
+        }
+      }
       if (!mounted) return;
       if (box == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -267,7 +295,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
       AppRouter.showGlobalNavBar.value = false;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => GameCardThreadScreen(send: send, user: widget.user, game: widget.game, box: box),
+          builder: (_) => GameCardThreadScreen(send: send, user: widget.user, game: game, box: box!),
         ),
       );
       AppRouter.showGlobalNavBar.value = true;
