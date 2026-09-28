@@ -359,12 +359,24 @@ class ContentService {
   /// uniquement la vue par défaut (première page, aucun filtre) : filtrer
   /// ou paginer plus loin nécessite déjà une connexion, pas la peine de
   /// mettre ces variantes en cache pour un cas d'usage marginal.
-  Future<List<Send>> fetchSends({int page = 1, int limit = 20, bool favoriteOnly = false, String? type}) async {
+  /// [gameId] : voir SendController::index — ne filtre RÉELLEMENT que
+  /// combiné à `type: 'game_card'` (voir GameDiscussionsScreen/le nouvel
+  /// écran par jeu, demande utilisateur : "lister tout les jeux, pour voir
+  /// une conversation il faut cliquer sur le jeu" — ne charge alors QUE les
+  /// cartes de CE jeu, jamais toutes celles de tous les jeux à la fois).
+  Future<List<Send>> fetchSends({
+    int page = 1,
+    int limit = 20,
+    bool favoriteOnly = false,
+    String? type,
+    String? gameId,
+  }) async {
     final query = {
       'page': '$page',
       'per_page': '$limit',
       if (favoriteOnly) 'favorite': '1',
       if (type != null) 'type': type,
+      if (gameId != null) 'game_id': gameId,
     };
     final uri = Uri(path: '/sends', queryParameters: query);
     final cacheable = page == 1 && !favoriteOnly && type == null;

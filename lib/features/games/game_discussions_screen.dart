@@ -1,39 +1,31 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../core/app_router.dart';
-import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/game.dart';
-import '../../models/game_box.dart';
-import '../../models/send.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/send_status_tick.dart';
-import '../box/box_service.dart';
-import '../content/content_service.dart';
-import '../home/tab_navigation_controller.dart';
-import 'game_box_history_screen.dart';
+import 'game_card_inbox_service.dart';
+import 'game_conversations_screen.dart';
 import 'game_service.dart';
 import 'games_menu_screen.dart';
 
-/// Onglet "Discussions" (voir demande utilisateur : "une icône dans la barre
-/// de navigation à côté de Jeux qui permet de voir rapidement et
-/// directement les discussions liées aux jeux") — même liste que
-/// GameBoxHistoryScreen, mais TOUS jeux et toutes boîtes confondus (voir
-/// SendController::index avec `type=game_card`), au lieu d'une seule boîte
-/// ouverte depuis l'éventail de cartes.
+/// Onglet "Discussions" — voir demande utilisateur : "une icône dans la
+/// barre de navigation à côté de Jeux qui permet de voir rapidement et
+/// directement les discussions liées aux jeux". Liste les JEUX ("Cœur à
+/// Cœur", "Vérité ou Défi"...), pas les conversations elles-mêmes (voir
+/// demande utilisateur : "je propose de lister tous les jeux, et pour voir
+/// une conversation il faut cliquer sur le jeu") — un jeu très actif
+/// pourrait sinon compter des centaines de conversations à afficher d'un
+/// coup ("si A Nous deux a 1000 conversations"). Cette liste-ci reste donc
+/// toujours bornée au nombre de jeux du catalogue (une quinzaine), jamais
+/// au nombre de conversations — voir GameConversationsScreen pour le détail
+/// PAGINÉ d'un seul jeu, ouvert au tap sur une tuile.
 class GameDiscussionsScreen extends StatefulWidget {
   final AppUser user;
-
-  // Rang de cet onglet dans MainTabScreen/AppShell — sert à recharger la
-  // liste à chaque retour sur l'onglet (il reste vivant dans l'IndexedStack).
-  static const tabIndex = 3;
 
   const GameDiscussionsScreen({super.key, required this.user});
 
@@ -42,81 +34,30 @@ class GameDiscussionsScreen extends StatefulWidget {
 }
 
 class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
-  static const _pageSize = 20;
-
-  List<Send>? _sends;
+  List<Game>? _games;
   bool _loading = true;
   bool _error = false;
-  int _page = 1;
-  bool _hasMore = false;
-  bool _loadingMore = false;
-  bool _opening = false;
-  final _scrollController = ScrollController();
-
-  // Jeux et boîtes, chargés à la demande : la liste n'a que les ids
-  // (voir GameCardSend.gameId/gameBoxId), GameCardThreadScreen a besoin des
-  // objets complets.
-  Map<String, Game> _games = {};
-  final Map<String, List<GameBox>> _boxesByGame = {};
-
-  String? _subscribedBoxId;
-  StreamSubscription<void>? _resyncSub;
-  // Rechargement groupé après un événement temps réel (voir _scheduleReload).
-  Timer? _reloadDebounce;
-  int _lastTabIndex = TabNavigationController.instance.index;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _loadGames();
-    // La Box du couple n'est pas forcément encore chargée quand cet onglet
-    // est créé (il l'est dès le lancement, dans l'IndexedStack) : on
-    // s'abonne dès qu'elle est connue, et on suit un éventuel changement.
-    BoxService.instance.addListener(_syncRealtimeSubscription);
-    _syncRealtimeSubscription();
-    // Retour au premier plan / reconnexion : des événements ont pu être
-    // manqués pendant l'absence (voir RealtimeClient.requestResync).
-    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _load());
-    TabNavigationController.instance.addListener(_onTabChanged);
-    _scrollController.addListener(() {
-      if (!_scrollController.hasClients) return;
-      final position = _scrollController.position;
-      if (_hasMore && !_loadingMore && position.pixels >= position.maxScrollExtent - 200) {
-        _loadMore();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    TabNavigationController.instance.removeListener(_onTabChanged);
-    BoxService.instance.removeListener(_syncRealtimeSubscription);
-    _resyncSub?.cancel();
-    _reloadDebounce?.cancel();
-    _scrollController.dispose();
-    if (_subscribedBoxId != null) {
-      RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
-    }
-    super.dispose();
-  }
-
-  /// Recharge en arrivant sur l'onglet — le temps réel couvre ce qui arrive
-  /// pendant que l'app est ouverte, pas ce qui a pu être manqué entre-temps.
-  void _onTabChanged() {
-    final index = TabNavigationController.instance.index;
-    if (index == GameDiscussionsScreen.tabIndex && _lastTabIndex != index) _load();
-    _lastTabIndex = index;
+    // Voir demande utilisateur : "marquer sur le badge de la liste du jeu
+    // concerné" — réutilise la même source que la bulle de notification/le
+    // badge de l'onglet (voir GameCardInboxService), déjà tenue à jour en
+    // temps réel ailleurs dans l'app ; aucun nouvel appel réseau ici.
+    GameCardInboxService.instance.refresh();
   }
 
   Future<void> _load() async {
     try {
-      final sends = await ContentService.instance.fetchSends(type: 'game_card', limit: _pageSize);
+      final games = await GameService.instance.fetchGames();
       if (!mounted) return;
       setState(() {
-        _sends = sends;
-        _page = 1;
-        _hasMore = sends.length == _pageSize;
+        // Voir Game.usesBoxes : seuls les jeux "à boîtes" (cartes-questions)
+        // produisent des envois `game_card` — les 7 jeux interactifs en
+        // temps réel (Mémoire, Morpion...) n'ont jamais de discussion ici.
+        _games = games.where((g) => g.usesBoxes).toList();
         _loading = false;
         _error = false;
       });
@@ -124,205 +65,17 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (_sends == null) _error = true;
+        if (_games == null) _error = true;
       });
     }
   }
 
-  Future<void> _loadMore() async {
-    final sends = _sends;
-    if (!_hasMore || _loadingMore || sends == null) return;
-    setState(() => _loadingMore = true);
-    try {
-      final next = await ContentService.instance.fetchSends(type: 'game_card', page: _page + 1, limit: _pageSize);
-      if (!mounted) return;
-      final known = sends.map((s) => s.id).toSet();
-      setState(() {
-        _sends = [...sends, ...next.where((s) => !known.contains(s.id))];
-        _page += 1;
-        _hasMore = next.length == _pageSize;
-      });
-    } catch (_) {
-      // best effort — l'utilisateur pourra réessayer en re-scrollant.
-    } finally {
-      if (mounted) setState(() => _loadingMore = false);
-    }
-  }
-
-  Future<void> _loadGames() async {
-    try {
-      final games = await GameService.instance.fetchGames();
-      if (!mounted) return;
-      setState(() => _games = {for (final g in games) g.id: g});
-    } catch (_) {
-      // Sans les jeux, les lignes n'affichent que le nom de la boîte ;
-      // _open() réessaie de toute façon au moment d'ouvrir une discussion.
-    }
-  }
-
-  Future<void> _syncRealtimeSubscription() async {
-    final coupleBoxId = BoxService.instance.currentBox?.id;
-    if (coupleBoxId == _subscribedBoxId) return;
-    final previous = _subscribedBoxId;
-    _subscribedBoxId = coupleBoxId;
-    if (previous != null) {
-      RealtimeClient.instance.unsubscribeFromBox(previous, onEvent: _onRealtimeEvent);
-    }
-    if (coupleBoxId == null) return;
-    // Box connue (éventuellement après coup) : la liste chargée avant a pu
-    // manquer des envois.
-    _load();
-    try {
-      await RealtimeClient.instance.subscribeToBox(coupleBoxId, onEvent: _onRealtimeEvent);
-    } catch (_) {
-      // Best effort — la liste se recharge quand même à chaque retour sur
-      // l'onglet (voir _onTabChanged).
-    }
-  }
-
-  /// Recharge la liste peu après un événement de jeu — filet de sécurité
-  /// pour ce que la mise à jour locale ne sait pas reconstruire seule
-  /// (réponse à une carte, relance, sondage...), groupé si plusieurs
-  /// événements arrivent d'affilée.
-  void _scheduleReload() {
-    _reloadDebounce?.cancel();
-    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
-      if (mounted) _load();
-    });
-  }
-
-  /// Même traitement que GameBoxHistoryScreen._onRealtimeEvent, sans le
-  /// filtre sur une boîte précise.
-  void _onRealtimeEvent(RealtimeEvent event) {
-    if (!mounted) return;
-    final current = _sends ?? [];
-
-    if (event.event == 'SendSeen') {
-      final sendId = event.data?['send_id'] as String?;
-      if (sendId == null) return;
-      final seenAtStr = event.data?['seen_at'] as String?;
-      final seenAt = seenAtStr != null ? DateTime.parse(seenAtStr) : DateTime.now();
-      final index = current.indexWhere((s) => s.id == sendId || s.latestReply?.id == sendId);
-      if (index == -1) return;
-      final updated = List<Send>.of(current);
-      final target = updated[index];
-      updated[index] = target.latestReply?.id == sendId
-          ? target.copyWith(latestReply: target.latestReply!.copyWith(status: 'seen', seenAt: seenAt))
-          : target.copyWith(status: 'seen', seenAt: seenAt);
-      setState(() => _sends = updated);
-      return;
-    }
-
-    if (event.event == 'SendDelivered') {
-      final sendIds = (event.data?['send_ids'] as List?)?.map((e) => e as String).toList();
-      if (sendIds == null || sendIds.isEmpty) return;
-      final deliveredAtStr = event.data?['delivered_at'] as String?;
-      final deliveredAt = deliveredAtStr != null ? DateTime.parse(deliveredAtStr) : DateTime.now();
-      var changed = false;
-      final updated = current.map((s) {
-        if (s.latestReply != null && sendIds.contains(s.latestReply!.id) && s.latestReply!.status == 'sent') {
-          changed = true;
-          return s.copyWith(latestReply: s.latestReply!.copyWith(status: 'delivered', deliveredAt: deliveredAt));
-        }
-        if (s.latestReply == null && sendIds.contains(s.id) && s.status == 'sent') {
-          changed = true;
-          return s.copyWith(status: 'delivered', deliveredAt: deliveredAt);
-        }
-        return s;
-      }).toList();
-      if (changed) setState(() => _sends = updated);
-      return;
-    }
-
-    if (event.event == 'GameCardUpdated') {
-      final sendJson = event.data?['send'] as Map<String, dynamic>?;
-      if (sendJson == null) return;
-      final updatedSend = Send.fromJson(sendJson);
-      final index = current.indexWhere((s) => s.id == updatedSend.id);
-      if (index == -1) return;
-      final updated = List<Send>.of(current);
-      updated[index] = updatedSend.latestReply == null
-          ? updatedSend.copyWith(latestReply: current[index].latestReply)
-          : updatedSend;
-      setState(() => _sends = updated);
-      _scheduleReload();
-      return;
-    }
-
-    if (event.event != 'SendCreated') return;
-    final sendJson = event.data?['send'] as Map<String, dynamic>?;
-    if (sendJson == null) return;
-    final send = Send.fromJson(sendJson);
-
-    // Réponse dans une discussion déjà listée : remonte-la en tête avec son
-    // nouvel aperçu, comme une vraie liste de conversations.
-    if (send.replyToSendId != null) {
-      final index = current.indexWhere((s) => s.id == send.replyToSendId);
-      if (index == -1) {
-        // Discussion pas encore chargée (plus ancienne que la première
-        // page) : un rechargement la fera remonter en tête.
-        _scheduleReload();
-        return;
-      }
-      final thread = current[index].copyWith(latestReply: send);
-      setState(() => _sends = [thread, ...current.where((s) => s.id != thread.id)]);
-      return;
-    }
-
-    if (send.sendableType != 'game_card') return;
-    if (current.any((s) => s.id == send.id)) return;
-    setState(() => _sends = [send, ...current]);
-    // L'événement ne porte pas toujours tout ce que la liste affiche
-    // (expéditeur complet...) : complète avec la version serveur.
-    _scheduleReload();
-  }
-
-  Future<GameBox?> _boxFor(String gameId, String gameBoxId) async {
-    var boxes = _boxesByGame[gameId];
-    if (boxes == null) {
-      boxes = await GameService.instance.fetchBoxes(gameId);
-      _boxesByGame[gameId] = boxes;
-    }
-    final matches = boxes.where((b) => b.id == gameBoxId);
-    return matches.isEmpty ? null : matches.first;
-  }
-
-  /// Ouvre la discussion — même écran que depuis l'historique d'une boîte
-  /// (voir GameBoxHistoryScreen), qui a besoin du jeu et de la boîte
-  /// complets.
-  Future<void> _open(Send send) async {
-    final card = send.gameCard;
-    if (card == null || _opening) return;
-    setState(() => _opening = true);
-    try {
-      if (!_games.containsKey(card.gameId)) await _loadGames();
-      final game = _games[card.gameId];
-      final box = await _boxFor(card.gameId, card.gameBoxId);
-      if (!mounted) return;
-      if (game == null || box == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(LocaleScope.of(context).t('game_history_load_error'))),
-        );
-        return;
-      }
-      setState(() => _opening = false);
-      AppRouter.showGlobalNavBar.value = false;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => GameCardThreadScreen(send: send, user: widget.user, game: game, box: box),
-        ),
-      );
-      AppRouter.showGlobalNavBar.value = true;
-      _load();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('game_history_load_error'))),
-      );
-    } finally {
-      if (mounted && _opening) setState(() => _opening = false);
-    }
-  }
+  /// Nombre de cartes-questions de CE jeu reçues, pas encore traitées (voir
+  /// GameCardInboxService) — même source que le badge de l'onglet
+  /// "Discussions" dans la barre de navigation.
+  int _unreadFor(Game game) => GameCardInboxService.instance.pending
+      .where((s) => s.isGameCard && s.gameCard?.gameId == game.id)
+      .length;
 
   @override
   Widget build(BuildContext context) {
@@ -343,173 +96,134 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
         ),
       ),
       body: ThemedBackground(
-        child: SafeArea(
-          child: Stack(
-            children: [
-              _buildBody(theme),
-              if (_opening) const Positioned.fill(child: Center(child: CircularProgressIndicator())),
-            ],
-          ),
-        ),
+        child: SafeArea(child: _buildBody(theme, t)),
       ),
     );
   }
 
-  Widget _buildBody(ThemePalette theme) {
-    final t = LocaleScope.of(context).t;
+  Widget _buildBody(ThemePalette theme, String Function(String, [Map<String, String>?]) t) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error) {
       return Center(child: EmptyState(icon: Icons.wifi_off_rounded, message: t('game_history_load_error')));
     }
-    final sends = (_sends ?? []).where((s) => s.gameCard != null).toList();
-    if (sends.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            const SizedBox(height: 120),
-            EmptyState(
-              icon: Icons.forum_rounded,
-              message: t('game_chats_empty'),
-              actionLabel: t('game_chats_empty_cta'),
-              onAction: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => GamesMenuScreen(user: widget.user, initialCategory: 'classic')),
-              ),
-            ),
-          ],
-        ),
-      );
+    final games = List<Game>.of(_games ?? []);
+    if (games.isEmpty) {
+      return Center(child: EmptyState(icon: Icons.forum_rounded, message: t('game_chats_empty')));
     }
 
     final localeCode = LocaleScope.of(context).current.code;
-
-    // Voir demande utilisateur : "comment faire pour faire la différence
-    // des conversations pour chaque jeu" — un en-tête par JEU plutôt qu'une
-    // liste unique où seule une petite ligne grise distinguait les jeux.
-    // L'ordre des groupes suit la discussion la plus récente de chaque jeu
-    // (premier id de jeu rencontré en parcourant `sends`, déjà trié du plus
-    // récent au plus ancien par le serveur) — celui qui vient de recevoir
-    // un message reste donc en tête, comme avant, juste maintenant groupé.
-    // À L'INTÉRIEUR d'un groupe, les en-têtes de date restent comme avant.
-    final gameOrder = <String>[];
-    final byGame = <String, List<Send>>{};
-    for (final send in sends) {
-      final gameId = send.gameCard!.gameId;
-      var group = byGame[gameId];
-      if (group == null) {
-        group = <Send>[];
-        byGame[gameId] = group;
-        gameOrder.add(gameId);
-      }
-      group.add(send);
+    // Les jeux avec des cartes non lues remontent en tête (voir demande
+    // utilisateur : le badge doit se voir tout de suite) — tri STABLE,
+    // l'ordre du catalogue est conservé entre jeux à égalité.
+    final withUnread = <Game>[];
+    final rest = <Game>[];
+    for (final game in games) {
+      (_unreadFor(game) > 0 ? withUnread : rest).add(game);
     }
+    final ordered = [...withUnread, ...rest];
 
-    final children = <Widget>[];
-    for (final gameId in gameOrder) {
-      final group = byGame[gameId]!;
-      final game = _games[gameId];
-      children.add(_GameGroupHeader(
-        theme: theme,
-        icon: game != null ? iconForGame(game) : Icons.style_rounded,
-        name: game?.nameFor(localeCode) ?? group.first.gameCard!.gameBoxTitleFor(localeCode),
-      ));
-
-      for (var i = 0; i < group.length; i++) {
-        final send = group[i];
-        final card = send.gameCard!;
-        final lastMessage = send.lastMessage;
-        final isMine = lastMessage.senderId == widget.user.id;
-        final senderName = lastMessage.sender?.prenom ?? lastMessage.sender?.name ?? t('game_partner_name_fallback');
-        final by = t('game_sent_by', {'sender': isMine ? t('game_sent_by_you') : senderName});
-        // Le nom du jeu est déjà dans l'en-tête ci-dessus — seule la
-        // catégorie (boîte) reste utile ici, pour ne pas le répéter.
-        final subtitle = '${card.gameBoxTitleFor(localeCode)} · $by';
-
-        final dateLabel = dateHeaderLabel(context, lastMessage.createdAt.toLocal());
-        final prevLabel = i == 0 ? null : dateHeaderLabel(context, group[i - 1].lastMessage.createdAt.toLocal());
-        final nextLabel = i == group.length - 1 ? null : dateHeaderLabel(context, group[i + 1].lastMessage.createdAt.toLocal());
-
-        final row = GameHistoryRow(
-          theme: theme,
-          send: send,
-          isFirstInGroup: dateLabel != prevLabel,
-          isLastInGroup: dateLabel != nextLabel,
-          questionText: lastMessage.shortPreview(localeCode),
-          subtitle: subtitle,
-          time: _formattedTime(lastMessage.createdAt),
-          tick: isMine ? sendTickFor(lastMessage) : null,
-          unread: lastMessage.recipientId == widget.user.id && !lastMessage.isSeen,
-          onTap: () => _open(send),
-        );
-
-        children.add(
-          dateLabel == prevLabel
-              ? row
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [GameHistoryDateHeader(label: dateLabel, theme: theme), row],
-                ),
-        );
-      }
-    }
-    if (_loadingMore) {
-      children.add(
-        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator())),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        children: children,
+    return AnimatedBuilder(
+      // Voir doc de _unreadFor : les badges suivent GameCardInboxService en
+      // direct (déjà tenu à jour par le reste de l'app), sans code temps
+      // réel dédié à cet écran.
+      animation: GameCardInboxService.instance,
+      builder: (context, _) => RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([_load(), GameCardInboxService.instance.refresh()]);
+        },
+        child: ListView.separated(
+          padding: const EdgeInsets.all(20),
+          itemCount: ordered.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final game = ordered[index];
+            return _GameDiscussionTile(
+              theme: theme,
+              icon: iconForGame(game),
+              name: game.nameFor(localeCode),
+              unreadCount: _unreadFor(game),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => GameConversationsScreen(game: game, user: widget.user)),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
-
-  String _formattedTime(DateTime dt) {
-    final local = dt.toLocal();
-    return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  }
 }
 
-/// En-tête de groupe "un jeu" — voir demande utilisateur : "faire la
-/// différence des conversations pour chaque jeu". Bien plus visible que le
-/// nom du jeu noyé dans la ligne grise (voir GameHistoryRow.subtitle,
-/// désormais réduite à la catégorie/expéditeur) : icône + nom, en gras, en
-/// tête de chaque groupe.
-class _GameGroupHeader extends StatelessWidget {
+/// Tuile "un jeu" — voir demande utilisateur : "il y a des designs déjà
+/// dans l'app réutilisables pour lister" — copie structurelle de
+/// _GameBoxTile (game_boxes_screen.dart), même icône ronde en dégradé,
+/// même style de titre, ADAPTÉE d'une catégorie à un jeu entier (pas de
+/// "verrou" ici, tous les jeux sont accessibles) et dotée d'un badge de
+/// non-lu (voir demande utilisateur : "si y a des conversations non
+/// lues... marquer sur le badge de la liste du jeu concerné").
+class _GameDiscussionTile extends StatelessWidget {
   final ThemePalette theme;
   final IconData icon;
   final String name;
+  final int unreadCount;
+  final VoidCallback onTap;
 
-  const _GameGroupHeader({required this.theme, required this.icon, required this.name});
+  const _GameDiscussionTile({
+    required this.theme,
+    required this.icon,
+    required this.name,
+    required this.unreadCount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(color: theme.primary.withValues(alpha: 0.14), shape: BoxShape.circle),
-            child: Icon(icon, size: 16, color: theme.primary),
+    return Material(
+      color: theme.surface.withValues(alpha: theme.isDark ? 0.5 : 0.75),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: theme.primary.withValues(alpha: unreadCount > 0 ? 0.45 : 0.15)),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: theme.textOnBackground),
-            ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [theme.primary, theme.secondary]),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
+                ),
+              ),
+              if (unreadCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: theme.primary, borderRadius: BorderRadius.circular(999)),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : '$unreadCount',
+                    style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Icon(Icons.chevron_right_rounded, color: theme.textOnBackgroundMuted, size: 22),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
