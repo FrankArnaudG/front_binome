@@ -44,15 +44,15 @@ Widget _gameIcon(Game game, Color color) {
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      errorBuilder: (context, error, stackTrace) => Icon(_iconForGame(game), color: color),
+      errorBuilder: (context, error, stackTrace) => Icon(iconForGame(game), color: color),
     );
   }
-  return Center(child: Icon(_iconForGame(game), color: color));
+  return Center(child: Icon(iconForGame(game), color: color));
 }
 
 /// Icône affinée par mot-clé du nom du jeu — repli tant qu'aucune
 /// illustration n'a été choisie dans l'admin (voir [_gameIcon]).
-IconData _iconForGame(Game game) {
+IconData iconForGame(Game game) {
   // Comparé au nom français (clé d'identité stable), jamais à la langue
   // courante — sans ça, le mapping mot-clé -> icône se casserait dès
   // qu'on affiche l'app dans une autre langue que le français.

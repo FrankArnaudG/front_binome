@@ -383,57 +383,89 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
     }
 
     final localeCode = LocaleScope.of(context).current.code;
+
+    // Voir demande utilisateur : "comment faire pour faire la différence
+    // des conversations pour chaque jeu" — un en-tête par JEU plutôt qu'une
+    // liste unique où seule une petite ligne grise distinguait les jeux.
+    // L'ordre des groupes suit la discussion la plus récente de chaque jeu
+    // (premier id de jeu rencontré en parcourant `sends`, déjà trié du plus
+    // récent au plus ancien par le serveur) — celui qui vient de recevoir
+    // un message reste donc en tête, comme avant, juste maintenant groupé.
+    // À L'INTÉRIEUR d'un groupe, les en-têtes de date restent comme avant.
+    final gameOrder = <String>[];
+    final byGame = <String, List<Send>>{};
+    for (final send in sends) {
+      final gameId = send.gameCard!.gameId;
+      var group = byGame[gameId];
+      if (group == null) {
+        group = <Send>[];
+        byGame[gameId] = group;
+        gameOrder.add(gameId);
+      }
+      group.add(send);
+    }
+
+    final children = <Widget>[];
+    for (final gameId in gameOrder) {
+      final group = byGame[gameId]!;
+      final game = _games[gameId];
+      children.add(_GameGroupHeader(
+        theme: theme,
+        icon: game != null ? iconForGame(game) : Icons.style_rounded,
+        name: game?.nameFor(localeCode) ?? group.first.gameCard!.gameBoxTitleFor(localeCode),
+      ));
+
+      for (var i = 0; i < group.length; i++) {
+        final send = group[i];
+        final card = send.gameCard!;
+        final lastMessage = send.lastMessage;
+        final isMine = lastMessage.senderId == widget.user.id;
+        final senderName = lastMessage.sender?.prenom ?? lastMessage.sender?.name ?? t('game_partner_name_fallback');
+        final by = t('game_sent_by', {'sender': isMine ? t('game_sent_by_you') : senderName});
+        // Le nom du jeu est déjà dans l'en-tête ci-dessus — seule la
+        // catégorie (boîte) reste utile ici, pour ne pas le répéter.
+        final subtitle = '${card.gameBoxTitleFor(localeCode)} · $by';
+
+        final dateLabel = dateHeaderLabel(context, lastMessage.createdAt.toLocal());
+        final prevLabel = i == 0 ? null : dateHeaderLabel(context, group[i - 1].lastMessage.createdAt.toLocal());
+        final nextLabel = i == group.length - 1 ? null : dateHeaderLabel(context, group[i + 1].lastMessage.createdAt.toLocal());
+
+        final row = GameHistoryRow(
+          theme: theme,
+          send: send,
+          isFirstInGroup: dateLabel != prevLabel,
+          isLastInGroup: dateLabel != nextLabel,
+          questionText: lastMessage.shortPreview(localeCode),
+          subtitle: subtitle,
+          time: _formattedTime(lastMessage.createdAt),
+          tick: isMine ? sendTickFor(lastMessage) : null,
+          unread: lastMessage.recipientId == widget.user.id && !lastMessage.isSeen,
+          onTap: () => _open(send),
+        );
+
+        children.add(
+          dateLabel == prevLabel
+              ? row
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [GameHistoryDateHeader(label: dateLabel, theme: theme), row],
+                ),
+        );
+      }
+    }
+    if (_loadingMore) {
+      children.add(
+        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator())),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
+      child: ListView(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        itemCount: sends.length + (_loadingMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == sends.length) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final send = sends[index];
-          final card = send.gameCard!;
-          final lastMessage = send.lastMessage;
-          final isMine = lastMessage.senderId == widget.user.id;
-          final senderName = lastMessage.sender?.prenom ?? lastMessage.sender?.name ?? t('game_partner_name_fallback');
-
-          // Jeu + boîte d'abord (on mélange ici tous les jeux), puis qui a
-          // écrit en dernier.
-          final origin = [
-            _games[card.gameId]?.nameFor(localeCode),
-            card.gameBoxTitleFor(localeCode),
-          ].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
-          final by = t('game_sent_by', {'sender': isMine ? t('game_sent_by_you') : senderName});
-
-          final dateLabel = dateHeaderLabel(context, lastMessage.createdAt.toLocal());
-          final prevLabel = index == 0 ? null : dateHeaderLabel(context, sends[index - 1].lastMessage.createdAt.toLocal());
-          final nextLabel = index == sends.length - 1 ? null : dateHeaderLabel(context, sends[index + 1].lastMessage.createdAt.toLocal());
-
-          final row = GameHistoryRow(
-            theme: theme,
-            send: send,
-            isFirstInGroup: dateLabel != prevLabel,
-            isLastInGroup: dateLabel != nextLabel,
-            questionText: lastMessage.shortPreview(localeCode),
-            subtitle: origin.isEmpty ? by : '$origin · $by',
-            time: _formattedTime(lastMessage.createdAt),
-            tick: isMine ? sendTickFor(lastMessage) : null,
-            unread: lastMessage.recipientId == widget.user.id && !lastMessage.isSeen,
-            onTap: () => _open(send),
-          );
-
-          if (dateLabel == prevLabel) return row;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [GameHistoryDateHeader(label: dateLabel, theme: theme), row],
-          );
-        },
+        children: children,
       ),
     );
   }
@@ -441,5 +473,44 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
   String _formattedTime(DateTime dt) {
     final local = dt.toLocal();
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+/// En-tête de groupe "un jeu" — voir demande utilisateur : "faire la
+/// différence des conversations pour chaque jeu". Bien plus visible que le
+/// nom du jeu noyé dans la ligne grise (voir GameHistoryRow.subtitle,
+/// désormais réduite à la catégorie/expéditeur) : icône + nom, en gras, en
+/// tête de chaque groupe.
+class _GameGroupHeader extends StatelessWidget {
+  final ThemePalette theme;
+  final IconData icon;
+  final String name;
+
+  const _GameGroupHeader({required this.theme, required this.icon, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 22, bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(color: theme.primary.withValues(alpha: 0.14), shape: BoxShape.circle),
+            child: Icon(icon, size: 16, color: theme.primary),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800, color: theme.textOnBackground),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
