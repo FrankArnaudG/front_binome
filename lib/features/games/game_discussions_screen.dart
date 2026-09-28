@@ -20,6 +20,7 @@ import '../content/content_service.dart';
 import '../home/tab_navigation_controller.dart';
 import 'game_box_history_screen.dart';
 import 'game_service.dart';
+import 'games_menu_screen.dart';
 
 /// Onglet "Discussions" (voir demande utilisateur : "une icône dans la barre
 /// de navigation à côté de Jeux qui permet de voir rapidement et
@@ -368,7 +369,14 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             const SizedBox(height: 120),
-            EmptyState(icon: Icons.forum_rounded, message: t('game_chats_empty')),
+            EmptyState(
+              icon: Icons.forum_rounded,
+              message: t('game_chats_empty'),
+              actionLabel: t('game_chats_empty_cta'),
+              onAction: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => GamesMenuScreen(user: widget.user, initialCategory: 'classic')),
+              ),
+            ),
           ],
         ),
       );
