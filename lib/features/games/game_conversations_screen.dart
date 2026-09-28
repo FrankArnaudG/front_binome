@@ -255,14 +255,32 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
     _scheduleReload();
   }
 
+  /// Voir demande utilisateur : "si je clique, ça peut tourner 10 à 20
+  /// secondes avant d'ouvrir... mettre le cache à ce niveau" — la liste des
+  /// catégories d'UN jeu change rarement ; on la peint depuis le cache
+  /// LOCAL tout de suite (voir GameService.cachedBoxes, instantané, aucun
+  /// aller-retour réseau) au lieu d'attendre systématiquement
+  /// `fetchBoxes()`. Rafraîchie en tâche de fond (jamais bloquant pour
+  /// ouvrir la discussion) pour rester à jour au fil des visites.
   Future<GameBox?> _boxFor(String gameBoxId) async {
     var boxes = _boxes;
     if (boxes == null) {
-      boxes = await GameService.instance.fetchBoxes(widget.game.id);
-      _boxes = boxes;
+      boxes = await GameService.instance.cachedBoxes(widget.game.id);
+      if (boxes != null) {
+        _boxes = boxes;
+      } else {
+        boxes = await GameService.instance.fetchBoxes(widget.game.id);
+        _boxes = boxes;
+      }
     }
     final matches = boxes.where((b) => b.id == gameBoxId);
-    return matches.isEmpty ? null : matches.first;
+    if (matches.isNotEmpty) return matches.first;
+    // Pas dans le cache (jamais visité, ou catégorie ajoutée depuis) — un
+    // seul vrai aller-retour réseau avant d'abandonner cette piste.
+    final fresh = await GameService.instance.fetchBoxes(widget.game.id);
+    _boxes = fresh;
+    final freshMatches = fresh.where((b) => b.id == gameBoxId);
+    return freshMatches.isEmpty ? null : freshMatches.first;
   }
 
   /// Voir demande utilisateur : "impossible de charger les cartes déjà
@@ -274,13 +292,23 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
   /// aujourd'hui plutôt que d'échouer — même principe que l'ancien écran
   /// "toutes discussions" (avant sa scission en un écran par jeu), qui ne
   /// se posait jamais la question puisqu'il ne présupposait aucun jeu fixe.
+  ///
+  /// Voir demande utilisateur : "réduire le temps de chargement" — chaque
+  /// jeu est interrogé EN PARALLÈLE (jamais un par un, voir Future.wait)
+  /// et d'abord via son cache local (voir GameService.cachedBoxes) ; le
+  /// réseau n'est sollicité que pour les jeux jamais encore visités.
   Future<(Game, GameBox)?> _resolveElsewhere(String gameBoxId) async {
-    final games = await GameService.instance.fetchGames();
-    for (final game in games) {
-      if (game.id == widget.game.id) continue;
-      final boxes = await GameService.instance.fetchBoxes(game.id);
+    final games = (await GameService.instance.cachedGames()) ?? await GameService.instance.fetchGames();
+    final others = games.where((g) => g.id != widget.game.id).toList();
+
+    final results = await Future.wait(others.map((game) async {
+      final boxes = (await GameService.instance.cachedBoxes(game.id)) ?? await GameService.instance.fetchBoxes(game.id);
       final matches = boxes.where((b) => b.id == gameBoxId);
-      if (matches.isNotEmpty) return (game, matches.first);
+      return matches.isEmpty ? null : (game, matches.first);
+    }));
+
+    for (final result in results) {
+      if (result != null) return result;
     }
     return null;
   }
