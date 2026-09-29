@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
@@ -27,6 +29,7 @@ class MaintenanceService extends ChangeNotifier {
   bool allowed = false;
   bool _hasToken = false;
   bool _started = false;
+  Timer? _pollTimer;
 
   /// Compte bloqué : maintenance active, session identifiée (un jeton
   /// existe) et ce compte n'est pas sur la liste des comptes toujours
@@ -53,6 +56,7 @@ class MaintenanceService extends ChangeNotifier {
     if (!_started) return;
     _started = false;
     RealtimeClient.instance.unsubscribePublic(_channel, onEvent: _onRealtimeEvent);
+    _stopPolling();
   }
 
   void _onRealtimeEvent(RealtimeEvent event) {
@@ -70,10 +74,26 @@ class MaintenanceService extends ChangeNotifier {
       endsAt = endsAtRaw == null ? null : DateTime.tryParse(endsAtRaw);
       allowed = data['allowed'] == true;
       notifyListeners();
+      // Filet de sécurité : si is_active tarde à redevenir faux côté app
+      // (événement temps réel manqué — voir incident du 29/09/2026, une
+      // désactivation faite hors du bouton admin n'avait pas diffusé
+      // MaintenanceUpdated), on revérifie régulièrement tant que actif,
+      // plutôt que de rester bloqué indéfiniment en attendant cet
+      // événement (même principe que SuspensionService).
+      isActive ? _startPolling() : _stopPolling();
     } catch (_) {
       // Jamais bloquant (voir AppUpdateChecker) : un souci réseau ici ne
       // doit pas empêcher l'app de démarrer normalement.
     }
+  }
+
+  void _startPolling() {
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   /// Branché sur ApiClient (voir onSessionRevoked, même principe pour le
