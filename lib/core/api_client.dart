@@ -107,6 +107,13 @@ class ApiClient {
       unawaited(onSessionRevoked?.call());
     }
 
+    // Maintenance qui vient de démarrer (voir EnsureNotInMaintenance côté
+    // backend) : ne pas attendre le prochain événement temps réel pour
+    // afficher l'écran de blocage (voir MaintenanceService.onBlockedResponse).
+    if (response.statusCode == 503) {
+      onMaintenanceBlocked?.call();
+    }
+
     return _decode(response);
   }
 
@@ -132,6 +139,11 @@ class ApiClient {
   /// Appelé (une fois à la fois) quand le serveur refuse le jeton de cet appareil — branché par
   /// AppShell, donc actif uniquement pendant qu'un compte est connecté.
   static Future<void> Function()? onSessionRevoked;
+
+  /// Appelé (au moins une fois, sans attendre) quand le serveur répond 503
+  /// (maintenance active, voir EnsureNotInMaintenance) — branché par
+  /// AppShell comme [onSessionRevoked].
+  static void Function()? onMaintenanceBlocked;
 
   /// Une panne réseau (serveur injoignable, DNS, timeout...) lève une
   /// exception BRUTE (SocketException/TimeoutException/ClientException),

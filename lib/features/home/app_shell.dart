@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/delivery_ack_service.dart';
+import '../../core/maintenance_service.dart';
 import '../../core/realtime_client.dart';
 import '../../core/payment_return_watcher.dart';
 import '../../core/doodle_notifier.dart';
@@ -20,6 +21,8 @@ import '../shop/wallet_balance_notifier.dart';
 import 'tab_navigation_controller.dart';
 import 'widgets/doodle_overlay.dart';
 import 'widgets/game_invite_overlay.dart';
+import 'widgets/maintenance_banner.dart';
+import 'widgets/maintenance_block_screen.dart';
 
 /// Coquille globale qui superpose la barre de navigation classique à
 /// n'importe quel écran poussé après l'authentification — pas seulement
@@ -51,6 +54,22 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // plan ci-dessous.
     UsageService.instance.startSessionPings();
     ApiClient.onSessionRevoked = _onSessionRevoked;
+    // Voir demande utilisateur maintenance : écran de blocage/bande visible
+    // partout, quel que soit l'écran affiché (voir build() ci-dessous).
+    ApiClient.onMaintenanceBlocked = MaintenanceService.instance.onBlockedResponse;
+    MaintenanceService.instance.start();
+    // Un compte vient de se connecter (voir AppRouter.toHome) : un jeton
+    // existe désormais, donc revérifie tout de suite si CE compte précis est
+    // autorisé pendant la maintenance — sans ça, `allowed` resterait celui
+    // (forcément faux) calculé avant la connexion, voir MaintenanceService.isBlocked.
+    AppRouter.showGlobalNavBar.addListener(_onGlobalNavBarChanged);
+  }
+
+  void _onGlobalNavBarChanged() {
+    // Aussi utile à la déconnexion (voir AppRouter.toLogin) : un jeton
+    // supprimé doit repasser _hasToken à faux tout de suite, sinon un écran
+    // de blocage resterait affiché par erreur après une déconnexion.
+    MaintenanceService.instance.refresh();
   }
 
   bool _revokedHandled = false;
@@ -68,6 +87,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     if (ApiClient.onSessionRevoked == _onSessionRevoked) ApiClient.onSessionRevoked = null;
+    if (ApiClient.onMaintenanceBlocked == MaintenanceService.instance.onBlockedResponse) {
+      ApiClient.onMaintenanceBlocked = null;
+    }
+    MaintenanceService.instance.stop();
+    AppRouter.showGlobalNavBar.removeListener(_onGlobalNavBarChanged);
     WidgetsBinding.instance.removeObserver(this);
     UsageService.instance.stopSessionPings();
     super.dispose();
@@ -107,6 +131,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Superposé à TOUT le reste (même la connexion/le verrouillage, voir
+    // AppShell monté dans main.dart autour du Navigator entier) — voir
+    // demande utilisateur : écran de blocage pour les comptes non
+    // autorisés, bande d'info pour les comptes autorisés.
+    return AnimatedBuilder(
+      animation: MaintenanceService.instance,
+      builder: (context, _) {
+        if (MaintenanceService.instance.isBlocked) {
+          return const MaintenanceBlockScreen();
+        }
+        return Column(
+          children: [
+            if (MaintenanceService.instance.showBanner) const MaintenanceBanner(),
+            Expanded(child: _buildShell(context)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: AppRouter.showGlobalNavBar,
       builder: (context, show, _) {
