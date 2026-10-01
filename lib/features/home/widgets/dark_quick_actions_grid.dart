@@ -18,6 +18,7 @@ import '../../box/box_scope.dart';
 import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
 import '../../doodle/doodle_history_screen.dart';
+import '../../event_pages/event_pages_list_screen.dart';
 import '../../content/gifts_screen.dart';
 import '../../games/games_menu_screen.dart';
 import '../../shop/monetization_hub_screen.dart';
@@ -391,17 +392,19 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         'vault',
       ),
       DarkActionItem(
+        tr('action_event_pages'),
+        Icons.favorite_rounded,
+        (t) => t.primary,
+        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const EventPagesListScreen())),
+        'event_pages',
+      ),
+      DarkActionItem(
         tr('action_sounds'),
         Icons.music_note_rounded,
         (t) => t.accent,
         (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => SharedSoundsScreen(user: widget.user))),
         'sounds',
       ),
-      // Prototype front-end pur (voir demande utilisateur) : pas de
-      // FeatureFlagsService.isEnabled('roman_photo') défini côté admin —
-      // isEnabled() retombe alors sur `true` par défaut (voir
-      // FeatureFlagsService), donc la tuile n'est jamais verrouillée sans
-      // qu'il faille toucher au backend pour ce test.
       DarkActionItem(
         'Roman-photo',
         Icons.auto_stories_rounded,

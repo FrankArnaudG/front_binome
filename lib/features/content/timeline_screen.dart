@@ -1350,7 +1350,6 @@ class _DoodleThreadRow extends StatelessWidget {
                                 style: GoogleFonts.nunito(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 14,
-                                  height: 1.25,
                                   color: theme.textOnBackground,
                                 ),
                               ),

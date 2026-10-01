@@ -54,3 +54,6 @@ flutter_run_*.log.err
 # assets/envi, qui contiennent les versions compressées réellement
 # embarquées), juste du matériel de travail.
 assets/mood_sources/
+
+# APK compilés distribués (voir binomecouple.com/downloads) - artefacts de build, pas du code
+releases/

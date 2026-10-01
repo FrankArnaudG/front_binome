@@ -114,6 +114,13 @@ class ApiClient {
       onMaintenanceBlocked?.call();
     }
 
+    // Compte sanctionné pour avoir trop sollicité le serveur (voir
+    // EnsureNotRateLimitSuspended côté backend) — même principe que le 503
+    // ci-dessus (voir SuspensionService.onBlockedResponse).
+    if (response.statusCode == 423) {
+      onRateLimitSuspended?.call();
+    }
+
     return _decode(response);
   }
 
@@ -144,6 +151,11 @@ class ApiClient {
   /// (maintenance active, voir EnsureNotInMaintenance) — branché par
   /// AppShell comme [onSessionRevoked].
   static void Function()? onMaintenanceBlocked;
+
+  /// Appelé (au moins une fois, sans attendre) quand le serveur répond 423
+  /// (compte sanctionné pour abus de débit, voir EnsureNotRateLimitSuspended)
+  /// — branché par AppShell comme [onMaintenanceBlocked].
+  static void Function()? onRateLimitSuspended;
 
   /// Une panne réseau (serveur injoignable, DNS, timeout...) lève une
   /// exception BRUTE (SocketException/TimeoutException/ClientException),

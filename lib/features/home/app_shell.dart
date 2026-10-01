@@ -9,6 +9,7 @@ import '../../core/maintenance_service.dart';
 import '../../core/realtime_client.dart';
 import '../../core/payment_return_watcher.dart';
 import '../../core/doodle_notifier.dart';
+import '../../core/suspension_service.dart';
 import '../../core/usage_service.dart';
 import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
@@ -23,6 +24,7 @@ import 'widgets/doodle_overlay.dart';
 import 'widgets/game_invite_overlay.dart';
 import 'widgets/maintenance_banner.dart';
 import 'widgets/maintenance_block_screen.dart';
+import 'widgets/suspension_block_screen.dart';
 
 /// Coquille globale qui superpose la barre de navigation classique à
 /// n'importe quel écran poussé après l'authentification — pas seulement
@@ -58,6 +60,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // partout, quel que soit l'écran affiché (voir build() ci-dessous).
     ApiClient.onMaintenanceBlocked = MaintenanceService.instance.onBlockedResponse;
     MaintenanceService.instance.start();
+    // Voir demande utilisateur : détection des comptes qui "sollicitent
+    // trop le serveur" — même principe que la maintenance ci-dessus.
+    SuspensionService.instance.start();
     // Un compte vient de se connecter (voir AppRouter.toHome) : un jeton
     // existe désormais, donc revérifie tout de suite si CE compte précis est
     // autorisé pendant la maintenance — sans ça, `allowed` resterait celui
@@ -70,6 +75,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // supprimé doit repasser _hasToken à faux tout de suite, sinon un écran
     // de blocage resterait affiché par erreur après une déconnexion.
     MaintenanceService.instance.refresh();
+    SuspensionService.instance.refresh();
   }
 
   bool _revokedHandled = false;
@@ -91,6 +97,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ApiClient.onMaintenanceBlocked = null;
     }
     MaintenanceService.instance.stop();
+    SuspensionService.instance.stop();
     AppRouter.showGlobalNavBar.removeListener(_onGlobalNavBarChanged);
     WidgetsBinding.instance.removeObserver(this);
     UsageService.instance.stopSessionPings();
@@ -136,8 +143,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // demande utilisateur : écran de blocage pour les comptes non
     // autorisés, bande d'info pour les comptes autorisés.
     return AnimatedBuilder(
-      animation: MaintenanceService.instance,
+      animation: Listenable.merge([MaintenanceService.instance, SuspensionService.instance]),
       builder: (context, _) {
+        // Vérifié EN PREMIER : une sanction pour abus de débit (voir
+        // demande utilisateur) est propre à CE compte, elle doit
+        // l'emporter même si une maintenance globale est aussi en cours.
+        if (SuspensionService.instance.isSuspended) {
+          return const SuspensionBlockScreen();
+        }
         if (MaintenanceService.instance.isBlocked) {
           return const MaintenanceBlockScreen();
         }
