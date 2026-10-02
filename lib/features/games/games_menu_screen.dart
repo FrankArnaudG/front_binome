@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -106,14 +107,33 @@ class GamesMenuScreen extends StatefulWidget {
   // fois sur cet écran.
   final String initialCategory;
 
-  const GamesMenuScreen({super.key, required this.user, this.initialCategory = 'interactive'});
+  // Faux quand cet écran est embarqué comme contenu d'un onglet qui a déjà
+  // sa propre AppBar (voir GameDiscussionsScreen, onglet "Jeu classique")
+  // — évite une double barre d'app empilée. Vrai par défaut : tous les
+  // autres appels (raccourci, onglet "Jeux") restent inchangés.
+  final bool showAppBar;
+
+  const GamesMenuScreen({
+    super.key,
+    required this.user,
+    this.initialCategory = 'interactive',
+    this.showAppBar = true,
+  });
 
   @override
   State<GamesMenuScreen> createState() => _GamesMenuScreenState();
 }
 
 class _GamesMenuScreenState extends State<GamesMenuScreen> {
-  late Future<List<Game>> _future;
+  // Voir demande utilisateur : "pourquoi ca prend un temp pour chargement,
+  // ce peu ce faire instantanement" — affiche le dernier catalogue connu
+  // tout de suite (voir GameService.cachedGames), avant même la réponse
+  // réseau, même principe que GameDiscussionsScreen._loadCachedThenRefresh
+  // (qui lit le même cache). Avant ce correctif, un FutureBuilder relançait
+  // un appel réseau à CHAQUE ouverture sans jamais regarder le cache.
+  List<Game>? _games;
+  bool _loading = true;
+  bool _error = false;
 
   // Onglet actif (voir demande utilisateur : deux boutons façon navigation
   // pour switcher entre les deux catégories, plutôt que deux sections
@@ -126,7 +146,7 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
   @override
   void initState() {
     super.initState();
-    _future = GameService.instance.fetchGames();
+    _loadCachedThenRefresh();
     // Canal PUBLIC (pas scopé à une Box, voir RealtimeClient.subscribePublic)
     // : diffusé par l'admin à chaque modification du catalogue (voir
     // GameCatalogUpdated côté backend) — permet à cet écran de se
@@ -146,13 +166,36 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
     _refresh();
   }
 
+  Future<void> _loadCachedThenRefresh() async {
+    final cached = await GameService.instance.cachedGames();
+    if (cached != null && mounted) {
+      setState(() {
+        _games = cached;
+        _loading = false;
+      });
+    }
+    await _refresh();
+  }
+
   // L'onglet Jeux reste en mémoire (IndexedStack de MainTabScreen) : sans
   // ce rafraîchissement manuel, le catalogue ne serait plus jamais refetché
   // après le premier chargement de la session.
   Future<void> _refresh() async {
-    final future = GameService.instance.fetchGames();
-    if (mounted) setState(() { _future = future; });
-    await future;
+    try {
+      final games = await GameService.instance.fetchGames();
+      if (!mounted) return;
+      setState(() {
+        _games = games;
+        _loading = false;
+        _error = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_games == null) _error = true;
+      });
+    }
   }
 
   /// "Devine mon émoji" n'a pas de boîtes (contenu libre, composé par le
@@ -222,20 +265,35 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
 
     List<GameBox> boxes = const [];
     Object? lastError;
-    // Un jeu à boîtes (voir Game.usesBoxes) ne doit JAMAIS retomber sur le
-    // gabarit générique GameSessionScreen à cause d'un simple raté réseau —
-    // deux tentatives avant d'abandonner et de le signaler clairement,
-    // plutôt que de rediriger silencieusement vers cet écran obsolète pour
-    // ces jeux (voir le SnackBar plus bas).
-    final attempts = game.usesBoxes ? 2 : 1;
-    for (var attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        boxes = await GameService.instance.fetchBoxes(game.id);
-        lastError = null;
-        break;
-      } catch (e) {
-        lastError = e;
-        debugPrint('GamesMenuScreen: fetchBoxes(${game.id}) a échoué (tentative $attempt/$attempts) ($e)');
+
+    // Voir demande utilisateur : "quand je clique sur jouer maintenant...
+    // ca prend un temp de chargement... ca peu ce faire instantanement" —
+    // la même infra de cache que le catalogue (voir GameService.cachedBoxes,
+    // déjà utilisée par GameBoxesScreen) existait mais n'était pas
+    // consultée ici : "Jouer maintenant" relançait TOUJOURS l'appel réseau,
+    // même pour un jeu déjà joué récemment. On démarre désormais avec les
+    // boîtes en cache si elles existent, et on rafraîchit en arrière-plan
+    // (sans bloquer la navigation) pour que la prochaine partie soit à jour.
+    final cachedBoxes = await GameService.instance.cachedBoxes(game.id);
+    if (cachedBoxes != null && cachedBoxes.isNotEmpty) {
+      boxes = cachedBoxes;
+      unawaited(GameService.instance.fetchBoxes(game.id));
+    } else {
+      // Un jeu à boîtes (voir Game.usesBoxes) ne doit JAMAIS retomber sur le
+      // gabarit générique GameSessionScreen à cause d'un simple raté réseau —
+      // deux tentatives avant d'abandonner et de le signaler clairement,
+      // plutôt que de rediriger silencieusement vers cet écran obsolète pour
+      // ces jeux (voir le SnackBar plus bas).
+      final attempts = game.usesBoxes ? 2 : 1;
+      for (var attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          boxes = await GameService.instance.fetchBoxes(game.id);
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          debugPrint('GamesMenuScreen: fetchBoxes(${game.id}) a échoué (tentative $attempt/$attempts) ($e)');
+        }
       }
     }
     if (!mounted) return;
@@ -301,6 +359,8 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
     final theme = ThemeScope.paletteOf(context);
     final t = LocaleScope.of(context).t;
 
+    if (!widget.showAppBar) return _buildBody(theme, t);
+
     return Scaffold(
       backgroundColor: theme.background,
       appBar: AppBar(
@@ -345,44 +405,54 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
           ),
         ],
       ),
-      body: ThemedBackground(
-        child: SafeArea(
-          child: RefreshIndicator(
-            color: theme.primary,
-            backgroundColor: theme.surface,
-            onRefresh: _refresh,
-            child: FutureBuilder<List<Game>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return ListView(
-                    children: [
-                      EmptyState(
-                        icon: Icons.wifi_off_rounded,
-                        message: t('games_menu_load_error'),
-                      ),
-                    ],
-                  );
-                }
-                final games = snapshot.data ?? [];
-                final filtered = games.where((g) => g.isInteractiveCategory == (_selectedCategory == 'interactive')).toList();
+      body: _buildBody(theme, t),
+    );
+  }
+
+  Widget _buildBody(ThemePalette theme, String Function(String, [Map<String, String>?]) t) {
+    return ThemedBackground(
+      child: SafeArea(
+        child: RefreshIndicator(
+          color: theme.primary,
+          backgroundColor: theme.surface,
+          onRefresh: _refresh,
+          child: Builder(
+            builder: (context) {
+              if (_loading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (_error) {
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                   children: [
-                    // Deux boutons façon navigation pour switcher entre les
-                    // catégories (voir demande utilisateur) — "Jeu
-                    // interactif" (les 8 mini-jeux temps réel, voir
-                    // Game.isInteractiveCategory) en premier, puisque c'est
-                    // le groupe qui demande une vraie présence simultanée
-                    // des deux partenaires ; "Jeu classique" ensuite (boîtes
-                    // à cartes/prompts, échange asynchrone).
+                    EmptyState(
+                      icon: Icons.wifi_off_rounded,
+                      message: t('games_menu_load_error'),
+                    ),
+                  ],
+                );
+              }
+              final games = _games ?? [];
+              final filtered = games.where((g) => g.isInteractiveCategory == (_selectedCategory == 'interactive')).toList();
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                children: [
+                  // Deux boutons façon navigation pour switcher entre les
+                  // catégories (voir demande utilisateur) — "Jeu
+                  // interactif" (les 8 mini-jeux temps réel, voir
+                  // Game.isInteractiveCategory) en premier, puisque c'est
+                  // le groupe qui demande une vraie présence simultanée
+                  // des deux partenaires ; "Jeu classique" ensuite (boîtes
+                  // à cartes/prompts, échange asynchrone). Masqué quand cet
+                  // écran est embarqué sans AppBar (voir GameDiscussionsScreen,
+                  // onglet "Jeu classique") — redondant avec le sélecteur
+                  // "Discussions / Jeu classique" déjà au-dessus (voir
+                  // demande utilisateur : "la deuxieme ranger de btn...
+                  // supprime").
+                  if (widget.showAppBar) ...[
                     Row(
                       children: [
                         Expanded(
-                          child: _CategoryTab(
+                          child: CategoryTab(
                             label: t('games_menu_category_interactive'),
                             selected: _selectedCategory == 'interactive',
                             theme: theme,
@@ -391,7 +461,7 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: _CategoryTab(
+                          child: CategoryTab(
                             label: t('games_menu_category_classic'),
                             selected: _selectedCategory == 'classic',
                             theme: theme,
@@ -401,39 +471,39 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    // Sous-titre propre à la catégorie active (voir demande
-                    // utilisateur) — remplace l'ancien titre/sous-titre fixe
-                    // "Moments de Complicité".
-                    Text(
-                      _selectedCategory == 'interactive'
-                          ? t('games_menu_category_interactive_subtitle')
-                          : t('games_menu_category_classic_subtitle'),
-                      style: GoogleFonts.nunito(
-                        fontSize: 12,
-                        color: theme.textOnBackgroundMuted,
-                      ),
+                  ],
+                  // Sous-titre propre à la catégorie active (voir demande
+                  // utilisateur) — remplace l'ancien titre/sous-titre fixe
+                  // "Moments de Complicité".
+                  Text(
+                    _selectedCategory == 'interactive'
+                        ? t('games_menu_category_interactive_subtitle')
+                        : t('games_menu_category_classic_subtitle'),
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      color: theme.textOnBackgroundMuted,
                     ),
-                    const SizedBox(height: 14),
-                    if (filtered.isEmpty)
-                      EmptyState(
-                        icon: Icons.sports_esports_rounded,
-                        message: t('games_menu_empty'),
-                      )
-                    else
-                      ...filtered.map(
-                        (game) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _GameFlipCard(
-                            game: game,
-                            theme: theme,
-                            onPlay: () => _playGame(game),
-                          ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (filtered.isEmpty)
+                    EmptyState(
+                      icon: Icons.sports_esports_rounded,
+                      message: t('games_menu_empty'),
+                    )
+                  else
+                    ...filtered.map(
+                      (game) => Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _GameFlipCard(
+                          game: game,
+                          theme: theme,
+                          onPlay: () => _playGame(game),
                         ),
                       ),
-                  ],
-                );
-              },
-            ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -445,13 +515,14 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
 /// classique" (voir GamesMenuScreen._selectedCategory) — pleine largeur,
 /// même esprit que _FilterChip (TimelineScreen) mais côte à côte plutôt
 /// qu'en Wrap, pour lire comme deux onglets plutôt qu'une liste de filtres.
-class _CategoryTab extends StatelessWidget {
+class CategoryTab extends StatelessWidget {
   final String label;
   final bool selected;
   final ThemePalette theme;
   final VoidCallback onTap;
 
-  const _CategoryTab({
+  const CategoryTab({
+    super.key,
     required this.label,
     required this.selected,
     required this.theme,

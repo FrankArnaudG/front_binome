@@ -2119,7 +2119,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       ),
     );
     if (result == null || !mounted) return;
-    setState(() => _replies = [..._replies, result]);
+    // Même protection que _sendPending/_onRealtimeEvent (SendCreated) : si
+    // l'écho temps réel a déjà ajouté cette carte avant que cette réponse
+    // HTTP ne revienne, l'ajouter une seconde fois dupliquait son id dans
+    // [_replies] — deux bulles réutilisaient alors la MÊME GlobalKey (voir
+    // _keyFor), ce qui faisait planter tout l'arbre de rendu ("Duplicate
+    // GlobalKey detected in widget tree") et laissait l'écran entièrement
+    // vide jusqu'à rouvrir la discussion (voir demande utilisateur).
+    if (!_replies.any((r) => r.id == result.id)) {
+      setState(() => _replies = [..._replies, result]);
+    }
     _scrollToBottom();
     _syncRepliesCacheSilently();
   }

@@ -38,6 +38,12 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
   bool _loading = true;
   bool _error = false;
 
+  // Voir demande utilisateur : "la transition de passage entre discussion
+  // et jeu classique se fassent comme dans jeux" — un simple index (même
+  // principe que GamesMenuScreen._selectedCategory) plutôt qu'un
+  // TabController : bascule immédiate, sans animation de glissement.
+  int _tabIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -111,7 +117,49 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
         ),
       ),
       body: ThemedBackground(
-        child: SafeArea(child: _buildBody(theme, t)),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Même design que le sélecteur "Jeu interactif / Jeu
+              // classique" de GamesMenuScreen (voir demande utilisateur :
+              // "je veux ce design") — pastilles pleine largeur, pas une
+              // TabBar Material classique.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CategoryTab(
+                        label: 'Discussions',
+                        selected: _tabIndex == 0,
+                        theme: theme,
+                        onTap: () => setState(() => _tabIndex = 0),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: CategoryTab(
+                        label: 'Jeu classique',
+                        selected: _tabIndex == 1,
+                        theme: theme,
+                        onTap: () => setState(() => _tabIndex = 1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: IndexedStack(
+                  index: _tabIndex,
+                  children: [
+                    _buildBody(theme, t),
+                    GamesMenuScreen(user: widget.user, initialCategory: 'classic', showAppBar: false),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
