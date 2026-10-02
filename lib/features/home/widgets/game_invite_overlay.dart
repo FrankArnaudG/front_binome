@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/app_router.dart';
 import '../../../core/game_invite_notifier.dart';
 import '../../../l10n/locale_scope.dart';
@@ -9,6 +10,8 @@ import '../../../theme/theme_scope.dart';
 import '../../box/box_scope.dart';
 import '../../games/game_invite_navigation.dart';
 import '../../games/game_service.dart';
+import '../../shop/shop_screen.dart';
+import '../../shop/subscription_screen.dart';
 
 /// Nom affiché pour un `session_type` — pas besoin d'aller chercher le
 /// [Game] complet juste pour ça (voir demande utilisateur : le pop-up doit
@@ -165,21 +168,70 @@ class _GameInviteCardState extends State<_GameInviteCard> {
       } else {
         await GameService.instance.declineGameInvite(widget.invite.id);
       }
-    } catch (_) {
+    } catch (e) {
       // L'auteur verra de toute façon l'expiration au bout de 60s si rien
       // n'aboutit (voir GameInviteWaitingScreen). Côté invité·e, on le dit
-      // plutôt que de laisser croire que rien ne s'est passé.
+      // plutôt que de laisser croire que rien ne s'est passé — voir demande
+      // utilisateur : "des que l'invitation est envoyée et que je clique
+      // sur rejoindre, il faut vérifier d'abord si y'a des pièces ou
+      // abonnement, si y'a pas, tu affiches un modal et tu stoppes la
+      // connexion" — la connexion est déjà stoppée (aucune navigation vers
+      // l'écran de jeu n'a lieu ici), reste à remplacer le SnackBar par un
+      // vrai modal pour ce cas précis (solde insuffisant), plus visible
+      // qu'un message qui disparaît tout seul.
       if (accept) {
         final context = AppRouter.navigatorKey.currentContext;
         if (context != null && context.mounted) {
-          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text("Impossible de rejoindre la partie. Réessaie dans un instant.")),
-          );
+          final message = e is ApiException
+              ? e.message
+              : "Impossible de rejoindre la partie. Réessaie dans un instant.";
+          final isWalletIssue = e is ApiException && e.statusCode == 422 && e.message.toLowerCase().contains('solde');
+          if (isWalletIssue) {
+            _showInsufficientFundsDialog(context, message);
+          } else {
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
+          }
         }
       }
     } finally {
       if (accept) GameInviteNotifier.instance.setJoining(false);
     }
+  }
+
+  /// Voir demande utilisateur : "tu affiches un modal et tu stoppes la
+  /// connexion" — modal bloquant (pas un SnackBar qui disparaît tout seul)
+  /// dès que le serveur refuse de rejoindre faute de solde/abonnement ;
+  /// propose les deux options qui lèvent le blocage ("se réabonner ou
+  /// acheter des pièces", sur leurs écrans dédiés respectifs).
+  void _showInsufficientFundsDialog(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.account_balance_wallet_outlined),
+        title: const Text('Impossible de rejoindre'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Fermer'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen()));
+            },
+            child: const Text('Acheter des pièces'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+            },
+            child: const Text("S'abonner"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

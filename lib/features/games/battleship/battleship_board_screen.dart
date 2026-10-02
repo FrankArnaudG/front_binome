@@ -20,6 +20,8 @@ import '../widgets/always_on_top_layer.dart';
 import '../widgets/coin_billing_ring.dart';
 import '../widgets/game_comment_overlay.dart';
 import '../widgets/game_guide_voice_demo.dart';
+import '../widgets/game_resume_action.dart';
+import '../widgets/game_wallet_depleted_notice.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
@@ -97,6 +99,7 @@ class BattleshipBoardScreen extends StatefulWidget {
 class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   late StreamSubscription<BattleshipBoardState> _subscription;
   late BattleshipBoardState _state;
+  bool _resuming = false;
   Timer? _clockTimer;
   bool _scoreboardShown = false;
   // Instant de fin de partie vu par CET appareil : fige chrono et pièces.
@@ -569,14 +572,22 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
               targetShapeBorder: const CircleBorder(),
               child: _state.isPaused
                   ? IconButton(
-                      icon: const Icon(Icons.play_circle_outline),
+                      icon: _resuming
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_circle_outline),
                       tooltip: (_state.pausedByMe || _state.pausedByUserId == null)
                           ? LocaleScope.t(context, 'memory_board_resume_tooltip')
                           : LocaleScope.t(context, 'memory_board_paused_by_partner_tooltip', {
                               'name': widget.playerNames[_state.pausedByUserId] ??
                                   LocaleScope.t(context, 'memory_board_partner_fallback'),
                             }),
-                      onPressed: (_state.pausedByMe || _state.pausedByUserId == null) ? () => widget.transport.resume() : null,
+                      onPressed: (!_resuming && (_state.pausedByMe || _state.pausedByUserId == null))
+                          ? () => handleResumeTap(context, widget.transport.resume, (busy) => setState(() => _resuming = busy))
+                          : null,
                     )
                   : IconButton(
                       icon: const Icon(Icons.pause_circle_outline),
@@ -734,11 +745,20 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                           if (_state.pausedByMe || _state.pausedByUserId == null) ...[
                             const SizedBox(height: 20),
                             ElevatedButton.icon(
-                              onPressed: () => widget.transport.resume(),
-                              icon: const Icon(Icons.play_arrow_rounded),
+                              onPressed: _resuming
+                                  ? null
+                                  : () => handleResumeTap(context, widget.transport.resume, (busy) => setState(() => _resuming = busy)),
+                              icon: _resuming
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.play_arrow_rounded),
                               label: Text(LocaleScope.t(context, 'memory_board_resume_button')),
                               style: ElevatedButton.styleFrom(backgroundColor: theme.primary, foregroundColor: Colors.white),
                             ),
+                            if (_state.pausedByUserId == null) GameWalletDepletedNotice(theme: theme),
                           ],
                         ],
                       ),
