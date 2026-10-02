@@ -11,6 +11,8 @@ import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../box/box_scope.dart';
 import '../box/box_service.dart';
+import '../shop/shop_screen.dart';
+import '../shop/subscription_screen.dart';
 import 'game_invite_navigation.dart';
 import 'game_service.dart';
 
@@ -369,21 +371,55 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: theme.primary.withValues(alpha: 0.25)),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Icon(Icons.account_balance_wallet_outlined, size: 18, color: theme.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _joinFailedMessage!,
-                                style: GoogleFonts.nunito(
-                                  fontSize: 12.5,
-                                  height: 1.35,
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.textOnBackground,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.account_balance_wallet_outlined, size: 18, color: theme.primary),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _joinFailedMessage!,
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 12.5,
+                                      height: 1.35,
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.textOnBackground,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // Voir demande utilisateur : "ajouter le btn
+                            // s'abonner et acheter token" — mêmes
+                            // destinations que la version modal côté
+                            // invité·e (voir insufficient_funds_dialog.dart).
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => Navigator.of(context)
+                                        .push(MaterialPageRoute(builder: (_) => const ShopScreen())),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: theme.primary,
+                                      side: BorderSide(color: theme.primary.withValues(alpha: 0.4)),
+                                    ),
+                                    child: const Text('Acheter des tokens'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: () => Navigator.of(context)
+                                        .push(MaterialPageRoute(builder: (_) => const SubscriptionScreen())),
+                                    style: FilledButton.styleFrom(backgroundColor: theme.primary),
+                                    child: const Text("S'abonner"),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
