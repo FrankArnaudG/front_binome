@@ -55,7 +55,7 @@ class EventPageService {
     return data.map((e) => EventPageRsvp.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Tarif courant de publication (pièces) — affiché avant confirmation.
+  /// Tarif courant de publication (tokens) — affiché avant confirmation.
   Future<double> fetchPublishFee() async {
     final data = await ApiClient.instance.get('/event-pages/settings') as Map<String, dynamic>;
     final fee = data['publish_fee_mariage'];

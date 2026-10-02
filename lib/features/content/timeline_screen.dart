@@ -773,7 +773,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           child: Column(
             children: [
               // Voir demande utilisateur : même en-tête que l'onglet Duo,
-              // avatars + solde de pièces compris (même wordmark, même
+              // avatars + solde de tokens compris (même wordmark, même
               // taille, même étendue/padding) plutôt qu'une AppBar avec le
               // titre "Carnet de bord" — voir DashboardTab pour la
               // structure copiée à l'identique.

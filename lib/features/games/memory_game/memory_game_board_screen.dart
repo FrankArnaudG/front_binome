@@ -40,7 +40,7 @@ import 'memory_game_transport_local.dart';
 /// nom, celui qui joue retourner la carte 1... retourner la carte 2...
 /// garder les deux cartes ouvertes et un guide... l'essai a échoué et
 /// c'est le tour de ton binôme... revenir à l'indication qui dit qui doit
-/// jouer. aussi un guide sur le temps/les pièces consommées" + message
+/// jouer. aussi un guide sur le temps/les tokens consommés" + message
 /// suivant : "un guide sur comment envoyer un message, activer le micro
 /// et la caméra"). Voir _startGuideStep/_checkGuideProgress dans
 /// _MemoryGameBoardScreenState pour la machine à états qui enchaîne ces
@@ -131,9 +131,9 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   // dans initState) — cette clé donne donc accès au bon Scaffold, LE SIEN.
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   // Instant où la partie s'est terminée (vu par CET appareil) : fige le chrono
-  // et le compteur de pièces au lieu de les laisser tourner après la fin.
+  // et le compteur de tokens au lieu de les laisser tourner après la fin.
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
-  // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
+  // progression coté token (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
   // Guide pas-à-pas (voir demande utilisateur : "ajouter dans tous les
@@ -224,7 +224,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   /// demande utilisateur : "il sera contraint de mettre en pause pour
   /// pouvoir lancer le guide pour ne pas le facturer") : le guide peut
   /// prendre du temps à parcourir, et on ne veut pas continuer à décompter
-  /// le chrono/les pièces pendant ce temps. Le binôme voit alors juste la
+  /// le chrono/les tokens pendant ce temps. Le binôme voit alors juste la
   /// partie "en pause" habituelle (voir demande utilisateur : "l'autre
   /// user ne voit rien"), jamais les bulles du guide elles-mêmes, qui
   /// restent purement locales à cet écran.
@@ -482,7 +482,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
 
-  /// Fraction (0..1) de progression vers la prochaine pièce déduite —
+  /// Fraction (0..1) de progression vers le prochain token déduit —
   /// purement indicatif (voir doc de CoinBillingRing), calculé à partir du
   /// même réglage que le serveur (minutes_per_coin/grace_period_seconds)
   /// mais jamais la source de vérité de la facturation elle-même.
@@ -493,7 +493,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     return (elapsed % cycleSeconds) / cycleSeconds;
   }
 
-  /// Nombre de pièces consommées depuis le début de CETTE partie —
+  /// Nombre de tokens consommés depuis le début de CETTE partie —
   /// fluide comme l'anneau (même calcul, voir _elapsedBillableSeconds),
   /// plutôt que calé sur le vrai débit serveur qui n'arrive qu'une fois
   /// par minute (voir demande utilisateur : "il s'incrémente pas au fur
@@ -663,7 +663,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
     // pausedAt) — sinon le chrono continuerait de tourner à l'écran pendant
     // la pause, alors que startedAt n'est décalé qu'à la reprise.
     final now = _state.pausedAt ?? ServerClock.instance.now();
-    // Le chrono attend la même période de grâce que l'anneau de pièce
+    // Le chrono attend la même période de grâce que l'anneau de token
     // (voir CoinBillingRing/demande utilisateur : "les 10 secondes
     // doivent représenter le temps que doit patienter le chrono avant de
     // se mettre en marche officiellement") — reste à 0:00 tant que la

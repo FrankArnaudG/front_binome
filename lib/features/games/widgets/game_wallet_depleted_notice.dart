@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../theme/theme_palette.dart';
 
 /// Carte persistante sous le bouton "Reprendre" quand la pause est due à un
-/// solde de pièces épuisé — voir demande utilisateur : "écrire en dessous
+/// solde de tokens épuisé — voir demande utilisateur : "écrire en dessous
 /// du bouton pour faire passer le message, tu peux t'inspirer de quand on
 /// envoie une demande pour rejoindre le jeu et que le binôme n'est pas
 /// connecté" (voir le bandeau "Ton binôme n'est pas en ligne" dans
@@ -36,12 +36,12 @@ class GameWalletDepletedNotice extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Solde de pièces épuisé.',
+                    'Solde de tokens épuisé.',
                     style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w800, color: theme.textOnBackground),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "Recharge des pièces ou abonne-toi pour que n'importe qui puisse reprendre la partie.",
+                    "Recharge des tokens ou abonne-toi pour que n'importe qui puisse reprendre la partie.",
                     style: GoogleFonts.nunito(fontSize: 12.5, height: 1.35, color: theme.textOnBackgroundMuted),
                   ),
                 ],

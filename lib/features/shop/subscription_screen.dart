@@ -18,7 +18,7 @@ import 'preferred_currency_notifier.dart';
 import 'subscription_service.dart';
 import 'subscription_status_notifier.dart';
 
-/// Écran de test pour l'abonnement — alternative au système de pièces
+/// Écran de test pour l'abonnement — alternative au système de tokens
 /// (voir ShopScreen, dont cet écran reprend la même structure : choix de
 /// devise, feuille de choix du moyen de paiement, commande "en attente"
 /// confirmée manuellement par un admin, aucune vraie passerelle de

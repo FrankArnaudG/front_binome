@@ -77,7 +77,7 @@ class _PublishConfirmDialog extends StatelessWidget {
                   children: [
                     const CoinIcon(size: 18),
                     const SizedBox(width: 6),
-                    Text('${fee.toStringAsFixed(fee == fee.roundToDouble() ? 0 : 2)} pièces',
+                    Text('${fee.toStringAsFixed(fee == fee.roundToDouble() ? 0 : 2)} tokens',
                         style: GoogleFonts.nunito(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
                   ],
                 ),

@@ -55,7 +55,7 @@ void main() async {
   // toujours appelé ensuite par les écrans concernés dès qu'il y a réseau).
   await WalletBalanceNotifier.instance.loadCached();
   // Idem pour le statut d'abonnement (voir CoinBalanceBadge) : sans ça, le
-  // badge affichait d'abord le solde de pièces avant de basculer sur "∞"
+  // badge affichait d'abord le solde de tokens avant de basculer sur "∞"
   // dès que le serveur répondait — un flash visible constaté en réel (voir
   // demande utilisateur).
   await SubscriptionStatusNotifier.instance.loadCached();

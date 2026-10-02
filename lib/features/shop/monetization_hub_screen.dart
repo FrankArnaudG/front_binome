@@ -13,9 +13,9 @@ import 'shop_screen.dart';
 import 'subscription_screen.dart';
 
 /// Écran d'entrée de la Boutique — voir demande utilisateur : l'ancien
-/// accès direct à [ShopScreen] (les packs de pièces) ne montrait
+/// accès direct à [ShopScreen] (les packs de tokens) ne montrait
 /// l'abonnement que via une petite bannière secondaire, facile à ne jamais
-/// remarquer. Ici, les deux façons de payer (abonnement ou pièces à
+/// remarquer. Ici, les deux façons de payer (abonnement ou tokens à
 /// l'unité) sont présentées à égalité, dès l'ouverture, chacune avec un "i"
 /// expliquant son avantage — c'est CET écran que la tuile "Boutique" du
 /// Dashboard ouvre désormais, [ShopScreen]/[SubscriptionScreen] restant
@@ -34,7 +34,7 @@ class _MonetizationHubScreenState extends State<MonetizationHubScreen> {
   void initState() {
     super.initState();
     // Le choix de devise doit être fait ICI, avant même de choisir entre
-    // abonnement et pièces — les deux écrans suivants en ont besoin pour
+    // abonnement et tokens — les deux écrans suivants en ont besoin pour
     // afficher des prix cohérents (voir demande utilisateur : "des que lon
     // ouvre on doit voir on demande de choisir la devise si pas deja
     // choisit").

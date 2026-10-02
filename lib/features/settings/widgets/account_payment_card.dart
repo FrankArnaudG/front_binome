@@ -8,7 +8,7 @@ import '../../../widgets/themed_card.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
 
-/// "Compte & Paiement" — solde de pièces + accès direct à la Boutique pour
+/// "Compte & Paiement" — solde de tokens + accès direct à la Boutique pour
 /// recharger, sans devoir repasser par l'onglet Jeux/Dashboard.
 class AccountPaymentCard extends StatefulWidget {
   const AccountPaymentCard({super.key});

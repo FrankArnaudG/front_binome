@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// Bouton principal de l'app (pilule, style venant du thème global) avec un
 /// état de chargement intégré, pour éviter de dupliquer ce pattern sur
 /// chaque écran avec appel API (créer/rejoindre une Box, débloquer un pack,
-/// envoyer un cadeau, acheter des pièces...).
+/// envoyer un cadeau, acheter des tokens...).
 class PrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;

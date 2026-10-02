@@ -173,7 +173,7 @@ class _GameInviteCardState extends State<_GameInviteCard> {
       // n'aboutit (voir GameInviteWaitingScreen). Côté invité·e, on le dit
       // plutôt que de laisser croire que rien ne s'est passé — voir demande
       // utilisateur : "des que l'invitation est envoyée et que je clique
-      // sur rejoindre, il faut vérifier d'abord si y'a des pièces ou
+      // sur rejoindre, il faut vérifier d'abord si y'a des tokens ou
       // abonnement, si y'a pas, tu affiches un modal et tu stoppes la
       // connexion" — la connexion est déjà stoppée (aucune navigation vers
       // l'écran de jeu n'a lieu ici), reste à remplacer le SnackBar par un
@@ -202,7 +202,7 @@ class _GameInviteCardState extends State<_GameInviteCard> {
   /// connexion" — modal bloquant (pas un SnackBar qui disparaît tout seul)
   /// dès que le serveur refuse de rejoindre faute de solde/abonnement ;
   /// propose les deux options qui lèvent le blocage ("se réabonner ou
-  /// acheter des pièces", sur leurs écrans dédiés respectifs).
+  /// acheter des tokens", sur leurs écrans dédiés respectifs).
   void _showInsufficientFundsDialog(BuildContext context, String message) {
     showDialog<void>(
       context: context,

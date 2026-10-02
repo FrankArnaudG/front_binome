@@ -457,7 +457,7 @@ class ContentService {
     return Send.fromJson(data);
   }
 
-  /// Prix courant en pièces d'un battement de cœur, réglable depuis l'espace
+  /// Prix courant en tokens d'un battement de cœur, réglable depuis l'espace
   /// admin — affiché sur la tuile du Dashboard avant l'envoi.
   Future<int> fetchHeartbeatPrice() async {
     final data = await ApiClient.instance.get('/heartbeat/price') as Map<String, dynamic>;

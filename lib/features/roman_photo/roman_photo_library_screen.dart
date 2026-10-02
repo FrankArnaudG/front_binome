@@ -672,7 +672,7 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-/// Badge "Gratuit" ou prix en pièces — juste l'indication pour l'instant,
+/// Badge "Gratuit" ou prix en tokens — juste l'indication pour l'instant,
 /// aucun débit ni verrouillage réel (voir RomanPhotoVolume.coinPrice).
 class _PriceBadge extends StatelessWidget {
   final int coinPrice;
@@ -683,7 +683,7 @@ class _PriceBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     // Abonnement actif : le tome est gratuit et illimité (voir
     // RomanPhotoVolume.needsPurchase et RomanPhotoPurchaseController côté
-    // backend) — plus aucune raison d'afficher un prix en pièces (voir
+    // backend) — plus aucune raison d'afficher un prix en tokens (voir
     // demande utilisateur : "rien ne doit apparaître").
     if (coinPrice > 0 && SubscriptionStatusNotifier.instance.isActive) {
       return const SizedBox.shrink();

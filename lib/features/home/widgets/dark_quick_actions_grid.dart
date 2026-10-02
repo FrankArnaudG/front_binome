@@ -135,7 +135,7 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
 
     try {
       final send = await ContentService.instance.sendHeartbeat(message: message);
-      // Coûte des pièces désormais (voir HeartbeatController::COIN_COST) —
+      // Coûte des tokens désormais (voir HeartbeatController::COIN_COST) —
       // même geste de rafraîchissement que pour un envoi de poème/cadeau,
       // pour que le badge de solde du Dashboard reste à jour.
       await WalletBalanceNotifier.instance.refresh();
@@ -352,10 +352,10 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         tr('action_shop'),
         Icons.monetization_on_rounded,
         (t) => t.primaryDeep,
-        // Ouvre le choix abonnement/pièces (voir demande utilisateur : les
+        // Ouvre le choix abonnement/tokens (voir demande utilisateur : les
         // deux options doivent être vues dès l'ouverture, pas seulement
         // l'une d'elles avec l'autre reléguée à une bannière) plutôt que
-        // ShopScreen (les packs de pièces) directement.
+        // ShopScreen (les packs de tokens) directement.
         (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const MonetizationHubScreen())),
         'shop',
         iconBuilder: (color) => CoinIcon(size: 26, fallbackColor: color),

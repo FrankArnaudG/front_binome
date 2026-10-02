@@ -32,7 +32,7 @@ class VoiceCallOverlay extends StatefulWidget {
   // croire que le bouton a bougé/disparu, tout en rendant clair qu'il faut
   // reprendre la partie pour l'utiliser.
   final bool paused;
-  // Solde de pièces du couple épuisé en cours de partie (voir
+  // Solde de tokens du couple épuisé en cours de partie (voir
   // GameWalletGuard/demande utilisateur : "on coupe automatiquement le
   // micro/vidéo") — raccroche l'appel en cours dès que ce flag passe à
   // vrai, comme un appui sur le bouton raccrocher.

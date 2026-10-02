@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'asset_or_fallback.dart';
 
-/// Icône de la monnaie virtuelle ("pièces") — utilise l'illustration
+/// Icône de la monnaie virtuelle ("tokens") — utilise l'illustration
 /// `assets/images/shop/yeleen.png` par défaut, ou [assetPath] si fourni (ex.
 /// un visuel propre à un pack de la Boutique, voir `CoinPack.imagePath`).
 /// Retombe sur l'icône Material classique si l'asset n'existe pas encore

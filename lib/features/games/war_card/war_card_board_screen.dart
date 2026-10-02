@@ -93,7 +93,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   Timer? _clockTimer;
   bool _scoreboardShown = false;
   // Réglage admin (minutes_per_coin/grace_period_seconds) pour l'anneau de
-  // progression coté pièce (voir CoinBillingRing/demande utilisateur) —
+  // progression coté token (voir CoinBillingRing/demande utilisateur) —
   // chargé une seule fois, uniquement utile en mode à distance.
   Map<String, int>? _economyRate;
 
@@ -361,7 +361,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     return elapsed < 0 ? 0 : elapsed.toDouble();
   }
 
-  /// Fraction (0..1) de progression vers la prochaine pièce déduite —
+  /// Fraction (0..1) de progression vers le prochain token déduit —
   /// purement indicatif (voir doc de CoinBillingRing), calculé à partir du
   /// même réglage que le serveur (minutes_per_coin/grace_period_seconds)
   /// mais jamais la source de vérité de la facturation elle-même.
@@ -372,7 +372,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     return (elapsed % cycleSeconds) / cycleSeconds;
   }
 
-  /// Nombre de pièces consommées depuis le début de CETTE partie — fluide
+  /// Nombre de tokens consommés depuis le début de CETTE partie — fluide
   /// comme l'anneau (même calcul), voir demande utilisateur.
   double? _coinsConsumed() {
     final elapsed = _elapsedBillableSeconds();
@@ -699,7 +699,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     // Voir demande utilisateur : le chrono continue après la fin de la
     // manche, jusqu'à la fermeture VRAIE de la session.
     final now = _state.pausedAt ?? ServerClock.instance.now();
-    // Le chrono attend la même période de grâce que l'anneau de pièce
+    // Le chrono attend la même période de grâce que l'anneau de token
     // (voir CoinBillingRing/demande utilisateur) — reste à 0:00 tant que
     // la grâce n'est pas écoulée, nul en dehors du mode à distance.
     final graceSeconds = _economyRate?['grace_period_seconds'] ?? 0;

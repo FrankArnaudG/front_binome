@@ -3,7 +3,7 @@ import '../../models/subscription.dart';
 import '../../models/subscription_order.dart';
 import '../../models/subscription_plan.dart';
 
-/// Appels API pour l'Abonnement — alternative au système de pièces (voir
+/// Appels API pour l'Abonnement — alternative au système de tokens (voir
 /// ShopService), même esprit : pas d'état partagé ici, seul le statut
 /// "abonné actuellement" (géré par [SubscriptionStatusNotifier]) a besoin
 /// d'être réactif entre écrans.

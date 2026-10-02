@@ -117,7 +117,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // (jusqu'à 10s, voir DoodleNotifier).
       DoodleNotifier.instance.pollNow();
       // Un paiement LigdiCash se termine dans le navigateur externe, hors
-      // de l'app — au retour (résumé), le solde de pièces/l'abonnement
+      // de l'app — au retour (résumé), le solde de tokens/l'abonnement
       // peuvent avoir changé sans qu'aucun écran n'ait rien demandé. On
       // rafraîchit ici, au niveau global, plutôt que dans ShopScreen/
       // SubscriptionScreen uniquement, pour couvrir aussi le cas où

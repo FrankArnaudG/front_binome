@@ -548,8 +548,8 @@ class _GiftTileState extends State<_GiftTile>
                     // (voir demande utilisateur : "rien ne doit
                     // apparaître").
                     if (!SubscriptionStatusNotifier.instance.isActive)
-                      // Pastille sombre neutre (pas teintée du thème) : la
-                      // pièce dorée s'y détache et "brille" par contraste,
+                      // Pastille sombre neutre (pas teintée du thème) : le
+                      // token doré s'y détache et "brille" par contraste,
                       // plutôt que de se fondre dans un aplat coloré.
                       Container(
                         padding: const EdgeInsets.symmetric(

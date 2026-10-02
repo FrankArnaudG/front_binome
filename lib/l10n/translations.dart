@@ -803,7 +803,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} a mis la partie en pause',
     'memory_board_paused_title': 'Partie en pause',
     'memory_board_paused_subtitle_me': 'Reprends quand tu es prêt·e',
-    'memory_board_paused_subtitle_depleted': 'Solde de pièces épuisé — recharge, puis n\'importe qui peut reprendre.',
+    'memory_board_paused_subtitle_depleted': 'Solde de tokens épuisé — recharge, puis n\'importe qui peut reprendre.',
     'memory_board_paused_subtitle_partner':
         '{name} a mis la partie en pause - seul·e {name} peut la reprendre',
     'memory_board_resume_button': 'Reprendre la partie',
@@ -1672,7 +1672,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} paused the game',
     'memory_board_paused_title': 'Game paused',
     'memory_board_paused_subtitle_me': 'Resume whenever you\'re ready',
-    'memory_board_paused_subtitle_depleted': 'Coin balance empty — top up, then either of you can resume.',
+    'memory_board_paused_subtitle_depleted': 'Token balance empty — top up, then either of you can resume.',
     'memory_board_paused_subtitle_partner':
         '{name} paused the game — only {name} can resume it',
     'memory_board_resume_button': 'Resume game',
@@ -2563,7 +2563,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} hat das Spiel pausiert',
     'memory_board_paused_title': 'Spiel pausiert',
     'memory_board_paused_subtitle_me': 'Setze fort, wann immer du bereit bist',
-    'memory_board_paused_subtitle_depleted': 'Münzguthaben aufgebraucht — aufladen, danach kann jede·r fortsetzen.',
+    'memory_board_paused_subtitle_depleted': 'Token-Guthaben aufgebraucht — aufladen, danach kann jede·r fortsetzen.',
     'memory_board_paused_subtitle_partner':
         '{name} hat das Spiel pausiert — nur {name} kann es fortsetzen',
     'memory_board_resume_button': 'Spiel fortsetzen',
@@ -3454,7 +3454,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} puso el juego en pausa',
     'memory_board_paused_title': 'Partida en pausa',
     'memory_board_paused_subtitle_me': 'Reanuda cuando estés listo(a)',
-    'memory_board_paused_subtitle_depleted': 'Saldo de monedas agotado — recarga y cualquiera puede reanudar.',
+    'memory_board_paused_subtitle_depleted': 'Saldo de Tokens agotado — recarga y cualquiera puede reanudar.',
     'memory_board_paused_subtitle_partner':
         '{name} puso el juego en pausa — solo {name} puede reanudarlo',
     'memory_board_resume_button': 'Reanudar partida',
@@ -4259,7 +4259,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name}暂停了游戏',
     'memory_board_paused_title': '游戏已暂停',
     'memory_board_paused_subtitle_me': '准备好后随时继续',
-    'memory_board_paused_subtitle_depleted': '代币余额已用完——请充值，之后任何一方都可以继续。',
+    'memory_board_paused_subtitle_depleted': 'Token余额已用完——请充值，之后任何一方都可以继续。',
     'memory_board_paused_subtitle_partner': '{name}暂停了游戏——只有{name}可以继续',
     'memory_board_resume_button': '继续游戏',
     'memory_board_abandon_title': '要放弃这局游戏吗？',
@@ -5083,7 +5083,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} أوقف اللعبة مؤقتًا',
     'memory_board_paused_title': 'اللعبة متوقفة مؤقتًا',
     'memory_board_paused_subtitle_me': 'استأنف عندما تكون جاهزًا',
-    'memory_board_paused_subtitle_depleted': 'رصيد القطع نفد — أعد الشحن، ثم يمكن لأي منكما المتابعة.',
+    'memory_board_paused_subtitle_depleted': 'رصيد Token نفد — أعد الشحن، ثم يمكن لأي منكما المتابعة.',
     'memory_board_paused_subtitle_partner':
         '{name} أوقف اللعبة مؤقتًا — {name} وحده يمكنه استئنافها',
     'memory_board_resume_button': 'استئناف اللعبة',
@@ -5956,7 +5956,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} menjeda permainan',
     'memory_board_paused_title': 'Permainan dijeda',
     'memory_board_paused_subtitle_me': 'Lanjutkan kapan pun kamu siap',
-    'memory_board_paused_subtitle_depleted': 'Saldo koin habis — isi ulang, lalu siapa pun bisa melanjutkan.',
+    'memory_board_paused_subtitle_depleted': 'Saldo Token habis — isi ulang, lalu siapa pun bisa melanjutkan.',
     'memory_board_paused_subtitle_partner':
         '{name} menjeda permainan — hanya {name} yang bisa melanjutkannya',
     'memory_board_resume_button': 'Lanjutkan permainan',
@@ -6845,7 +6845,7 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставил(а) игру на паузу',
     'memory_board_paused_title': 'Игра на паузе',
     'memory_board_paused_subtitle_me': 'Продолжите, когда будете готовы',
-    'memory_board_paused_subtitle_depleted': 'Баланс монет исчерпан — пополните, затем любой из вас может продолжить.',
+    'memory_board_paused_subtitle_depleted': 'Баланс Token исчерпан — пополните, затем любой из вас может продолжить.',
     'memory_board_paused_subtitle_partner':
         '{name} поставил(а) игру на паузу — только {name} может её продолжить',
     'memory_board_resume_button': 'Продолжить игру',
@@ -7729,7 +7729,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} pausou o jogo',
     'memory_board_paused_title': 'Jogo pausado',
     'memory_board_paused_subtitle_me': 'Retome quando estiver pronto(a)',
-    'memory_board_paused_subtitle_depleted': 'Saldo de moedas esgotado — recarregue, depois qualquer um pode continuar.',
+    'memory_board_paused_subtitle_depleted': 'Saldo de Tokens esgotado — recarregue, depois qualquer um pode continuar.',
     'memory_board_paused_subtitle_partner':
         '{name} pausou o jogo — só {name} pode retomá-lo',
     'memory_board_resume_button': 'Retomar jogo',
@@ -8608,7 +8608,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} oyunu duraklattı',
     'memory_board_paused_title': 'Oyun duraklatıldı',
     'memory_board_paused_subtitle_me': 'Hazır olduğunda devam et',
-    'memory_board_paused_subtitle_depleted': 'Jeton bakiyesi bitti — yükle, ardından ikinizden biri devam edebilir.',
+    'memory_board_paused_subtitle_depleted': 'Token bakiyesi bitti — yükle, ardından ikinizden biri devam edebilir.',
     'memory_board_paused_subtitle_partner':
         '{name} oyunu duraklattı — yalnızca {name} devam ettirebilir',
     'memory_board_resume_button': 'Oyuna devam et',
@@ -9486,7 +9486,7 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставив(ла) гру на паузу',
     'memory_board_paused_title': 'Гру призупинено',
     'memory_board_paused_subtitle_me': 'Продовжте, коли будете готові',
-    'memory_board_paused_subtitle_depleted': 'Баланс монет вичерпано — поповніть, тоді будь-хто з вас може продовжити.',
+    'memory_board_paused_subtitle_depleted': 'Баланс Token вичерпано — поповніть, тоді будь-хто з вас може продовжити.',
     'memory_board_paused_subtitle_partner':
         '{name} поставив(ла) гру на паузу — лише {name} може її продовжити',
     'memory_board_resume_button': 'Продовжити гру',
@@ -10301,7 +10301,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name}がゲームを一時停止しました',
     'memory_board_paused_title': 'ゲーム一時停止中',
     'memory_board_paused_subtitle_me': '準備ができたら再開してください',
-    'memory_board_paused_subtitle_depleted': 'コイン残高がなくなりました。チャージすればどちらでも再開できます。',
+    'memory_board_paused_subtitle_depleted': 'Token残高がなくなりました。チャージすればどちらでも再開できます。',
     'memory_board_paused_subtitle_partner':
         '{name}がゲームを一時停止しました——{name}だけが再開できます',
     'memory_board_resume_button': 'ゲームを再開',

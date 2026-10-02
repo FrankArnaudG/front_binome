@@ -6,9 +6,9 @@ import '../../../core/realtime_client.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
 
-/// Surveille le solde de pièces PARTAGÉ du couple pendant une partie de jeu
+/// Surveille le solde de tokens PARTAGÉ du couple pendant une partie de jeu
 /// interactif en cours (voir BillGameSessions/GameEconomySetting côté
-/// backend — "chaque minute qui passe équivaut à une petite portion de coin
+/// backend — "chaque minute qui passe équivaut à une petite portion de token
 /// consommée", voir demande utilisateur) : affiche un avertissement discret
 /// avant l'épuisement (voir [GameWalletLow]).
 ///
@@ -102,7 +102,7 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
       _depletedNoticeShown = true;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Solde de pièces épuisé — la partie est en pause.'),
+          content: const Text('Solde de tokens épuisé — la partie est en pause.'),
           duration: const Duration(seconds: 6),
           action: SnackBarAction(
             label: 'Recharger',

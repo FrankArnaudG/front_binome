@@ -5,7 +5,7 @@ import '../../models/coin_purchase_order.dart';
 import '../../models/gift.dart';
 import '../../models/send.dart';
 
-/// Appels API pour la Boutique (pièces + cadeaux) — même esprit que
+/// Appels API pour la Boutique (tokens + cadeaux) — même esprit que
 /// ContentService : pas d'état partagé ici, seul le solde (ailleurs géré
 /// par [WalletBalanceNotifier]) a besoin d'être réactif entre écrans.
 class ShopService {

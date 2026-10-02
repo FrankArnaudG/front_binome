@@ -6,14 +6,14 @@ import 'subscription_service.dart';
 
 /// Statut d'abonnement du user courant (singleton `ChangeNotifier`, même
 /// esprit que [WalletBalanceNotifier]) : tout écran qui gate une action sur
-/// le solde de pièces doit aussi consulter [isActive] avant d'afficher un
+/// le solde de tokens doit aussi consulter [isActive] avant d'afficher un
 /// blocage "solde insuffisant" — un·e abonné·e a un accès illimité et
 /// gratuit tant que son abonnement est actif (voir User::hasActiveSubscription
 /// côté backend).
 ///
 /// [expiresAt] est aussi mis en cache (voir LocalCache) pour que [isActive]
 /// réponde correctement dès le tout premier frame — sans ça, un badge basé
-/// dessus (voir CoinBalanceBadge) affichait d'abord le solde de pièces
+/// dessus (voir CoinBalanceBadge) affichait d'abord le solde de tokens
 /// normal (le temps que [refresh] joigne le serveur) avant de basculer sur
 /// "∞", un flash visible constaté en réel (voir demande utilisateur : "ca
 /// apparait toujour, je remarque que... les piece... apparait avant de

@@ -7,12 +7,12 @@ import '../l10n/locale_scope.dart';
 import '../theme/app_colors.dart';
 import 'coin_icon.dart';
 
-/// Badge de solde de pièces (à poser dans une AppBar). Se reconstruit
+/// Badge de solde de tokens (à poser dans une AppBar). Se reconstruit
 /// automatiquement quand [WalletBalanceNotifier] change — et, avec un
 /// abonnement actif, affiche "Illimité" à la place du solde (voir demande
 /// utilisateur : "si j'ai un abonnement payant, es ce possible de remplacer
-/// les pièces... par quelque chose d'autre") puisque le solde de pièces ne
-/// reflète alors plus rien (les pièces restent inchangées, jamais
+/// les tokens... par quelque chose d'autre") puisque le solde de tokens ne
+/// reflète alors plus rien (les tokens restent inchangés, jamais
 /// débitées tant que l'abonnement est actif — voir User::hasActiveSubscription
 /// côté backend).
 class CoinBalanceBadge extends StatelessWidget {
@@ -45,7 +45,7 @@ class CoinBalanceBadge extends StatelessWidget {
                     // invisible à taille de texte normale (voir demande
                     // utilisateur : "c'est petit") — taille de police
                     // nettement plus grande ici que pour un nombre de
-                    // pièces classique, sans changer la hauteur du badge
+                    // tokens classique, sans changer la hauteur du badge
                     // (voir height:1 pour éviter un padding vertical
                     // supplémentaire dû à la ligne de police plus grande).
                     Text(

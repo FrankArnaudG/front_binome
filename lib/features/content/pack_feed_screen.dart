@@ -147,7 +147,7 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
       );
       _changed = true;
       if (!mounted) return;
-      // Envoyer un poème coûte des pièces (voir CoinPack.sendCoinPrice) —
+      // Envoyer un poème coûte des tokens (voir CoinPack.sendCoinPrice) —
       // sans ce rafraîchissement, le badge de solde affiché ailleurs
       // (Dashboard, discussion...) restait figé sur l'ancien montant tant
       // qu'on ne rouvrait pas manuellement l'écran (constaté en réel, voir

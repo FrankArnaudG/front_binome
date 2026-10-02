@@ -39,8 +39,8 @@ class GameService {
     return data.map((e) => Game.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Taux de décompte en pièces des jeux interactifs (voir demande
-  /// utilisateur : afficher "1 pièce = X minutes" sur l'écran de choix du
+  /// Taux de décompte en tokens des jeux interactifs (voir demande
+  /// utilisateur : afficher "1 token = X minutes" sur l'écran de choix du
   /// mode "à distance") — mis en cache en mémoire pour cette session, pas
   /// besoin de re-fetch à chaque écran ouvert (ce réglage change rarement).
   Map<String, int>? _cachedEconomyRate;

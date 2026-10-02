@@ -4,14 +4,14 @@ import '../../../theme/theme_palette.dart';
 import '../../../widgets/coin_icon.dart';
 import '../../shop/subscription_status_notifier.dart';
 
-/// Petit indicateur visuel de la progression vers la prochaine pièce
-/// déduite en mode à distance (voir demande utilisateur) — une pièce
-/// ([CoinIcon]) entourée d'un anneau qui se remplit au fil du temps réel
+/// Petit indicateur visuel de la progression vers le prochain token
+/// déduit en mode à distance (voir demande utilisateur) — un token
+/// ([CoinIcon]) entouré d'un anneau qui se remplit au fil du temps réel
 /// de jeu, sur la durée réglée en admin (`minutes_per_coin`, voir
 /// GameEconomySetting). Purement indicatif côté client, même principe que
 /// le chrono affiché à côté (_elapsed()) : fluide à l'écran, jamais la
 /// source de vérité — c'est toujours `BillGameSessions` côté serveur qui
-/// déduit réellement les pièces (voir GameWalletGuard/GameWalletTicked).
+/// déduit réellement les tokens (voir GameWalletGuard/GameWalletTicked).
 class CoinBillingRing extends StatelessWidget {
   final ThemePalette theme;
   final double progress;
@@ -23,7 +23,7 @@ class CoinBillingRing extends StatelessWidget {
   Widget build(BuildContext context) {
     // Abonnement actif : le temps de jeu est illimité et gratuit (voir
     // BillGameSessions côté backend, aucun débit pour un abonné) — plus
-    // aucune raison d'afficher une progression vers une pièce déduite qui
+    // aucune raison d'afficher une progression vers un token déduit qui
     // n'arrivera jamais (voir demande utilisateur : "rien ne doit
     // apparaître").
     if (SubscriptionStatusNotifier.instance.isActive) return SizedBox(width: size, height: size);
