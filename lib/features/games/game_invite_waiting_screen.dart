@@ -13,7 +13,6 @@ import '../box/box_scope.dart';
 import '../box/box_service.dart';
 import 'game_invite_navigation.dart';
 import 'game_service.dart';
-import 'widgets/insufficient_funds_dialog.dart';
 
 /// Écran d'attente affiché côté AUTEUR de l'invitation après le tap sur
 /// "démarrer" en mode à distance — voir demande utilisateur : "pendant ce
@@ -49,6 +48,14 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   bool? _partnerOnline;
   String? _presenceBoxId;
   String? _partnerId;
+
+  // Voir demande utilisateur : "on affiche pas de modal pour ça. on écrit
+  // en dessous du bouton et on bloque le décompte" — pas de dialog, un
+  // encart persistant sous "Annuler" (même style que le bandeau "pas en
+  // ligne" plus bas) ; le compte à rebours s'arrête (_tickTimer annulé,
+  // voir _onJoinFailed) au lieu de continuer vers une expiration générique.
+  String? _joinFailedMessage;
+  Duration? _frozenRemaining;
 
   @override
   void initState() {
@@ -113,11 +120,28 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   }
 
   void _onJoinFailed(({String inviteId, String message}) failure) {
-    if (_resolved || failure.inviteId != widget.invite.id) return;
-    _resolved = true;
-    if (!mounted) return;
-    showInsufficientFundsDialog(context, failure.message);
-    Navigator.of(context).pop();
+    if (failure.inviteId != widget.invite.id) return;
+    _applyJoinFailure(failure.message);
+  }
+
+  /// Ni modal, ni fermeture de l'écran (voir demande utilisateur) — le
+  /// décompte se fige là où il en est (_tickTimer/_timeoutTimer annulés,
+  /// plus aucun rebuild spontané ne le ferait avancer) et un encart
+  /// persistant apparaît sous "Annuler" ; l'invitation reste "pending",
+  /// l'auteur peut toujours l'annuler lui-même ou attendre que son binôme
+  /// recharge et retente. Appelé par le temps réel (_onJoinFailed) ET par
+  /// le poll de secours (_onUpdate/invite.lastJoinError) — voir demande
+  /// utilisateur : "je ne reçois pas" (événement WebSocket manqué).
+  void _applyJoinFailure(String message) {
+    if (_resolved || _joinFailedMessage != null || !mounted) return;
+    _tickTimer?.cancel();
+    _timeoutTimer?.cancel();
+    final startedAt = _startedAt;
+    final elapsed = startedAt != null ? DateTime.now().difference(startedAt) : Duration.zero;
+    setState(() {
+      _joinFailedMessage = message;
+      _frozenRemaining = (_totalWait - elapsed).isNegative ? Duration.zero : _totalWait - elapsed;
+    });
   }
 
   void _onUpdate(GameInvite invite) {
@@ -130,6 +154,11 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
       _showOutcomeAndPop(invite.isExpired
           ? "Ton binôme n'a pas répondu à temps."
           : 'Ton binôme a décliné ton invitation.');
+    } else if (invite.lastJoinError != null) {
+      // Toujours `pending` (voir doc de GameInvite.lastJoinError) — un
+      // succès/refus/expiration ultérieur reste prioritaire ci-dessus,
+      // donc pas besoin que le serveur efface ce champ après coup.
+      _applyJoinFailure(invite.lastJoinError!);
     }
   }
 
@@ -221,7 +250,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     }
 
     final elapsed = _startedAt != null ? DateTime.now().difference(_startedAt!) : Duration.zero;
-    final remaining = (_totalWait - elapsed).isNegative ? Duration.zero : _totalWait - elapsed;
+    final remaining = _frozenRemaining ?? ((_totalWait - elapsed).isNegative ? Duration.zero : _totalWait - elapsed);
 
     return PopScope(
       canPop: false,
@@ -327,6 +356,39 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
                       style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12)),
                       child: const Text('Annuler'),
                     ),
+                    // Voir demande utilisateur : "on écrit en dessous du
+                    // bouton" — même style que le bandeau "pas en ligne"
+                    // plus haut, jamais un modal pour ce cas précis.
+                    if (_joinFailedMessage != null) ...[
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: theme.primary.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: theme.primary.withValues(alpha: 0.25)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.account_balance_wallet_outlined, size: 18, color: theme.primary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _joinFailedMessage!,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.textOnBackground,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

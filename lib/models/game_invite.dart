@@ -14,6 +14,13 @@ class GameInvite {
   final String inviterId;
   final String inviteeId;
   final String status;
+  // Voir GameInviteController::accept — rempli quand une tentative de
+  // "Rejoindre" a échoué faute de tokens/abonnement, SANS faire passer
+  // [status] à autre chose que `pending` (pour laisser une chance de
+  // réessayer après recharge). Repli pour GameInviteWaitingScreen quand
+  // l'événement temps réel GameInviteJoinFailed a été manqué (voir demande
+  // utilisateur : "je ne reçois pas").
+  final String? lastJoinError;
   final Map<String, dynamic>? payload;
   final String? sessionId;
   final DateTime expiresAt;
@@ -26,6 +33,7 @@ class GameInvite {
     required this.inviterId,
     required this.inviteeId,
     required this.status,
+    this.lastJoinError,
     this.payload,
     this.sessionId,
     required this.expiresAt,
@@ -49,6 +57,7 @@ class GameInvite {
         inviterId: json['inviter_id'] as String,
         inviteeId: json['invitee_id'] as String,
         status: json['status'] as String,
+        lastJoinError: json['last_join_error'] as String?,
         payload: json['payload'] as Map<String, dynamic>?,
         sessionId: json['session_id'] as String?,
         expiresAt: DateTime.parse(json['expires_at'] as String),
