@@ -100,12 +100,16 @@ class _ClassicButton extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                item.label,
-                style: GoogleFonts.nunito(
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  color: selected ? palette.primary : palette.textOnBackgroundMuted,
+              Flexible(
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: selected ? palette.primary : palette.textOnBackgroundMuted,
+                  ),
                 ),
               ),
             ],

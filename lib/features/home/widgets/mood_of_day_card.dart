@@ -254,15 +254,20 @@ class _MoodPromptTile extends StatelessWidget {
             // maxLines/overflow : voir demande utilisateur, ce libellé est
             // désormais plus long ("Partager mon humeur du jour") et doit
             // rester dans cette tuile étroite (AspectRatio 1.2) sans faire
-            // déborder le Column.
-            Text(
-              label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: theme.primary,
+            // déborder le Column. Flexible en plus : avec une échelle de
+            // texte système légèrement agrandie, le texte dépassait de
+            // quelques pixels malgré maxLines/ellipsis (voir demande
+            // utilisateur, capture avec "BOTTOM OVERFLOWED BY 2.3 PIXELS").
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: theme.primary,
+                ),
               ),
             ),
           ],
@@ -294,11 +299,15 @@ class _MoodWaitingTile extends StatelessWidget {
           children: [
             const Text('⏳', style: TextStyle(fontSize: 28)),
             const SizedBox(height: 6),
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 12,
-                color: theme.textOnBackgroundMuted,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.nunito(
+                  fontSize: 12,
+                  color: theme.textOnBackgroundMuted,
+                ),
               ),
             ),
           ],
