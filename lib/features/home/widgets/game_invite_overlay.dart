@@ -220,7 +220,7 @@ class _GameInviteCardState extends State<_GameInviteCard> {
               Navigator.of(dialogContext).pop();
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen()));
             },
-            child: const Text('Acheter des pièces'),
+            child: const Text('Acheter des tokens'),
           ),
           FilledButton(
             onPressed: () {
