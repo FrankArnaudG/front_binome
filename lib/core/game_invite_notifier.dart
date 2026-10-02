@@ -32,6 +32,23 @@ class GameInviteNotifier extends ChangeNotifier {
 
   final _resolutionControllers = <String, StreamController<GameInvite>>{};
 
+  // Voir demande utilisateur : "si le modal apparaît, le bouton Rejoindre
+  // continue à apparaître, il ne doit plus apparaître" — une invitation dont
+  // l'acceptation a déjà échoué (solde/abonnement insuffisant) reste
+  // `pending` côté serveur (pour laisser une chance de réessayer après
+  // recharge) ; sans cette liste, le poll de secours (8s) ou un écho
+  // temps réel la refaisait réapparaître en boucle juste après sa
+  // fermeture.
+  final Set<String> _failedInviteIds = {};
+
+  // Voir demande utilisateur : "ce modal doit apparaître pour les 2
+  // binômes" — l'invité·e voit déjà l'échec via sa propre réponse HTTP
+  // (voir GameInviteOverlay), ce flux sert à prévenir l'auteur resté sur
+  // GameInviteWaitingScreen, qui sinon attendrait les 60s d'expiration
+  // sans jamais savoir pourquoi (voir GameInviteJoinFailed côté serveur).
+  final _joinFailedController = StreamController<({String inviteId, String message})>.broadcast();
+  Stream<({String inviteId, String message})> get joinFailed => _joinFailedController.stream;
+
   // Vrai entre le tap sur "Rejoindre" et l'ouverture de l'écran de jeu (voir
   // demande utilisateur : afficher un chargement côté invité·e pendant que la
   // partie s'ouvre). Le pop-up disparaît dès le tap, sans ça l'écran restait
@@ -85,7 +102,10 @@ class GameInviteNotifier extends ChangeNotifier {
     try {
       final invite = await GameService.instance.fetchPendingInvite();
       debugPrint('GameInviteNotifier: poll -> invite=${invite?.id} inviteeId=${invite?.inviteeId} myUserId=$_myUserId');
-      if (invite != null && invite.inviteeId == _myUserId && _pendingInvite?.id != invite.id) {
+      if (invite != null &&
+          invite.inviteeId == _myUserId &&
+          _pendingInvite?.id != invite.id &&
+          !_failedInviteIds.contains(invite.id)) {
         _pendingInvite = invite;
         notifyListeners();
       }
@@ -110,6 +130,19 @@ class GameInviteNotifier extends ChangeNotifier {
   }
 
   void _onEvent(RealtimeEvent event) {
+    if (event.event == 'GameInviteJoinFailed') {
+      final data = event.data;
+      final inviteId = data?['invite_id'] as String?;
+      final message = data?['message'] as String?;
+      if (inviteId == null || message == null) return;
+      _failedInviteIds.add(inviteId);
+      if (_pendingInvite?.id == inviteId) {
+        _pendingInvite = null;
+        notifyListeners();
+      }
+      _joinFailedController.add((inviteId: inviteId, message: message));
+      return;
+    }
     if (event.event != 'GameInviteUpdated') return;
     final data = event.data;
     if (data == null) return;
@@ -118,6 +151,7 @@ class GameInviteNotifier extends ChangeNotifier {
     // Côté invité·e : affiche/masque le pop-up global.
     if (invite.inviteeId == _myUserId) {
       if (invite.isPending) {
+        if (_failedInviteIds.contains(invite.id)) return;
         _pendingInvite = invite;
         notifyListeners();
       } else if (_pendingInvite?.id == invite.id) {

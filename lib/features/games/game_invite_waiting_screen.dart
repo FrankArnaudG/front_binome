@@ -13,6 +13,7 @@ import '../box/box_scope.dart';
 import '../box/box_service.dart';
 import 'game_invite_navigation.dart';
 import 'game_service.dart';
+import 'widgets/insufficient_funds_dialog.dart';
 
 /// Écran d'attente affiché côté AUTEUR de l'invitation après le tap sur
 /// "démarrer" en mode à distance — voir demande utilisateur : "pendant ce
@@ -34,6 +35,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   static const _totalWait = Duration(seconds: 60);
 
   late StreamSubscription<GameInvite> _subscription;
+  late StreamSubscription<({String inviteId, String message})> _joinFailedSubscription;
   Timer? _tickTimer;
   Timer? _timeoutTimer;
   Timer? _pollTimer;
@@ -55,6 +57,11 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     _watchPartnerPresence();
     _startedAt = DateTime.now();
     _subscription = GameInviteNotifier.instance.watch(widget.invite.id).listen(_onUpdate);
+    // Voir demande utilisateur : "ce modal doit apparaître pour les 2
+    // binômes" — l'auteur attendait sinon les 60s d'expiration sans jamais
+    // savoir que son binôme n'a pas pu rejoindre faute de tokens/abonnement
+    // (voir GameInviteJoinFailed côté serveur).
+    _joinFailedSubscription = GameInviteNotifier.instance.joinFailed.listen(_onJoinFailed);
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -103,6 +110,14 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     } catch (_) {
       // best effort, on retente au prochain tick.
     }
+  }
+
+  void _onJoinFailed(({String inviteId, String message}) failure) {
+    if (_resolved || failure.inviteId != widget.invite.id) return;
+    _resolved = true;
+    if (!mounted) return;
+    showInsufficientFundsDialog(context, failure.message);
+    Navigator.of(context).pop();
   }
 
   void _onUpdate(GameInvite invite) {
@@ -174,6 +189,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    _joinFailedSubscription.cancel();
     _tickTimer?.cancel();
     _timeoutTimer?.cancel();
     _pollTimer?.cancel();

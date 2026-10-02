@@ -10,8 +10,7 @@ import '../../../theme/theme_scope.dart';
 import '../../box/box_scope.dart';
 import '../../games/game_invite_navigation.dart';
 import '../../games/game_service.dart';
-import '../../shop/shop_screen.dart';
-import '../../shop/subscription_screen.dart';
+import '../../games/widgets/insufficient_funds_dialog.dart';
 
 /// Nom affiché pour un `session_type` — pas besoin d'aller chercher le
 /// [Game] complet juste pour ça (voir demande utilisateur : le pop-up doit
@@ -187,7 +186,7 @@ class _GameInviteCardState extends State<_GameInviteCard> {
               : "Impossible de rejoindre la partie. Réessaie dans un instant.";
           final isWalletIssue = e is ApiException && e.statusCode == 422 && e.message.toLowerCase().contains('solde');
           if (isWalletIssue) {
-            _showInsufficientFundsDialog(context, message);
+            showInsufficientFundsDialog(context, message);
           } else {
             ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
           }
@@ -196,42 +195,6 @@ class _GameInviteCardState extends State<_GameInviteCard> {
     } finally {
       if (accept) GameInviteNotifier.instance.setJoining(false);
     }
-  }
-
-  /// Voir demande utilisateur : "tu affiches un modal et tu stoppes la
-  /// connexion" — modal bloquant (pas un SnackBar qui disparaît tout seul)
-  /// dès que le serveur refuse de rejoindre faute de solde/abonnement ;
-  /// propose les deux options qui lèvent le blocage ("se réabonner ou
-  /// acheter des tokens", sur leurs écrans dédiés respectifs).
-  void _showInsufficientFundsDialog(BuildContext context, String message) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.account_balance_wallet_outlined),
-        title: const Text('Impossible de rejoindre'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Fermer'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen()));
-            },
-            child: const Text('Acheter des tokens'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
-            },
-            child: const Text("S'abonner"),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
