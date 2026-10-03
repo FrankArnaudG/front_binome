@@ -8,17 +8,21 @@ const Map<String, Map<String, String>> kTranslations = {
     'nav_duo': 'Duo',
     'nav_gallery': 'Carnet de bord',
     'nav_games': 'Jeux',
-    'nav_game_chats': 'Discussions',
+    'nav_game_chats': 'Carte-question',
     'maintenance_block_title': 'Maintenance en cours',
-    'maintenance_block_default_message': 'Binome fait une petite pause. On revient très vite !',
+    'maintenance_block_default_message':
+        'Binome fait une petite pause. On revient très vite !',
     'maintenance_block_ends_at': 'Retour prévu vers {time} (GMT)',
     'maintenance_banner': 'Maintenance en cours pour les autres comptes.',
     'suspension_block_title': 'Accès limité',
-    'suspension_block_message': 'Tu as sollicité le serveur de façon anormale. Reviens plus tard.',
-    'game_chats_title': 'Discussions de jeu',
-    'game_chats_empty': 'Aucune discussion pour l\'instant.\nEnvoie une carte depuis Cœur à Cœur pour commencer.',
+    'suspension_block_message':
+        'Tu as sollicité le serveur de façon anormale. Reviens plus tard.',
+    'game_chats_title': 'Carte-question de jeu',
+    'game_chats_empty':
+        'Aucune discussion pour l\'instant.\nEnvoie une carte depuis Cœur à Cœur pour commencer.',
     'game_chats_empty_cta': 'Ouvrir Cœur à Cœur',
-    'game_chats_empty_for_game': 'Aucune discussion pour l\'instant dans {name}.\nEnvoie une carte pour commencer.',
+    'game_chats_empty_for_game':
+        'Aucune discussion pour l\'instant dans {name}.\nEnvoie une carte pour commencer.',
     'game_chats_empty_cta_for_game': 'Ouvrir {name}',
     'nav_profile': 'Profil',
     'dashboard_welcome': 'Bienvenue, {name} 💕',
@@ -294,8 +298,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'Comment tu te sens aujourd\'hui ?',
     'mood_card_waiting': 'En attente de ton binôme...',
     'mood_card_waiting_prefix': 'En attente de',
-    'mood_partner_not_shared_yet': "Ton binôme n'a pas encore partagé son humeur du jour, tu peux lui demander de le faire.",
-    'mood_share_yours_first': "Renseigne d'abord ta propre humeur du jour pour voir celle de ton binôme.",
+    'mood_partner_not_shared_yet':
+        "Ton binôme n'a pas encore partagé son humeur du jour, tu peux lui demander de le faire.",
+    'mood_share_yours_first':
+        "Renseigne d'abord ta propre humeur du jour pour voir celle de ton binôme.",
     'mood_need_label': 'De quoi as-tu besoin aujourd\'hui ?',
     'mood_desire_label': 'Qu\'est-ce que tu aimerais vivre aujourd\'hui ?',
     'mood_save_cta': 'Partager',
@@ -688,26 +694,33 @@ const Map<String, Map<String, String>> kTranslations = {
     'coin_count': '{amount} Tokens',
     'coin_badge_unlimited': '∞',
     'shop_payment_method': 'Moyen de paiement',
-    'shop_payment_xof_notice': 'Le paiement sera effectué en Francs CFA (XOF) : {amount}.',
-    'shop_yengapay_not_configured': "Passerelle de paiement non configurée pour l'instant.",
+    'shop_payment_xof_notice':
+        'Le paiement sera effectué en Francs CFA (XOF) : {amount}.',
+    'shop_yengapay_not_configured':
+        "Passerelle de paiement non configurée pour l'instant.",
     'shop_bonus_label': '+{bonus} offertes',
     'monetization_hub_prompt': 'Choisis comment tu préfères payer dans Binôme.',
     'monetization_option_subscription_title': 'Abonnement',
-    'monetization_option_subscription_body': 'Accès illimité, sans jamais recharger de Tokens.',
+    'monetization_option_subscription_body':
+        'Accès illimité, sans jamais recharger de Tokens.',
     'monetization_option_subscription_info':
         "Avec l'abonnement, tu profites d'un accès illimité à toutes les fonctionnalités payantes de l'app, sans jamais avoir à racheter de Tokens. Facturation simple, mensuelle ou annuelle, résiliable à tout moment.",
     'monetization_option_coins_title': 'Achat de Tokens',
-    'monetization_option_coins_body': 'Achète des Tokens à l\'unité, à utiliser à ton rythme.',
+    'monetization_option_coins_body':
+        'Achète des Tokens à l\'unité, à utiliser à ton rythme.',
     'monetization_option_coins_info':
         "Avec les Tokens, tu payes uniquement ce que tu utilises, sans engagement ni abonnement. Idéal pour un usage occasionnel, ou pour essayer avant de s'engager.",
     'subscription_title': 'Abonnement',
     'subscription_cta': "Passer à l'abonnement",
     'shop_subscription_banner_title': 'Envie de ne plus gérer de Tokens ?',
-    'shop_subscription_banner_body': 'Vous pouvez souscrire mensuellement ou annuellement pour un accès illimité.',
+    'shop_subscription_banner_body':
+        'Vous pouvez souscrire mensuellement ou annuellement pour un accès illimité.',
     'subscription_load_error': "Impossible de charger l'abonnement.",
-    'subscription_empty': "Aucune offre d'abonnement disponible pour l'instant.",
+    'subscription_empty':
+        "Aucune offre d'abonnement disponible pour l'instant.",
     'subscription_active_banner': 'Abonné·e jusqu\'au {date}',
-    'subscription_not_active': "Pas d'abonnement actif — accès en Tokens uniquement.",
+    'subscription_not_active':
+        "Pas d'abonnement actif — accès en Tokens uniquement.",
     'subscription_period_month': '/mois',
     'subscription_period_year': '/an',
     'subscription_scope_solo': 'Pour moi seul·e',
@@ -717,7 +730,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'subscription_order_created_title': 'Commande créée',
     'subscription_order_created_body':
         "Ta commande d'abonnement « {plan} » est en attente de confirmation de paiement ({provider}).",
-    'subscription_yengapay_not_configured': "Passerelle de paiement non configurée pour l'instant.",
+    'subscription_yengapay_not_configured':
+        "Passerelle de paiement non configurée pour l'instant.",
     'currency_picker_title': 'Choisis ta devise',
     'currency_picker_subtitle':
         "Les prix de la Boutique s'afficheront dans cette devise, à partir de maintenant.",
@@ -762,7 +776,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'pack_feed_sent_snackbar': 'Poème envoyé 💌',
     'favorite_packs_tooltip': 'Mes favoris',
     'favorite_packs_title': 'Mes favoris',
-    'favorite_packs_empty': 'Aucun poème en favori pour l\'instant. Tape sur l\'étoile pendant la lecture d\'un poème pour l\'ajouter ici.',
+    'favorite_packs_empty':
+        'Aucun poème en favori pour l\'instant. Tape sur l\'étoile pendant la lecture d\'un poème pour l\'ajouter ici.',
     'pack_feed_no_slides': 'Aucune slide dans ce pack.',
     'cat_morning_label': 'Douceur du matin',
     'cat_morning_tagline': 'Un mot doux pour bien commencer la journée',
@@ -803,7 +818,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} a mis la partie en pause',
     'memory_board_paused_title': 'Partie en pause',
     'memory_board_paused_subtitle_me': 'Reprends quand tu es prêt·e',
-    'memory_board_paused_subtitle_depleted': 'Solde de tokens épuisé — recharge, puis n\'importe qui peut reprendre.',
+    'memory_board_paused_subtitle_depleted':
+        'Solde de tokens épuisé - recharge, puis n\'importe qui peut reprendre.',
     'memory_board_paused_subtitle_partner':
         '{name} a mis la partie en pause - seul·e {name} peut la reprendre',
     'memory_board_resume_button': 'Reprendre la partie',
@@ -829,7 +845,8 @@ const Map<String, Map<String, String>> kTranslations = {
         'Deux téléphones à proximité, sans connexion internet.',
     'memory_mode_nearby_unsupported':
         'Disponible uniquement sur Android pour le moment.',
-    'nearby_location_service_off': 'Active la localisation (GPS) du téléphone pour continuer.',
+    'nearby_location_service_off':
+        'Active la localisation (GPS) du téléphone pour continuer.',
     'memory_nearby_permission_denied':
         'Autorise Bluetooth et localisation pour continuer.',
     'memory_nearby_start_host_error': 'Impossible de démarrer la connexion.',
@@ -959,19 +976,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'en': {
     'maintenance_block_title': 'Under maintenance',
-    'maintenance_block_default_message': "Binome is taking a short break. We'll be back very soon!",
+    'maintenance_block_default_message':
+        "Binome is taking a short break. We'll be back very soon!",
     'maintenance_block_ends_at': 'Expected back around {time} (GMT)',
     'maintenance_banner': 'Maintenance is underway for other accounts.',
     'suspension_block_title': 'Access limited',
-    'suspension_block_message': "You've made an unusual number of requests to the server. Please come back later.",
+    'suspension_block_message':
+        "You've made an unusual number of requests to the server. Please come back later.",
     'nav_duo': 'Duo',
     'nav_gallery': 'Logbook',
     'nav_games': 'Games',
     'nav_game_chats': 'Chats',
     'game_chats_title': 'Game chats',
-    'game_chats_empty': 'No chats yet.\nSend a card from Cœur à Cœur to get started.',
+    'game_chats_empty':
+        'No chats yet.\nSend a card from Cœur à Cœur to get started.',
     'game_chats_empty_cta': 'Open Cœur à Cœur',
-    'game_chats_empty_for_game': 'No chats yet in {name}.\nSend a card to get started.',
+    'game_chats_empty_for_game':
+        'No chats yet in {name}.\nSend a card to get started.',
     'game_chats_empty_cta_for_game': 'Open {name}',
     'nav_profile': 'Profile',
     'dashboard_welcome': 'Welcome, {name} 💕',
@@ -1215,8 +1236,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': "Your partner hasn't shared their mood today yet — you can ask them to.",
-    'mood_share_yours_first': "Share your own mood today first to see your partner's.",
+    'mood_partner_not_shared_yet':
+        "Your partner hasn't shared their mood today yet — you can ask them to.",
+    'mood_share_yours_first':
+        "Share your own mood today first to see your partner's.",
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -1672,7 +1695,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} paused the game',
     'memory_board_paused_title': 'Game paused',
     'memory_board_paused_subtitle_me': 'Resume whenever you\'re ready',
-    'memory_board_paused_subtitle_depleted': 'Token balance empty — top up, then either of you can resume.',
+    'memory_board_paused_subtitle_depleted':
+        'Token balance empty — top up, then either of you can resume.',
     'memory_board_paused_subtitle_partner':
         '{name} paused the game — only {name} can resume it',
     'memory_board_resume_button': 'Resume game',
@@ -1697,7 +1721,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Two phones nearby, no internet connection needed.',
     'memory_mode_nearby_unsupported': 'Currently available on Android only.',
-    'nearby_location_service_off': 'Turn on your phone\'s location (GPS) to continue.',
+    'nearby_location_service_off':
+        'Turn on your phone\'s location (GPS) to continue.',
     'memory_nearby_permission_denied':
         'Allow Bluetooth and location to continue.',
     'memory_nearby_start_host_error': 'Could not start the connection.',
@@ -1820,19 +1845,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'de': {
     'maintenance_block_title': 'Wartungsarbeiten',
-    'maintenance_block_default_message': 'Binome macht eine kurze Pause. Wir sind bald wieder da!',
+    'maintenance_block_default_message':
+        'Binome macht eine kurze Pause. Wir sind bald wieder da!',
     'maintenance_block_ends_at': 'Voraussichtlich zurück gegen {time} (GMT)',
     'maintenance_banner': 'Für andere Konten läuft gerade eine Wartung.',
     'suspension_block_title': 'Zugriff eingeschränkt',
-    'suspension_block_message': 'Du hast den Server ungewöhnlich oft angefragt. Bitte komm später wieder.',
+    'suspension_block_message':
+        'Du hast den Server ungewöhnlich oft angefragt. Bitte komm später wieder.',
     'nav_duo': 'Duo',
     'nav_gallery': 'Logbuch',
     'nav_games': 'Spiele',
     'nav_game_chats': 'Chats',
     'game_chats_title': 'Spiel-Chats',
-    'game_chats_empty': 'Noch keine Chats.\nSchick eine Karte aus Cœur à Cœur, um zu beginnen.',
+    'game_chats_empty':
+        'Noch keine Chats.\nSchick eine Karte aus Cœur à Cœur, um zu beginnen.',
     'game_chats_empty_cta': 'Cœur à Cœur öffnen',
-    'game_chats_empty_for_game': 'Noch keine Chats in {name}.\nSchick eine Karte, um zu beginnen.',
+    'game_chats_empty_for_game':
+        'Noch keine Chats in {name}.\nSchick eine Karte, um zu beginnen.',
     'game_chats_empty_cta_for_game': '{name} öffnen',
     'nav_profile': 'Profil',
     'dashboard_welcome': 'Willkommen, {name} 💕',
@@ -2088,8 +2117,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Dein Partner hat seine Stimmung heute noch nicht geteilt — du kannst ihn/sie darum bitten.',
-    'mood_share_yours_first': 'Teile zuerst deine eigene Stimmung, um die deines Partners zu sehen.',
+    'mood_partner_not_shared_yet':
+        'Dein Partner hat seine Stimmung heute noch nicht geteilt — du kannst ihn/sie darum bitten.',
+    'mood_share_yours_first':
+        'Teile zuerst deine eigene Stimmung, um die deines Partners zu sehen.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -2563,7 +2594,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} hat das Spiel pausiert',
     'memory_board_paused_title': 'Spiel pausiert',
     'memory_board_paused_subtitle_me': 'Setze fort, wann immer du bereit bist',
-    'memory_board_paused_subtitle_depleted': 'Token-Guthaben aufgebraucht — aufladen, danach kann jede·r fortsetzen.',
+    'memory_board_paused_subtitle_depleted':
+        'Token-Guthaben aufgebraucht — aufladen, danach kann jede·r fortsetzen.',
     'memory_board_paused_subtitle_partner':
         '{name} hat das Spiel pausiert — nur {name} kann es fortsetzen',
     'memory_board_resume_button': 'Spiel fortsetzen',
@@ -2588,7 +2620,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Zwei Handys in der Nähe, ohne Internetverbindung.',
     'memory_mode_nearby_unsupported': 'Derzeit nur auf Android verfügbar.',
-    'nearby_location_service_off': 'Schalte den Standort (GPS) deines Telefons ein, um fortzufahren.',
+    'nearby_location_service_off':
+        'Schalte den Standort (GPS) deines Telefons ein, um fortzufahren.',
     'memory_nearby_permission_denied':
         'Erlaubt Bluetooth und Standort, um fortzufahren.',
     'memory_nearby_start_host_error':
@@ -2722,19 +2755,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'es': {
     'maintenance_block_title': 'En mantenimiento',
-    'maintenance_block_default_message': 'Binome se toma una pequeña pausa. ¡Volvemos muy pronto!',
+    'maintenance_block_default_message':
+        'Binome se toma una pequeña pausa. ¡Volvemos muy pronto!',
     'maintenance_block_ends_at': 'Vuelta prevista hacia las {time} (GMT)',
     'maintenance_banner': 'Hay un mantenimiento en curso para otras cuentas.',
     'suspension_block_title': 'Acceso limitado',
-    'suspension_block_message': 'Has solicitado el servidor de forma inusual. Vuelve más tarde.',
+    'suspension_block_message':
+        'Has solicitado el servidor de forma inusual. Vuelve más tarde.',
     'nav_duo': 'Dúo',
     'nav_gallery': 'Bitácora',
     'nav_games': 'Juegos',
     'nav_game_chats': 'Chats',
     'game_chats_title': 'Chats de juego',
-    'game_chats_empty': 'Aún no hay chats.\nEnvía una carta desde Cœur à Cœur para empezar.',
+    'game_chats_empty':
+        'Aún no hay chats.\nEnvía una carta desde Cœur à Cœur para empezar.',
     'game_chats_empty_cta': 'Abrir Cœur à Cœur',
-    'game_chats_empty_for_game': 'Aún no hay chats en {name}.\nEnvía una carta para empezar.',
+    'game_chats_empty_for_game':
+        'Aún no hay chats en {name}.\nEnvía una carta para empezar.',
     'game_chats_empty_cta_for_game': 'Abrir {name}',
     'nav_profile': 'Perfil',
     'dashboard_welcome': 'Bienvenido/a, {name} 💕',
@@ -2987,8 +3024,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Tu pareja aún no ha compartido su estado de ánimo de hoy, puedes pedirle que lo haga.',
-    'mood_share_yours_first': 'Comparte primero tu propio estado de ánimo para ver el de tu pareja.',
+    'mood_partner_not_shared_yet':
+        'Tu pareja aún no ha compartido su estado de ánimo de hoy, puedes pedirle que lo haga.',
+    'mood_share_yours_first':
+        'Comparte primero tu propio estado de ánimo para ver el de tu pareja.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -3454,7 +3493,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} puso el juego en pausa',
     'memory_board_paused_title': 'Partida en pausa',
     'memory_board_paused_subtitle_me': 'Reanuda cuando estés listo(a)',
-    'memory_board_paused_subtitle_depleted': 'Saldo de Tokens agotado — recarga y cualquiera puede reanudar.',
+    'memory_board_paused_subtitle_depleted':
+        'Saldo de Tokens agotado — recarga y cualquiera puede reanudar.',
     'memory_board_paused_subtitle_partner':
         '{name} puso el juego en pausa — solo {name} puede reanudarlo',
     'memory_board_resume_button': 'Reanudar partida',
@@ -3478,7 +3518,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Dos teléfonos cerca, sin conexión a internet.',
     'memory_mode_nearby_unsupported': 'Disponible solo en Android por ahora.',
-    'nearby_location_service_off': 'Activa la ubicación (GPS) del teléfono para continuar.',
+    'nearby_location_service_off':
+        'Activa la ubicación (GPS) del teléfono para continuar.',
     'memory_nearby_permission_denied':
         'Permitid Bluetooth y ubicación para continuar.',
     'memory_nearby_start_host_error': 'No se pudo iniciar la conexión.',
@@ -4393,19 +4434,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'ar': {
     'maintenance_block_title': 'قيد الصيانة',
-    'maintenance_block_default_message': 'بينوم يأخذ استراحة قصيرة. سنعود قريبًا جدًا!',
+    'maintenance_block_default_message':
+        'بينوم يأخذ استراحة قصيرة. سنعود قريبًا جدًا!',
     'maintenance_block_ends_at': 'من المتوقع العودة حوالي {time} (GMT)',
     'maintenance_banner': 'الصيانة جارية للحسابات الأخرى.',
     'suspension_block_title': 'الوصول محدود',
-    'suspension_block_message': 'لقد أرسلت طلبات غير معتادة إلى الخادم. يرجى العودة لاحقًا.',
+    'suspension_block_message':
+        'لقد أرسلت طلبات غير معتادة إلى الخادم. يرجى العودة لاحقًا.',
     'nav_duo': 'ثنائي',
     'nav_gallery': 'سجل اليوميات',
     'nav_games': 'ألعاب',
     'nav_game_chats': 'المحادثات',
     'game_chats_title': 'محادثات الألعاب',
-    'game_chats_empty': 'لا توجد محادثات بعد.\nأرسل بطاقة من Cœur à Cœur للبدء.',
+    'game_chats_empty':
+        'لا توجد محادثات بعد.\nأرسل بطاقة من Cœur à Cœur للبدء.',
     'game_chats_empty_cta': 'فتح Cœur à Cœur',
-    'game_chats_empty_for_game': 'لا توجد محادثات بعد في {name}.\nأرسل بطاقة للبدء.',
+    'game_chats_empty_for_game':
+        'لا توجد محادثات بعد في {name}.\nأرسل بطاقة للبدء.',
     'game_chats_empty_cta_for_game': 'فتح {name}',
     'nav_profile': 'الملف الشخصي',
     'dashboard_welcome': 'مرحبًا، {name} 💕',
@@ -4634,8 +4679,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'لم يشارك شريكك حالته المزاجية اليوم بعد، يمكنك أن تطلب منه ذلك.',
-    'mood_share_yours_first': 'شارك حالتك المزاجية اليوم أولاً لترى حالة شريكك.',
+    'mood_partner_not_shared_yet':
+        'لم يشارك شريكك حالته المزاجية اليوم بعد، يمكنك أن تطلب منه ذلك.',
+    'mood_share_yours_first':
+        'شارك حالتك المزاجية اليوم أولاً لترى حالة شريكك.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -5083,7 +5130,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} أوقف اللعبة مؤقتًا',
     'memory_board_paused_title': 'اللعبة متوقفة مؤقتًا',
     'memory_board_paused_subtitle_me': 'استأنف عندما تكون جاهزًا',
-    'memory_board_paused_subtitle_depleted': 'رصيد Token نفد — أعد الشحن، ثم يمكن لأي منكما المتابعة.',
+    'memory_board_paused_subtitle_depleted':
+        'رصيد Token نفد — أعد الشحن، ثم يمكن لأي منكما المتابعة.',
     'memory_board_paused_subtitle_partner':
         '{name} أوقف اللعبة مؤقتًا — {name} وحده يمكنه استئنافها',
     'memory_board_resume_button': 'استئناف اللعبة',
@@ -5227,19 +5275,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'id': {
     'maintenance_block_title': 'Sedang pemeliharaan',
-    'maintenance_block_default_message': 'Binome sedang istirahat sebentar. Kami akan segera kembali!',
+    'maintenance_block_default_message':
+        'Binome sedang istirahat sebentar. Kami akan segera kembali!',
     'maintenance_block_ends_at': 'Diperkirakan kembali sekitar {time} (GMT)',
     'maintenance_banner': 'Pemeliharaan sedang berlangsung untuk akun lain.',
     'suspension_block_title': 'Akses dibatasi',
-    'suspension_block_message': 'Kamu telah mengirim permintaan yang tidak biasa ke server. Silakan kembali lagi nanti.',
+    'suspension_block_message':
+        'Kamu telah mengirim permintaan yang tidak biasa ke server. Silakan kembali lagi nanti.',
     'nav_duo': 'Duo',
     'nav_gallery': 'Buku Harian',
     'nav_games': 'Permainan',
     'nav_game_chats': 'Obrolan',
     'game_chats_title': 'Obrolan permainan',
-    'game_chats_empty': 'Belum ada obrolan.\nKirim kartu dari Cœur à Cœur untuk memulai.',
+    'game_chats_empty':
+        'Belum ada obrolan.\nKirim kartu dari Cœur à Cœur untuk memulai.',
     'game_chats_empty_cta': 'Buka Cœur à Cœur',
-    'game_chats_empty_for_game': 'Belum ada obrolan di {name}.\nKirim kartu untuk memulai.',
+    'game_chats_empty_for_game':
+        'Belum ada obrolan di {name}.\nKirim kartu untuk memulai.',
     'game_chats_empty_cta_for_game': 'Buka {name}',
     'nav_profile': 'Profil',
     'dashboard_welcome': 'Selamat datang, {name} 💕',
@@ -5491,8 +5543,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Pasanganmu belum membagikan suasana hatinya hari ini, kamu bisa memintanya untuk melakukannya.',
-    'mood_share_yours_first': 'Bagikan dulu suasana hatimu hari ini untuk melihat milik pasanganmu.',
+    'mood_partner_not_shared_yet':
+        'Pasanganmu belum membagikan suasana hatinya hari ini, kamu bisa memintanya untuk melakukannya.',
+    'mood_share_yours_first':
+        'Bagikan dulu suasana hatimu hari ini untuk melihat milik pasanganmu.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -5956,7 +6010,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} menjeda permainan',
     'memory_board_paused_title': 'Permainan dijeda',
     'memory_board_paused_subtitle_me': 'Lanjutkan kapan pun kamu siap',
-    'memory_board_paused_subtitle_depleted': 'Saldo Token habis — isi ulang, lalu siapa pun bisa melanjutkan.',
+    'memory_board_paused_subtitle_depleted':
+        'Saldo Token habis — isi ulang, lalu siapa pun bisa melanjutkan.',
     'memory_board_paused_subtitle_partner':
         '{name} menjeda permainan — hanya {name} yang bisa melanjutkannya',
     'memory_board_resume_button': 'Lanjutkan permainan',
@@ -5982,7 +6037,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Dua ponsel berdekatan, tanpa koneksi internet.',
     'memory_mode_nearby_unsupported': 'Saat ini hanya tersedia di Android.',
-    'nearby_location_service_off': 'Aktifkan lokasi (GPS) ponsel untuk melanjutkan.',
+    'nearby_location_service_off':
+        'Aktifkan lokasi (GPS) ponsel untuk melanjutkan.',
     'memory_nearby_permission_denied':
         'Izinkan Bluetooth dan lokasi untuk melanjutkan.',
     'memory_nearby_start_host_error': 'Tidak dapat memulai koneksi.',
@@ -6110,19 +6166,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'ru': {
     'maintenance_block_title': 'Технические работы',
-    'maintenance_block_default_message': 'Binome ненадолго остановился на паузу. Скоро вернёмся!',
+    'maintenance_block_default_message':
+        'Binome ненадолго остановился на паузу. Скоро вернёмся!',
     'maintenance_block_ends_at': 'Ожидаемое возвращение около {time} (GMT)',
     'maintenance_banner': 'Для других аккаунтов идут технические работы.',
     'suspension_block_title': 'Доступ ограничен',
-    'suspension_block_message': 'Вы слишком часто обращались к серверу необычным образом. Пожалуйста, зайдите позже.',
+    'suspension_block_message':
+        'Вы слишком часто обращались к серверу необычным образом. Пожалуйста, зайдите позже.',
     'nav_duo': 'Дуо',
     'nav_gallery': 'Дневник',
     'nav_games': 'Игры',
     'nav_game_chats': 'Чаты',
     'game_chats_title': 'Игровые чаты',
-    'game_chats_empty': 'Пока нет чатов.\nОтправьте карточку из Cœur à Cœur, чтобы начать.',
+    'game_chats_empty':
+        'Пока нет чатов.\nОтправьте карточку из Cœur à Cœur, чтобы начать.',
     'game_chats_empty_cta': 'Открыть Cœur à Cœur',
-    'game_chats_empty_for_game': 'Пока нет чатов в {name}.\nОтправьте карточку, чтобы начать.',
+    'game_chats_empty_for_game':
+        'Пока нет чатов в {name}.\nОтправьте карточку, чтобы начать.',
     'game_chats_empty_cta_for_game': 'Открыть {name}',
     'nav_profile': 'Профиль',
     'dashboard_welcome': 'Добро пожаловать, {name} 💕',
@@ -6377,8 +6437,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Твой партнёр ещё не поделился своим настроением сегодня, можешь попросить его/её сделать это.',
-    'mood_share_yours_first': 'Сначала поделись своим настроением, чтобы увидеть настроение партнёра.',
+    'mood_partner_not_shared_yet':
+        'Твой партнёр ещё не поделился своим настроением сегодня, можешь попросить его/её сделать это.',
+    'mood_share_yours_first':
+        'Сначала поделись своим настроением, чтобы увидеть настроение партнёра.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -6845,7 +6907,8 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставил(а) игру на паузу',
     'memory_board_paused_title': 'Игра на паузе',
     'memory_board_paused_subtitle_me': 'Продолжите, когда будете готовы',
-    'memory_board_paused_subtitle_depleted': 'Баланс Token исчерпан — пополните, затем любой из вас может продолжить.',
+    'memory_board_paused_subtitle_depleted':
+        'Баланс Token исчерпан — пополните, затем любой из вас может продолжить.',
     'memory_board_paused_subtitle_partner':
         '{name} поставил(а) игру на паузу — только {name} может её продолжить',
     'memory_board_resume_button': 'Продолжить игру',
@@ -6869,7 +6932,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_subtitle':
         'Два телефона рядом, без подключения к интернету.',
     'memory_mode_nearby_unsupported': 'Пока доступно только на Android.',
-    'nearby_location_service_off': 'Включи геолокацию (GPS) на телефоне, чтобы продолжить.',
+    'nearby_location_service_off':
+        'Включи геолокацию (GPS) на телефоне, чтобы продолжить.',
     'memory_nearby_permission_denied':
         'Разрешите Bluetooth и геолокацию, чтобы продолжить.',
     'memory_nearby_start_host_error': 'Не удалось начать подключение.',
@@ -6996,19 +7060,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'pt': {
     'maintenance_block_title': 'Em manutenção',
-    'maintenance_block_default_message': 'O Binome está fazendo uma pequena pausa. Voltamos muito em breve!',
+    'maintenance_block_default_message':
+        'O Binome está fazendo uma pequena pausa. Voltamos muito em breve!',
     'maintenance_block_ends_at': 'Retorno previsto por volta de {time} (GMT)',
     'maintenance_banner': 'Há uma manutenção em curso para outras contas.',
     'suspension_block_title': 'Acesso limitado',
-    'suspension_block_message': 'Você fez solicitações incomuns ao servidor. Volte mais tarde.',
+    'suspension_block_message':
+        'Você fez solicitações incomuns ao servidor. Volte mais tarde.',
     'nav_duo': 'Casal',
     'nav_gallery': 'Diário',
     'nav_games': 'Jogos',
     'nav_game_chats': 'Conversas',
     'game_chats_title': 'Conversas de jogo',
-    'game_chats_empty': 'Ainda não há conversas.\nEnvie uma carta de Cœur à Cœur para começar.',
+    'game_chats_empty':
+        'Ainda não há conversas.\nEnvie uma carta de Cœur à Cœur para começar.',
     'game_chats_empty_cta': 'Abrir Cœur à Cœur',
-    'game_chats_empty_for_game': 'Ainda não há conversas em {name}.\nEnvie uma carta para começar.',
+    'game_chats_empty_for_game':
+        'Ainda não há conversas em {name}.\nEnvie uma carta para começar.',
     'game_chats_empty_cta_for_game': 'Abrir {name}',
     'nav_profile': 'Perfil',
     'dashboard_welcome': 'Bem-vindo(a), {name} 💕',
@@ -7262,8 +7330,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Seu parceiro(a) ainda não compartilhou o humor de hoje, você pode pedir para ele/ela fazer isso.',
-    'mood_share_yours_first': 'Compartilhe primeiro seu próprio humor de hoje para ver o do seu parceiro(a).',
+    'mood_partner_not_shared_yet':
+        'Seu parceiro(a) ainda não compartilhou o humor de hoje, você pode pedir para ele/ela fazer isso.',
+    'mood_share_yours_first':
+        'Compartilhe primeiro seu próprio humor de hoje para ver o do seu parceiro(a).',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -7729,7 +7799,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} pausou o jogo',
     'memory_board_paused_title': 'Jogo pausado',
     'memory_board_paused_subtitle_me': 'Retome quando estiver pronto(a)',
-    'memory_board_paused_subtitle_depleted': 'Saldo de Tokens esgotado — recarregue, depois qualquer um pode continuar.',
+    'memory_board_paused_subtitle_depleted':
+        'Saldo de Tokens esgotado — recarregue, depois qualquer um pode continuar.',
     'memory_board_paused_subtitle_partner':
         '{name} pausou o jogo — só {name} pode retomá-lo',
     'memory_board_resume_button': 'Retomar jogo',
@@ -7754,7 +7825,8 @@ const Map<String, Map<String, String>> kTranslations = {
         'Dois telemóveis próximos, sem ligação à internet.',
     'memory_mode_nearby_unsupported':
         'Disponível apenas no Android por enquanto.',
-    'nearby_location_service_off': 'Ative a localização (GPS) do telefone para continuar.',
+    'nearby_location_service_off':
+        'Ative a localização (GPS) do telefone para continuar.',
     'memory_nearby_permission_denied':
         'Permitam o Bluetooth e a localização para continuar.',
     'memory_nearby_start_host_error': 'Não foi possível iniciar a ligação.',
@@ -7883,19 +7955,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'tr': {
     'maintenance_block_title': 'Bakımda',
-    'maintenance_block_default_message': 'Binome kısa bir mola veriyor. Çok yakında döneceğiz!',
+    'maintenance_block_default_message':
+        'Binome kısa bir mola veriyor. Çok yakında döneceğiz!',
     'maintenance_block_ends_at': 'Tahmini dönüş saati {time} (GMT)',
     'maintenance_banner': 'Diğer hesaplar için bakım sürüyor.',
     'suspension_block_title': 'Erişim kısıtlandı',
-    'suspension_block_message': 'Sunucuya olağandışı sayıda istek gönderdin. Lütfen daha sonra tekrar dene.',
+    'suspension_block_message':
+        'Sunucuya olağandışı sayıda istek gönderdin. Lütfen daha sonra tekrar dene.',
     'nav_duo': 'İkili',
     'nav_gallery': 'Günlük',
     'nav_games': 'Oyunlar',
     'nav_game_chats': 'Sohbetler',
     'game_chats_title': 'Oyun sohbetleri',
-    'game_chats_empty': 'Henüz sohbet yok.\nBaşlamak için Cœur à Cœur\'dan kart gönder.',
+    'game_chats_empty':
+        'Henüz sohbet yok.\nBaşlamak için Cœur à Cœur\'dan kart gönder.',
     'game_chats_empty_cta': 'Cœur à Cœur\'ı aç',
-    'game_chats_empty_for_game': '{name} içinde henüz sohbet yok.\nBaşlamak için kart gönder.',
+    'game_chats_empty_for_game':
+        '{name} içinde henüz sohbet yok.\nBaşlamak için kart gönder.',
     'game_chats_empty_cta_for_game': '{name}\'ı aç',
     'nav_profile': 'Profil',
     'dashboard_welcome': 'Hoş geldin, {name} 💕',
@@ -8145,8 +8221,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Partnerin bugünkü ruh halini henüz paylaşmadı, ondan bunu yapmasını isteyebilirsin.',
-    'mood_share_yours_first': 'Partnerinin ruh halini görmek için önce kendi ruh halini paylaş.',
+    'mood_partner_not_shared_yet':
+        'Partnerin bugünkü ruh halini henüz paylaşmadı, ondan bunu yapmasını isteyebilirsin.',
+    'mood_share_yours_first':
+        'Partnerinin ruh halini görmek için önce kendi ruh halini paylaş.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -8608,7 +8686,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name} oyunu duraklattı',
     'memory_board_paused_title': 'Oyun duraklatıldı',
     'memory_board_paused_subtitle_me': 'Hazır olduğunda devam et',
-    'memory_board_paused_subtitle_depleted': 'Token bakiyesi bitti — yükle, ardından ikinizden biri devam edebilir.',
+    'memory_board_paused_subtitle_depleted':
+        'Token bakiyesi bitti — yükle, ardından ikinizden biri devam edebilir.',
     'memory_board_paused_subtitle_partner':
         '{name} oyunu duraklattı — yalnızca {name} devam ettirebilir',
     'memory_board_resume_button': 'Oyuna devam et',
@@ -8633,7 +8712,8 @@ const Map<String, Map<String, String>> kTranslations = {
         'Yakındaki iki telefon, internet bağlantısı gerekmez.',
     'memory_mode_nearby_unsupported':
         'Şu anda yalnızca Android\'de kullanılabilir.',
-    'nearby_location_service_off': 'Devam etmek için telefonun konumunu (GPS) aç.',
+    'nearby_location_service_off':
+        'Devam etmek için telefonun konumunu (GPS) aç.',
     'memory_nearby_permission_denied':
         'Devam etmek için Bluetooth ve konuma izin verin.',
     'memory_nearby_start_host_error': 'Bağlantı başlatılamadı.',
@@ -8724,7 +8804,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'war_card_war_hint': 'Başka bir kart oynamak için dokun',
     'war_card_tap_hint': 'Oynamak için kartına dokun',
     'war_card_collect_button': 'Kartlarımı topla',
-    'war_card_collect_waiting': '{partner} kartlarını toplayana kadar bekleniyor…',
+    'war_card_collect_waiting':
+        '{partner} kartlarını toplayana kadar bekleniyor…',
     'game_comment_hint': 'Bir yorum yaz...',
     'game_comment_send': 'Gönder',
     'war_card_difficulty_title': 'Deste boyutunu seç',
@@ -8759,19 +8840,23 @@ const Map<String, Map<String, String>> kTranslations = {
   },
   'uk': {
     'maintenance_block_title': 'Технічні роботи',
-    'maintenance_block_default_message': 'Binome ненадовго зупинився на паузу. Скоро повернемось!',
+    'maintenance_block_default_message':
+        'Binome ненадовго зупинився на паузу. Скоро повернемось!',
     'maintenance_block_ends_at': 'Очікуване повернення близько {time} (GMT)',
     'maintenance_banner': 'Для інших акаунтів тривають технічні роботи.',
     'suspension_block_title': 'Доступ обмежено',
-    'suspension_block_message': 'Ви надто часто звертались до сервера незвичним чином. Будь ласка, поверніться пізніше.',
+    'suspension_block_message':
+        'Ви надто часто звертались до сервера незвичним чином. Будь ласка, поверніться пізніше.',
     'nav_duo': 'Дует',
     'nav_gallery': 'Щоденник',
     'nav_games': 'Ігри',
     'nav_game_chats': 'Чати',
     'game_chats_title': 'Ігрові чати',
-    'game_chats_empty': 'Поки немає чатів.\nНадішліть картку з Cœur à Cœur, щоб почати.',
+    'game_chats_empty':
+        'Поки немає чатів.\nНадішліть картку з Cœur à Cœur, щоб почати.',
     'game_chats_empty_cta': 'Відкрити Cœur à Cœur',
-    'game_chats_empty_for_game': 'Поки немає чатів у {name}.\nНадішліть картку, щоб почати.',
+    'game_chats_empty_for_game':
+        'Поки немає чатів у {name}.\nНадішліть картку, щоб почати.',
     'game_chats_empty_cta_for_game': 'Відкрити {name}',
     'nav_profile': 'Профіль',
     'dashboard_welcome': 'Ласкаво просимо, {name} 💕',
@@ -9022,8 +9107,10 @@ const Map<String, Map<String, String>> kTranslations = {
     'mood_card_prompt': 'How are you feeling today?',
     'mood_card_waiting': 'Waiting for your partner...',
     'mood_card_waiting_prefix': 'Waiting for',
-    'mood_partner_not_shared_yet': 'Твій партнер ще не поділився своїм настроєм сьогодні, можеш попросити його/її це зробити.',
-    'mood_share_yours_first': 'Спершу поділись своїм настроєм, щоб побачити настрій партнера.',
+    'mood_partner_not_shared_yet':
+        'Твій партнер ще не поділився своїм настроєм сьогодні, можеш попросити його/її це зробити.',
+    'mood_share_yours_first':
+        'Спершу поділись своїм настроєм, щоб побачити настрій партнера.',
     'mood_need_label': "Today's need (optional)",
     'mood_desire_label': "Today's wish (optional)",
     'mood_save_cta': 'Share',
@@ -9486,7 +9573,8 @@ const Map<String, Map<String, String>> kTranslations = {
         '{name} поставив(ла) гру на паузу',
     'memory_board_paused_title': 'Гру призупинено',
     'memory_board_paused_subtitle_me': 'Продовжте, коли будете готові',
-    'memory_board_paused_subtitle_depleted': 'Баланс Token вичерпано — поповніть, тоді будь-хто з вас може продовжити.',
+    'memory_board_paused_subtitle_depleted':
+        'Баланс Token вичерпано — поповніть, тоді будь-хто з вас може продовжити.',
     'memory_board_paused_subtitle_partner':
         '{name} поставив(ла) гру на паузу — лише {name} може її продовжити',
     'memory_board_resume_button': 'Продовжити гру',
@@ -9509,7 +9597,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_nearby_title': 'Поруч, на зв\'язку',
     'memory_mode_nearby_subtitle': 'Два телефони поруч, без інтернету.',
     'memory_mode_nearby_unsupported': 'Наразі доступно лише на Android.',
-    'nearby_location_service_off': 'Увімкни геолокацію (GPS) на телефоні, щоб продовжити.',
+    'nearby_location_service_off':
+        'Увімкни геолокацію (GPS) на телефоні, щоб продовжити.',
     'memory_nearby_permission_denied':
         'Дозвольте Bluetooth і геолокацію, щоб продовжити.',
     'memory_nearby_start_host_error': 'Не вдалося розпочати з\'єднання.',
@@ -10301,7 +10390,8 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_board_paused_by_partner_tooltip': '{name}がゲームを一時停止しました',
     'memory_board_paused_title': 'ゲーム一時停止中',
     'memory_board_paused_subtitle_me': '準備ができたら再開してください',
-    'memory_board_paused_subtitle_depleted': 'Token残高がなくなりました。チャージすればどちらでも再開できます。',
+    'memory_board_paused_subtitle_depleted':
+        'Token残高がなくなりました。チャージすればどちらでも再開できます。',
     'memory_board_paused_subtitle_partner':
         '{name}がゲームを一時停止しました——{name}だけが再開できます',
     'memory_board_resume_button': 'ゲームを再開',
