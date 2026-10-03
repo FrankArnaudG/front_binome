@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../theme/theme_palette.dart';
+import '../../shop/shop_screen.dart';
+import '../../shop/subscription_screen.dart';
 
 /// Carte persistante sous le bouton "Reprendre" quand la pause est due à un
 /// solde de tokens épuisé — voir demande utilisateur : "écrire en dessous
@@ -26,26 +28,71 @@ class GameWalletDepletedNotice extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: theme.primary.withValues(alpha: 0.25)),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(Icons.account_balance_wallet_outlined, size: 18, color: theme.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Solde de tokens épuisé.',
-                    style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w800, color: theme.textOnBackground),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 18,
+                  color: theme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Solde de tokens épuisé.',
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: theme.textOnBackground,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Recharge des tokens ou abonne-toi pour reprendre la partie.",
+                        style: GoogleFonts.nunito(
+                          fontSize: 12.5,
+                          height: 1.35,
+                          color: theme.textOnBackgroundMuted,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    "Recharge des tokens ou abonne-toi pour que n'importe qui puisse reprendre la partie.",
-                    style: GoogleFonts.nunito(fontSize: 12.5, height: 1.35, color: theme.textOnBackgroundMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Voir demande utilisateur : le SnackBar "Recharger" qui
+            // chevauchait le micro a été retiré (voir game_resume_action.dart)
+            // — ce raccourci vit maintenant ici, dans l'encart persistant.
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen())),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.primary,
+                      side: BorderSide(color: theme.primary.withValues(alpha: 0.4)),
+                    ),
+                    child: const Text('Acheter des tokens'),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SubscriptionScreen())),
+                    style: FilledButton.styleFrom(backgroundColor: theme.primary),
+                    child: const Text("S'abonner"),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
