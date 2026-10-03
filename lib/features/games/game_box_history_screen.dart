@@ -1781,7 +1781,12 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         builder: (_) => PacksScreen(replyToSendId: widget.send.id),
       ),
     );
-    if (replied == true && mounted) {
+    if (!mounted) return;
+    // Voir demande utilisateur : même correctif que _sendAnotherCard — le
+    // clavier ne doit pas se rouvrir tout seul au retour sur cette
+    // discussion.
+    _composeFocusNode.unfocus();
+    if (replied == true) {
       _loadReplies();
     }
   }
@@ -1904,9 +1909,12 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       ),
     );
 
+    if (!mounted) return;
+    _composeFocusNode.unfocus();
     // "random" est déjà entièrement envoyé (et sa bulle déjà à l'écran)
-    // avant même la fermeture de la feuille ci-dessus — rien à faire ici.
-    if (!mounted || choice != 'custom') return;
+    // avant même la fermeture de la feuille ci-dessus — rien d'autre à
+    // faire ici.
+    if (choice != 'custom') return;
     _composeCustomHeartbeatReply();
   }
 
@@ -1977,6 +1985,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         ),
       ),
     );
+    // Voir demande utilisateur : même correctif que _sendAnotherCard/_reply
+    // — pas de clavier qui se rouvre tout seul au retour sur cette
+    // discussion une fois le battement de cœur envoyé.
+    if (mounted) _composeFocusNode.unfocus();
   }
 
   Future<void> _sendHeartbeatReply({String? message}) async {
@@ -2128,7 +2140,14 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               ),
       ),
     );
-    if (result == null || !mounted) return;
+    if (!mounted) return;
+    // Voir demande utilisateur : "quand je clique pour envoyer le clavier
+    // s'ouvre automatiquement et c'est gênant" — au retour de l'écran de
+    // composition de la carte, Flutter redonnait le focus au champ de
+    // texte de CETTE discussion (le seul encore focalisable), rouvrant le
+    // clavier sans action volontaire de l'utilisateur.
+    _composeFocusNode.unfocus();
+    if (result == null) return;
     // Même protection que _sendPending/_onRealtimeEvent (SendCreated) : si
     // l'écho temps réel a déjà ajouté cette carte avant que cette réponse
     // HTTP ne revienne, l'ajouter une seconde fois dupliquait son id dans
