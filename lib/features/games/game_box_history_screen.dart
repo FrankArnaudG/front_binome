@@ -2181,9 +2181,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       final updated = await GameService.instance.answerTruthOrDareRequest(reply.truthOrDareRequest!.id, category);
       GameCardInboxService.instance.removePending(reply.id);
       if (!mounted) return;
-      setState(() {
-        _replies = _replies.map((r) => r.id == updated.id ? updated : r).toList();
-      });
+      // La demande peut être la racine même du fil (voir
+      // GameBoxesScreen._openTruthOrDareBox) et pas seulement une réponse
+      // parmi _replies — _updateSend sait déjà distinguer les deux cas.
+      setState(() => _updateSend(updated));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2220,10 +2221,11 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     // TruthOrDareRequestUpdated, mais sans ça le bouton resterait actif
     // le temps du bref aller-retour).
     setState(() {
-      _replies = _replies.map((r) {
-        if (r.id != reply.id) return r;
-        return r.copyWith(truthOrDareRequest: r.truthOrDareRequest!.copyWith(gameCardSendId: result.gameCard!.id));
-      }).toList();
+      // Même remarque que _answerTruthOrDareRequest : [reply] peut être la
+      // racine du fil, pas forcément l'une de _replies.
+      _updateSend(reply.copyWith(
+        truthOrDareRequest: reply.truthOrDareRequest!.copyWith(gameCardSendId: result.gameCard!.id),
+      ));
       if (!_replies.any((r) => r.id == result.id)) {
         _replies = [..._replies, result];
       }
@@ -2411,7 +2413,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             onTap: () {
               if (_reactionPickerOpenForSendId != null) setState(() => _reactionPickerOpenForSendId = null);
             },
-            child: card == null
+            child: (card == null && !_rootSend.isTruthOrDareRequest)
                 ? EmptyState(icon: Icons.style_rounded, message: LocaleScope.of(context).t('game_card_not_found'))
                 : Column(
                     children: [
@@ -2435,17 +2437,25 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     );
   }
 
-  Widget _buildMessageList(ThemePalette theme, GameCardSend card) {
-    final answer = _localAnswer ?? card.answer;
+  Widget _buildMessageList(ThemePalette theme, GameCardSend? card) {
+    final answer = card == null ? null : (_localAnswer ?? card.answer);
 
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       children: [
-        // Séparateur de date pour la carte racine — premier message du fil,
-        // toujours daté (voir demande utilisateur, capture de référence
-        // WhatsApp : "Aujourd'hui"/"Hier"/nom du jour/date complète).
+        // Séparateur de date pour le premier message du fil, toujours daté
+        // (voir demande utilisateur, capture de référence WhatsApp :
+        // "Aujourd'hui"/"Hier"/nom du jour/date complète).
         _ThreadDateHeader(label: dateHeaderLabel(context, widget.send.createdAt), theme: theme),
+        // Voir demande utilisateur : une discussion "Vérité ou Défi" peut
+        // aussi démarrer par une DEMANDE ("choisis Vérité ou Défi", voir
+        // GameBoxesScreen._openTruthOrDareBox) plutôt que par une carte —
+        // même bulle que pour une demande relancée en cours de fil (voir
+        // _buildTruthOrDareRequestBubble), juste en tête ici.
+        if (card == null)
+          _buildTruthOrDareRequestBubble(theme, _rootSend)
+        else ...[
         GestureDetector(
           // Clic-maintenu → menu "Répondre"/pensée/poème (voir
           // _showMessageActionsMenu) — disponible sur N'IMPORTE QUEL
@@ -2625,6 +2635,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           // répondre (voir demande utilisateur).
           const SizedBox(height: 6),
           _buildBlindPollAnswerBar(theme, _rootSend),
+        ],
         ],
         if (_loadingReplies)
           const Padding(
