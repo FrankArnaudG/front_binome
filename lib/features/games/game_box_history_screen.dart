@@ -824,6 +824,14 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
 
   String? _subscribedBoxId;
   Set<String> _presentMemberIds = {};
+  // Voir demande utilisateur : "des fois le message échappe au temps réel
+  // et ne vient jamais, mais si je sors et reviens il apparaît" — cet
+  // écran n'avait aucun filet de secours après une coupure/reconnexion du
+  // websocket (contrairement à GameConversationsScreen et consorts, voir
+  // RealtimeClient.resyncRequests : "émise après une reconnexion... moments
+  // où des messages ont pu être manqués"), un SendCreated manqué pendant
+  // cette fenêtre restait donc invisible jusqu'à rouvrir l'écran à la main.
+  StreamSubscription<void>? _resyncSub;
 
   bool get _isMine => widget.send.senderId == widget.user.id;
   AppUser? get _partner => _isMine ? widget.send.recipient : widget.send.sender;
@@ -839,6 +847,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     _loadReplies().then((_) => _markIncomingAsSeen());
     _initRealtime();
     _loadHeartbeatPrice();
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _loadReplies());
   }
 
   Future<void> _loadHeartbeatPrice() async {
@@ -865,6 +874,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     _composeFocusNode.dispose();
     _scrollController.dispose();
     _retryGuessController.dispose();
+    _resyncSub?.cancel();
     if (_subscribedBoxId != null) {
       RealtimeClient.instance.unsubscribeFromBox(
         _subscribedBoxId!,
