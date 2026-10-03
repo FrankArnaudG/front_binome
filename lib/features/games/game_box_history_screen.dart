@@ -3107,9 +3107,39 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 ),
               ],
             )
-          : Text(
-              'En attente du choix de ${reply.recipient?.prenom ?? "ton binôme"}...',
-              style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+          // Voir demande utilisateur : "trouver un autre design... ça me
+          // convient pas" — reprend EXACTEMENT la même paire de pastilles
+          // que voit le binôme (pas un simple texte), grisées et figées
+          // par un loader, pour que ce soit visuellement évident que
+          // c'est LA MÊME décision qui se prend de l'autre côté.
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'En attente de ${reply.recipient?.prenom ?? "ton binôme"}',
+                  style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                ),
+                const SizedBox(height: 10),
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: _buildTruthOrDarePendingPill(theme, veriteColor, 'Vérité')),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildTruthOrDarePendingPill(theme, defiColor, 'Défi')),
+                      ],
+                    ),
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(color: theme.surface, shape: BoxShape.circle),
+                      padding: const EdgeInsets.all(5),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: theme.textOnBackgroundMuted),
+                    ),
+                  ],
+                ),
+              ],
             );
     } else {
       final categoryLabel = req.isDefi ? 'Défi' : 'Vérité';
@@ -3178,6 +3208,21 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           Text(label),
         ],
       ),
+    );
+  }
+
+  /// Même gabarit que [_buildTruthOrDareAnswerButton], mais désactivé et
+  /// atténué — côté auteur·e de la demande, pour qui ce n'est pas encore
+  /// un choix à faire (voir demande utilisateur).
+  Widget _buildTruthOrDarePendingPill(ThemePalette theme, Color color, String label) {
+    return OutlinedButton(
+      onPressed: null,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color.withValues(alpha: 0.4),
+        side: BorderSide(color: color.withValues(alpha: 0.25)),
+        disabledForegroundColor: color.withValues(alpha: 0.4),
+      ),
+      child: Text(label),
     );
   }
 
