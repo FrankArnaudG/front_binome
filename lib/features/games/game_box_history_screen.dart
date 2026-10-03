@@ -1236,6 +1236,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.1);
   }
 
+  /// Voir _scrollToCard — [gameCardSendId] est l'id du GameCardSend lié à
+  /// la demande (voir TruthOrDareRequest.gameCardSendId), pas directement
+  /// l'id du Send qui l'enveloppe ; il faut d'abord retrouver CE Send dans
+  /// le fil avant de pouvoir remonter jusqu'à sa bulle.
+  void _scrollToSentTruthOrDareCard(String gameCardSendId) {
+    final match = _replies.where((r) => r.gameCard?.id == gameCardSendId);
+    if (match.isEmpty) return;
+    _scrollToCard(match.first.id);
+  }
+
   /// Remonte jusqu'au message cité — carte, bulle de réponse OU simple
   /// message de chat, selon ce qui a été cité (voir _replyQuoteSendId pour
   /// la bannière "Tu réponds à...", et _decodeQuoted pour une citation déjà
@@ -3182,22 +3192,31 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             // simple drapeau local qui se réinitialiserait en rouvrant le
             // fil.
             if (req.isFulfilled)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: categoryColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_rounded, size: 16, color: categoryColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Carte de $categoryLabel envoyée',
-                      style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: categoryColor),
-                    ),
-                  ],
+              // Voir demande utilisateur : "rendre cliquable, si je clique
+              // ça amène directement là où y'a la carte envoyée" — remonte
+              // jusqu'à la bulle de LA carte qui a acquitté cette demande
+              // précise (même mécanisme que toute citation "répondre à...").
+              GestureDetector(
+                onTap: () => _scrollToSentTruthOrDareCard(req.gameCardSendId!),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: categoryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_rounded, size: 16, color: categoryColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Carte de $categoryLabel envoyée',
+                        style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: categoryColor),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right_rounded, size: 16, color: categoryColor),
+                    ],
+                  ),
                 ),
               )
             else
