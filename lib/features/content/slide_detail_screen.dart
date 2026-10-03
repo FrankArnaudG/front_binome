@@ -530,7 +530,13 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
         builder: (_) => PacksScreen(replyToSendId: _send.id),
       ),
     );
-    if (replied == true && mounted) {
+    if (!mounted) return;
+    // Voir demande utilisateur : "quand je clique pour envoyer le clavier
+    // s'ouvre automatiquement" (même correctif que GameCardThreadScreen) —
+    // au retour sur cet écran, Flutter redonnait le focus au champ de
+    // texte de ce fil, rouvrant le clavier sans action de l'utilisateur.
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (replied == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(LocaleScope.of(context).t('pack_reply_sent_snackbar'))),
       );
@@ -608,7 +614,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       ),
     );
 
-    if (!mounted || choice == null) return;
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (choice == null) return;
     if (choice == 'random') {
       _sendHeartbeatReply();
     } else {
@@ -665,6 +673,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       ),
     );
 
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     if (message != null && message.isNotEmpty) {
       _sendHeartbeatReply(message: message);
     }
