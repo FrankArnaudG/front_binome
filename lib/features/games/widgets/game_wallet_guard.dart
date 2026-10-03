@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/realtime_client.dart';
+import '../../../theme/theme_scope.dart';
 import '../../shop/shop_screen.dart';
 import '../../shop/wallet_balance_notifier.dart';
 
@@ -52,6 +54,15 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
   // vient du serveur, mais le compte à rebours jusqu'à 30s est fait ici).
   Timer? _criticalTimer;
 
+  // Voir demande utilisateur : "ajouter [ces notifications] au-dessus des
+  // icônes micro caméra, message... même si la vidéo est active il faut
+  // pas que ça cache la notification car elle est à prioriser" — un
+  // bandeau persistant positionné au-dessus du cluster mic/caméra/chat
+  // (voir build()), jamais un SnackBar éphémère dont la position/durée
+  // n'étaient pas garanties au-dessus d'un aperçu vidéo actif.
+  String? _notice;
+  Timer? _noticeHideTimer;
+
   @override
   void initState() {
     super.initState();
@@ -68,7 +79,17 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
       RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onEvent);
     }
     _criticalTimer?.cancel();
+    _noticeHideTimer?.cancel();
     super.dispose();
+  }
+
+  void _showNotice(String text, Duration duration) {
+    if (!mounted) return;
+    _noticeHideTimer?.cancel();
+    setState(() => _notice = text);
+    _noticeHideTimer = Timer(duration, () {
+      if (mounted) setState(() => _notice = null);
+    });
   }
 
   void _onEvent(RealtimeEvent event) {
@@ -85,12 +106,7 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
       _scheduleCriticalWarning(minutesRemaining);
       if (_warningShown) return;
       _warningShown = true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Il reste environ ${minutesRemaining.round()} minute(s) de jeu — pensez à recharger.'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      _showNotice('Il reste environ ${minutesRemaining.round()} minute(s) de jeu — pensez à recharger.', const Duration(seconds: 6));
       return;
     }
     if (event.event == 'GameWalletDepleted') {
@@ -130,14 +146,47 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
   void _showCriticalWarning() {
     if (_criticalWarningShown || _depletedNoticeShown || !mounted) return;
     _criticalWarningShown = true;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Il reste environ 30 secondes de jeu — recharge vite !'),
-        duration: const Duration(seconds: 5),
-      ),
-    );
+    _showNotice('Il reste environ 30 secondes de jeu — recharge vite !', const Duration(seconds: 6));
   }
 
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) {
+    final notice = _notice;
+    if (notice == null) return const SizedBox.shrink();
+    final theme = ThemeScope.paletteOf(context);
+    // Voir le cluster mic/caméra (VoiceCallOverlay, left:16 bottom:24) et
+    // le bouton chat (GameCommentOverlay, right:16 bottom:24) — ce bandeau
+    // se place juste au-dessus des deux, jamais caché par la vidéo grâce
+    // à l'ordre de montage dans le Stack (ce widget est toujours ajouté
+    // APRÈS VoiceCallOverlay côté appelant, donc peint par-dessus).
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 92,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: theme.surface.withValues(alpha: theme.isDark ? 0.92 : 0.96),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: theme.primary.withValues(alpha: 0.35)),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4))],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.timer_outlined, size: 18, color: theme.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  notice,
+                  style: GoogleFonts.nunito(fontSize: 12.5, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
