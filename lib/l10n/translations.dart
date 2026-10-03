@@ -357,7 +357,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'roman_photo_filter_new': 'Nouveautés',
     'roman_photo_filter_downloaded': 'Téléchargés',
     'games_menu_category_interactive': 'Jeu interactif',
-    'games_menu_category_classic': 'Jeu classique',
+    'games_menu_category_classic': 'Carte-question',
     'games_menu_category_interactive_subtitle':
         "Connectez-vous en même temps pour vivre l'instant à deux",
     'games_menu_category_classic_subtitle':

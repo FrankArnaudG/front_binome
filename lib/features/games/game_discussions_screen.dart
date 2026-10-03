@@ -139,7 +139,7 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: CategoryTab(
-                        label: 'Jeu classique',
+                        label: 'Carte-question',
                         selected: _tabIndex == 1,
                         theme: theme,
                         onTap: () => setState(() => _tabIndex = 1),
