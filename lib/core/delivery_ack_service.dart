@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../features/content/content_service.dart';
@@ -24,6 +26,11 @@ class DeliveryAckService {
 
   String? _boxId;
   String? _userId;
+  // Voir doc de classe : "rattrapage en masse à chaque (re)connexion" —
+  // vrai pour start()/onAppResumed(), mais jamais câblé pour une coupure
+  // SILENCIEUSE du socket pendant que l'app reste au premier plan (voir
+  // RealtimeClient.resyncRequests, qui couvre précisément ce cas).
+  StreamSubscription<void>? _resyncSub;
 
   bool get isStarted => _boxId != null;
 
@@ -33,6 +40,7 @@ class DeliveryAckService {
     _boxId = boxId;
     _userId = userId;
     RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onEvent);
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _sweep());
     _sweep();
   }
 
@@ -40,6 +48,8 @@ class DeliveryAckService {
     final boxId = _boxId;
     if (boxId == null) return;
     RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onEvent);
+    _resyncSub?.cancel();
+    _resyncSub = null;
     _boxId = null;
     _userId = null;
   }

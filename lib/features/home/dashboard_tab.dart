@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -48,6 +50,13 @@ class DashboardTab extends StatefulWidget {
 class _DashboardTabState extends State<DashboardTab> {
   bool _hasSentToday = false;
   String? _subscribedBoxId;
+  // Voir demande utilisateur : le badge global de cartes-jeu en attente
+  // (voir GameCardInboxService) n'est alimenté que par refresh() explicite
+  // ou par un écho temps réel direct (addPending) — un SendCreated manqué
+  // pendant une coupure/reconnexion sous-comptait le badge jusqu'à l'ouverture
+  // manuelle de l'écran concerné. Ce tab reste monté toute la session (voir
+  // MainTabScreen.IndexedStack), donc un seul abonnement ici suffit.
+  StreamSubscription<void>? _inboxResyncSub;
   String? _partnerId;
   bool _partnerPresent = false;
   Send? _receivedPoemToday;
@@ -63,6 +72,7 @@ class _DashboardTabState extends State<DashboardTab> {
     FeatureFlagsService.instance.refresh();
     GameCardInboxService.instance.refresh();
     UnreadTimelineService.instance.refresh(widget.user.id);
+    _inboxResyncSub = RealtimeClient.instance.resyncRequests.listen((_) => GameCardInboxService.instance.refresh());
     // Précharge les poèmes pour que Poèmes-Slides s'ouvre sans attente.
     ContentService.instance.prewarm();
     _checkTodayActivity();
@@ -96,6 +106,7 @@ class _DashboardTabState extends State<DashboardTab> {
         onPresenceChange: _onPresenceChange,
       );
     }
+    _inboxResyncSub?.cancel();
     super.dispose();
   }
 
