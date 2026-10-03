@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -44,12 +46,19 @@ class _EmojiStoryHistoryScreenState extends State<EmojiStoryHistoryScreen> {
   final _scrollController = ScrollController();
 
   String? _subscribedBoxId;
+  // Voir demande utilisateur : "es ce valable pour tous les autres [écrans]
+  // de texte dans cette catégorie de jeu" — même filet de secours que
+  // GameConversationsScreen/GameCardThreadScreen, absent ici jusqu'alors :
+  // un SendCreated manqué pendant une coupure/reconnexion du websocket
+  // restait invisible jusqu'à rouvrir l'écran à la main.
+  StreamSubscription<void>? _resyncSub;
 
   @override
   void initState() {
     super.initState();
     _loadCachedThenRefresh();
     _initRealtime();
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _load());
     _scrollController.addListener(() {
       if (!_scrollController.hasClients) return;
       final position = _scrollController.position;
@@ -62,6 +71,7 @@ class _EmojiStoryHistoryScreenState extends State<EmojiStoryHistoryScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _resyncSub?.cancel();
     if (_subscribedBoxId != null) {
       RealtimeClient.instance.unsubscribeFromBox(_subscribedBoxId!, onEvent: _onRealtimeEvent);
     }

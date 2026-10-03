@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -78,6 +79,10 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
   EmojiStoryMatchStats? _matchStats;
 
   String? _subscribedBoxId;
+  // Voir demande utilisateur : "es ce valable pour tous les autres [écrans]
+  // de texte dans cette catégorie de jeu" — même filet de secours que
+  // GameCardThreadScreen, absent ici jusqu'alors.
+  StreamSubscription<void>? _resyncSub;
 
   // Sélection façon WhatsApp (voir _buildSelectionAppBar) : appui long sur
   // une bulle entre dedans, appui simple sur une autre bulle ensuite bascule
@@ -136,6 +141,9 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
       _loading = false;
     }
     _initRealtime();
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) {
+      if (_sessionId != null) _load();
+    });
     _scrollController.addListener(() {
       if (!_scrollController.hasClients) return;
       final position = _scrollController.position;
@@ -156,6 +164,7 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = true;
     });
+    _resyncSub?.cancel();
     _controller.dispose();
     _editController?.dispose();
     _scrollController.dispose();

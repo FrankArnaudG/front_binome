@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -28,11 +30,17 @@ class _DoodleHistoryScreenState extends State<DoodleHistoryScreen> {
   bool _loadError = false;
   String? _boxId;
   final _scrollController = ScrollController();
+  // Voir demande utilisateur : "es ce valable pour tous les autres [écrans]
+  // de texte... et les autres" — même filet de secours que
+  // GameCardThreadScreen, absent ici jusqu'alors (DoodleNotifier a bien son
+  // propre poll de secours, mais cet écran-ci ne le partage pas).
+  StreamSubscription<void>? _resyncSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _load());
   }
 
   @override
@@ -50,6 +58,7 @@ class _DoodleHistoryScreenState extends State<DoodleHistoryScreen> {
     if (_boxId != null) {
       RealtimeClient.instance.unsubscribeFromBox(_boxId!, onEvent: _onRealtimeEvent);
     }
+    _resyncSub?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
