@@ -2674,6 +2674,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       entries.add(_TimelineEntry(
         rootCard.answeredAt ?? widget.send.createdAt,
         _buildClassicAnswerBubble(theme, _rootSend),
+        key: ValueKey('timeline-root-answer-${widget.send.id}'),
       ));
     }
 
@@ -2853,6 +2854,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               ],
             ],
           ),
+          key: ValueKey('timeline-card-${reply.id}'),
         ));
 
         // Réponse "classique" (texte libre) à CETTE carte relancée — son
@@ -2870,6 +2872,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           entries.add(_TimelineEntry(
             replyCard.answeredAt ?? reply.createdAt,
             _buildClassicAnswerBubble(theme, reply),
+            key: ValueKey('timeline-card-answer-${reply.id}'),
           ));
         }
       } else if (reply.isHeartbeat) {
@@ -2883,6 +2886,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         entries.add(_TimelineEntry(
           reply.createdAt,
           _buildHeartbeatBubble(theme, reply, messageText),
+          key: ValueKey('timeline-heartbeat-${reply.id}'),
         ));
       } else if (reply.isPack && reply.pack != null) {
         // Même principe que le battement de cœur juste au-dessus (voir
@@ -2902,11 +2906,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               quoteSendId: reply.id,
             ),
           ),
+          key: ValueKey('timeline-poem-${reply.id}'),
         ));
       } else if (reply.isTruthOrDareRequest && reply.truthOrDareRequest != null) {
         entries.add(_TimelineEntry(
           reply.createdAt,
           _buildTruthOrDareRequestBubble(theme, reply),
+          key: ValueKey('timeline-tod-${reply.id}'),
         ));
       } else {
         // Un message de chat normal peut lui-même être une réponse citée
@@ -2933,6 +2939,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   _showMessageActionsMenu(context, pos, quoteText: decoded.text, quoteSendId: reply.id),
             ),
           ),
+          key: ValueKey('timeline-text-${reply.id}'),
         ));
       }
     }
@@ -2960,6 +2967,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           // quoteSendId).
           onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: decoded.text),
         ),
+        key: ValueKey('timeline-pending-${identityHashCode(pending)}'),
       ));
     }
 
@@ -2987,7 +2995,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         widgets.add(_ThreadDateHeader(label: dateHeaderLabel(context, entry.time), theme: theme));
         lastDate = entryDate;
       }
-      widgets.add(entry.widget);
+      widgets.add(KeyedSubtree(key: entry.key, child: entry.widget));
     }
     return widgets;
   }
@@ -4942,8 +4950,17 @@ class _HeartbeatPriceBadge extends StatelessWidget {
 class _TimelineEntry {
   final DateTime time;
   final Widget widget;
+  // Clé stable par entrée (voir _timelineEntriesWithDateHeaders) : la liste
+  // `entries` est re-triée par horodatage à CHAQUE rebuild, puis rendue via
+  // un ListView(children: [...]) non virtualisé — sans clé de haut niveau,
+  // la réconciliation Flutter par défaut (type+position) peut mal réassigner
+  // l'Element d'un GlobalKey imbriqué plus bas (ex. _GameCardMessageBubble)
+  // dès que l'ordre change, rendant GlobalKey.currentContext ponctuellement
+  // `null` au moment du tap — constaté en réel (voir demande utilisateur :
+  // seul 1 des 4-5 boutons "Carte envoyée" fonctionnait).
+  final Key key;
 
-  _TimelineEntry(this.time, this.widget);
+  _TimelineEntry(this.time, this.widget, {required this.key});
 }
 
 class _ChatBubble extends StatelessWidget {
