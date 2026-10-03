@@ -57,6 +57,10 @@ class TruthOrDareSessionScreen extends StatefulWidget {
   // choix à faire ici : 'verite' ou 'defi' saute directement l'écran de
   // choix et ouvre l'éventail correspondant (voir initState).
   final String? lockedCategory;
+  // Demande "choisis Vérité ou Défi" à acquitter une fois la carte envoyée
+  // (voir GameCardThreadScreen._openTruthOrDareFromRequest/GameService.
+  // sendCard) — `null` pour le flux habituel (choix à l'aveugle).
+  final String? fulfillsRequestId;
 
   const TruthOrDareSessionScreen({
     super.key,
@@ -68,6 +72,7 @@ class TruthOrDareSessionScreen extends StatefulWidget {
     this.initialLastCategory,
     this.initialStreak = 0,
     this.lockedCategory,
+    this.fulfillsRequestId,
   });
 
   @override
@@ -217,6 +222,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
         widget.box.id,
         card.id,
         replyToSendId: widget.replyToSendId,
+        truthOrDareRequestId: widget.fulfillsRequestId,
       );
       if (!mounted) return;
       // Le compteur et la règle de série sont mis à jour tout de suite,

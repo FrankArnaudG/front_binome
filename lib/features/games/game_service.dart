@@ -128,12 +128,17 @@ class GameService {
     String questionId, {
     String? replyToSendId,
     String? senderAnswer,
+    // Voir demande utilisateur : acquitte une demande "choisis Vérité ou
+    // Défi" déjà répondue (voir TruthOrDareRequest.gameCardSendId côté
+    // modèle) — n'a de sens que pour TruthOrDareSessionScreen.lockedCategory.
+    String? truthOrDareRequestId,
   }) async {
     final data = await ApiClient.instance.post(
       '/games/$gameId/boxes/$gameBoxId/questions/$questionId/send',
       body: {
         if (replyToSendId != null) 'reply_to_send_id': replyToSendId,
         if (senderAnswer != null) 'sender_answer': senderAnswer,
+        if (truthOrDareRequestId != null) 'truth_or_dare_request_id': truthOrDareRequestId,
       },
     ) as Map<String, dynamic>;
     return Send.fromJson(data);

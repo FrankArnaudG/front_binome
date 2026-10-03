@@ -8,6 +8,11 @@ class TruthOrDareRequest {
   final String responderId;
   final String status;
   final String? chosenCategory; // 'verite' | 'defi' | null tant que pending
+  // Voir demande utilisateur : "le bouton choisir doit changer et dire
+  // carte de défi envoyée et non cliquable" — rempli une fois la carte
+  // promise réellement envoyée (voir GameCardController::send), un lien
+  // persistant plutôt qu'un simple état local éphémère.
+  final String? gameCardSendId;
 
   const TruthOrDareRequest({
     required this.id,
@@ -16,12 +21,14 @@ class TruthOrDareRequest {
     required this.responderId,
     required this.status,
     this.chosenCategory,
+    this.gameCardSendId,
   });
 
   bool get isPending => status == 'pending';
   bool get isAnswered => status == 'answered';
   bool get isDefi => chosenCategory == 'defi';
   bool get isVerite => chosenCategory == 'verite';
+  bool get isFulfilled => gameCardSendId != null;
 
   factory TruthOrDareRequest.fromJson(Map<String, dynamic> json) => TruthOrDareRequest(
         id: json['id'] as String,
@@ -30,14 +37,16 @@ class TruthOrDareRequest {
         responderId: json['responder_id'] as String,
         status: json['status'] as String,
         chosenCategory: json['chosen_category'] as String?,
+        gameCardSendId: json['game_card_send_id'] as String?,
       );
 
-  TruthOrDareRequest copyWith({String? status, String? chosenCategory}) => TruthOrDareRequest(
+  TruthOrDareRequest copyWith({String? status, String? chosenCategory, String? gameCardSendId}) => TruthOrDareRequest(
         id: id,
         gameId: gameId,
         requesterId: requesterId,
         responderId: responderId,
         status: status ?? this.status,
         chosenCategory: chosenCategory ?? this.chosenCategory,
+        gameCardSendId: gameCardSendId ?? this.gameCardSendId,
       );
 }

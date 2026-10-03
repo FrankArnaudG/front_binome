@@ -2197,15 +2197,27 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           excludeQuestionIds: _questionIdsAlreadyInThread,
           replyToSendId: widget.send.id,
           lockedCategory: category,
+          fulfillsRequestId: reply.truthOrDareRequest!.id,
         ),
       ),
     );
     if (!mounted) return;
     _composeFocusNode.unfocus();
     if (result == null) return;
-    if (!_replies.any((r) => r.id == result.id)) {
-      setState(() => _replies = [..._replies, result]);
-    }
+    // Voir demande utilisateur : "le bouton choisir doit changer... et non
+    // cliquable" — mis à jour tout de suite ici plutôt que d'attendre
+    // l'écho temps réel (qui arrive de toute façon, voir
+    // TruthOrDareRequestUpdated, mais sans ça le bouton resterait actif
+    // le temps du bref aller-retour).
+    setState(() {
+      _replies = _replies.map((r) {
+        if (r.id != reply.id) return r;
+        return r.copyWith(truthOrDareRequest: r.truthOrDareRequest!.copyWith(gameCardSendId: result.gameCard!.id));
+      }).toList();
+      if (!_replies.any((r) => r.id == result.id)) {
+        _replies = [..._replies, result];
+      }
+    });
     _scrollToBottom();
     _syncRepliesCacheSilently();
   }
@@ -3164,12 +3176,37 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           // carte ; rien à faire côté destinataire une fois répondu.
           if (isMine) ...[
             const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () => _openTruthOrDareFromRequest(reply),
-              icon: const Icon(Icons.style_rounded, size: 18),
-              label: const Text('Choisir une carte'),
-              style: ElevatedButton.styleFrom(backgroundColor: categoryColor, foregroundColor: Colors.white),
-            ),
+            // Voir demande utilisateur : "le bouton choisir doit changer
+            // et dire carte de défi envoyée et non cliquable" — état
+            // persistant (voir TruthOrDareRequest.isFulfilled), jamais un
+            // simple drapeau local qui se réinitialiserait en rouvrant le
+            // fil.
+            if (req.isFulfilled)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: categoryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_rounded, size: 16, color: categoryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Carte de $categoryLabel envoyée',
+                      style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: categoryColor),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ElevatedButton.icon(
+                onPressed: () => _openTruthOrDareFromRequest(reply),
+                icon: const Icon(Icons.style_rounded, size: 18),
+                label: const Text('Choisir une carte'),
+                style: ElevatedButton.styleFrom(backgroundColor: categoryColor, foregroundColor: Colors.white),
+              ),
           ],
         ],
       );
