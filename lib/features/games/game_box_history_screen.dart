@@ -2930,7 +2930,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onTap: () => showHeartbeatReplyModal(context, images: reply.heartbeatImages, message: messageText),
+        onTap: () => showHeartbeatReplyModal(
+          context,
+          images: reply.heartbeatImages,
+          message: messageText,
+          family: reply.heartbeatFamily,
+          senderGender: reply.sender?.gender,
+        ),
         onLongPressStart: (details) =>
             _showMessageActionsMenu(context, details.globalPosition, quoteText: messageText, quoteSendId: reply.id),
         child: Stack(
