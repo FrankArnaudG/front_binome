@@ -27,6 +27,7 @@ import '../widgets/game_wallet_depleted_notice.dart';
 import '../widgets/game_wallet_guard.dart';
 import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
+import '../../shop/subscription_status_notifier.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import 'number_hunt_transport.dart';
 import 'number_hunt_transport_remote.dart';
@@ -671,7 +672,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                           Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                           const SizedBox(width: 4),
                           Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                          if (commentsBoxId != null && widget.isLauncher) ...[
+                          if (commentsBoxId != null && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
                             const SizedBox(width: 8),
                             CoinBillingRing(theme: theme, progress: _coinProgress()),
                             if (_coinsConsumed() != null) ...[

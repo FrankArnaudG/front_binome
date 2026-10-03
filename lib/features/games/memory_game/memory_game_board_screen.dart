@@ -28,6 +28,7 @@ import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../game_guide_storage.dart';
 import '../game_service.dart';
+import '../../shop/subscription_status_notifier.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import 'memory_emoji_pool.dart';
 import 'memory_game_transport.dart';
@@ -914,7 +915,12 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
                           Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                           const SizedBox(width: 4),
                           Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                          if (commentsBoxId != null && widget.isLauncher) ...[
+                          // Voir demande utilisateur : "si j'ai un abonnement, le décompte en rouge ne
+                          // doit pas apparaître" — purement indicatif côté client (voir doc de
+                          // _coinsConsumed), n'a plus aucun sens une fois la facturation réellement
+                          // gratuite/illimitée côté serveur (voir SubscriptionStatusNotifier, même
+                          // source déjà utilisée par CoinBalanceBadge pour afficher "∞").
+                          if (commentsBoxId != null && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
                             const SizedBox(width: 8),
                             CoinBillingRing(theme: theme, progress: _coinProgress()),
                             if (_coinsConsumed() != null) ...[

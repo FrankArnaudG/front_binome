@@ -28,6 +28,7 @@ import '../widgets/nearby_voice_overlay.dart';
 import '../widgets/playing_card_face.dart';
 import '../widgets/voice_call_overlay.dart';
 import '../widgets/war_card_match_scoreboard.dart';
+import '../../shop/subscription_status_notifier.dart';
 import '../../shop/wallet_balance_notifier.dart';
 import 'war_card_engine.dart';
 import 'war_card_transport.dart';
@@ -1000,7 +1001,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                               Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                               const SizedBox(width: 4),
                               Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                              if (commentsBoxId != null && widget.isLauncher) ...[
+                              if (commentsBoxId != null && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
                                 const SizedBox(width: 8),
                                 CoinBillingRing(theme: theme, progress: _coinProgress()),
                                 if (_coinsConsumed() != null) ...[
