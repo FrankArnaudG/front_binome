@@ -61,6 +61,14 @@ class TruthOrDareSessionScreen extends StatefulWidget {
   // (voir GameCardThreadScreen._openTruthOrDareFromRequest/GameService.
   // sendCard) — `null` pour le flux habituel (choix à l'aveugle).
   final String? fulfillsRequestId;
+  // Voir demande utilisateur : à l'entrée dans une boîte sans discussion
+  // encore ouverte, on propose de D'ABORD demander au binôme de choisir
+  // (voir GameBoxesScreen._openTruthOrDareBox) plutôt que de choisir seul·e
+  // et d'envoyer tout de suite — ce mode ne sert qu'à PARCOURIR les cartes
+  // par curiosité, le bouton d'envoi devient "Demander à mon binôme" (voir
+  // _buildFocusedCard/_requestFromBrowse), aucune carte n'est envoyable
+  // avant que le binôme ait répondu à une demande.
+  final bool browseOnly;
 
   const TruthOrDareSessionScreen({
     super.key,
@@ -73,6 +81,7 @@ class TruthOrDareSessionScreen extends StatefulWidget {
     this.initialStreak = 0,
     this.lockedCategory,
     this.fulfillsRequestId,
+    this.browseOnly = false,
   });
 
   @override
@@ -280,6 +289,48 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
         _pageController = null;
       });
       _flip.value = 0;
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Mode "juste regarder" (voir [TruthOrDareSessionScreen.browseOnly]) :
+  /// remplace l'envoi direct d'une carte par l'envoi d'une DEMANDE à qui
+  /// choisira la catégorie à ma place (voir TruthOrDareRequest) — la carte
+  /// focalisée affichée en dessous n'est jamais envoyée elle-même, elle
+  /// n'a servi qu'à parcourir le paquet.
+  Future<void> _requestFromBrowse() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      final sentSend = await GameService.instance.sendTruthOrDareRequest(
+        widget.game.id,
+        replyToSendId: widget.replyToSendId,
+      );
+      if (!mounted) return;
+      if (widget.replyToSendId != null) {
+        Navigator.of(context).pop(sentSend);
+        return;
+      }
+      AppRouter.showGlobalNavBar.value = false;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => GameCardThreadScreen(
+            send: sentSend,
+            user: widget.user,
+            game: widget.game,
+            box: widget.box,
+          ),
+        ),
+      );
+      AppRouter.showGlobalNavBar.value = true;
+      if (!mounted) return;
+      // Rien d'autre à faire ici une fois la demande envoyée — on referme
+      // cet écran de parcours plutôt que de revenir à l'éventail.
+      Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -497,6 +548,38 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
           textAlign: TextAlign.center,
           style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: theme.textOnBackground),
         ),
+        // Voir demande utilisateur : en mode "juste regarder", l'envoi n'est
+        // débloqué qu'une fois le binôme ayant répondu à une demande — un
+        // raccourci ici évite de devoir d'abord retourner une carte juste
+        // pour trouver le bouton "Demander" (voir _buildFocusedCard).
+        if (widget.browseOnly) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Tu regardes les cartes. Envoyer une carte n\'est possible qu\'une fois ton binôme ayant choisi.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _sending ? null : _requestFromBrowse,
+                  child: Text(
+                    'Demander à mon binôme de choisir',
+                    style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 22),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -736,9 +819,9 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
         const SizedBox(height: 24),
         GameCardActions(
           theme: theme,
-          sendLabel: partnerSendLabel(context, partner, card.id),
+          sendLabel: widget.browseOnly ? 'Demander à mon binôme de choisir' : partnerSendLabel(context, partner, card.id),
           sending: _sending || _completing,
-          onSend: _send,
+          onSend: widget.browseOnly ? _requestFromBrowse : _send,
           onBack: _backToFan,
           backLabel: LocaleScope.of(context).t('truth_or_dare_back_to_fan'),
         ),

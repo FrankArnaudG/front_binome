@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
+import '../../core/app_router.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/emoji_story_stats.dart';
@@ -10,6 +12,7 @@ import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/empty_state.dart';
+import 'game_box_history_screen.dart';
 import 'game_box_session_screen.dart';
 import 'game_service.dart';
 import 'truth_or_dare_session_screen.dart';
@@ -123,16 +126,81 @@ class _GameBoxesScreenState extends State<GameBoxesScreen> {
       );
       return;
     }
+    if (widget.game.isTruthOrDare) {
+      await _openTruthOrDareBox(box);
+      return;
+    }
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => widget.game.isTruthOrDare
-            ? TruthOrDareSessionScreen(game: widget.game, box: box, user: widget.user)
-            : GameBoxSessionScreen(game: widget.game, box: box, user: widget.user),
+        builder: (_) => GameBoxSessionScreen(game: widget.game, box: box, user: widget.user),
       ),
     );
     if (changed == true) {
       _refresh();
       if (widget.game.isQuiz) _loadStats();
+    }
+  }
+
+  /// Voir demande utilisateur : avant d'ouvrir une boîte "Vérité ou Défi"
+  /// sans discussion encore ouverte, on propose explicitement D'ABORD de
+  /// demander au binôme de choisir à ma place (voir TruthOrDareRequest),
+  /// plutôt que de choisir seul·e une catégorie et d'envoyer tout de suite.
+  /// "Juste regarder" ouvre le même écran que l'ancien flux, mais en lecture
+  /// seule (voir TruthOrDareSessionScreen.browseOnly) : aucune carte n'y est
+  /// envoyable avant que le binôme ait répondu à une demande.
+  Future<void> _openTruthOrDareBox(GameBox box) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Vérité ou Défi'),
+        content: const Text(
+          'Tu peux demander à ton binôme de choisir une catégorie, ou juste regarder les cartes en attendant.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('browse'),
+            child: const Text('Juste regarder les cartes'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop('request'),
+            child: const Text('Demander à mon binôme'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'request') {
+      await _sendFreshTruthOrDareRequest(box);
+      return;
+    }
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => TruthOrDareSessionScreen(game: widget.game, box: box, user: widget.user, browseOnly: true),
+      ),
+    );
+    if (changed == true) _refresh();
+  }
+
+  /// Envoie la demande "choisis Vérité ou Défi" dès l'entrée dans la boîte
+  /// (pas encore de fil existant, voir _openTruthOrDareBox) — même appel que
+  /// GameCardThreadScreen._sendTruthOrDareRequest, mais ouvre une TOUTE
+  /// NOUVELLE discussion plutôt que d'en poursuivre une déjà ouverte.
+  Future<void> _sendFreshTruthOrDareRequest(GameBox box) async {
+    try {
+      final sentSend = await GameService.instance.sendTruthOrDareRequest(widget.game.id);
+      if (!mounted) return;
+      AppRouter.showGlobalNavBar.value = false;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => GameCardThreadScreen(send: sentSend, user: widget.user, game: widget.game, box: box),
+        ),
+      );
+      AppRouter.showGlobalNavBar.value = true;
+      if (!mounted) return;
+      _refresh();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
