@@ -17,8 +17,8 @@ import 'game_service.dart';
 import 'widgets/game_card_widgets.dart';
 import 'widgets/glass_session_card.dart';
 
-const _veriteColor = Color(0xFF5B8DEF);
-const _defiColor = Color(0xFFFF6B4A);
+const veriteColor = Color(0xFF5B8DEF);
+const defiColor = Color(0xFFFF6B4A);
 
 /// Session du jeu "Vérité ou Défi" (voir GameBoxSessionScreen pour le
 /// gabarit "classique" en éventail) : on choisit d'abord une catégorie à
@@ -51,6 +51,12 @@ class TruthOrDareSessionScreen extends StatefulWidget {
   // l'éventail.
   final String? initialLastCategory;
   final int initialStreak;
+  // Voir demande utilisateur : "mon binôme peut m'envoyer une demande me
+  // disant de choisir défi ou vérité... et lui pioche une carte" — une fois
+  // le binôme répondu (voir TruthOrDareRequest), la catégorie n'est PLUS un
+  // choix à faire ici : 'verite' ou 'defi' saute directement l'écran de
+  // choix et ouvre l'éventail correspondant (voir initState).
+  final String? lockedCategory;
 
   const TruthOrDareSessionScreen({
     super.key,
@@ -61,6 +67,7 @@ class TruthOrDareSessionScreen extends StatefulWidget {
     this.replyToSendId,
     this.initialLastCategory,
     this.initialStreak = 0,
+    this.lockedCategory,
   });
 
   @override
@@ -96,6 +103,17 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
     _lastCategory = widget.initialLastCategory;
     _streak = widget.initialStreak;
     _loadDecks();
+    final locked = widget.lockedCategory;
+    if (locked != null) {
+      final deck = locked == 'verite' ? _deckVerite : _deckDefi;
+      // Repli silencieux sur l'écran de choix normal si la catégorie
+      // imposée se trouve vide (cas rare : toutes ses cartes déjà jouées
+      // dans cette discussion) plutôt que de bloquer sur un éventail vide.
+      if (deck.isNotEmpty) {
+        _chosenCategory = locked;
+        _pageController = PageController(viewportFraction: 0.36);
+      }
+    }
   }
 
   /// Construit les deux piles à partir de la boîte — en excluant les cartes
@@ -132,7 +150,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
   }
 
   List<GameBoxQuestion> get _currentDeck => _chosenCategory == 'verite' ? _deckVerite : _deckDefi;
-  Color get _currentColor => _chosenCategory == 'defi' ? _defiColor : _veriteColor;
+  Color get _currentColor => _chosenCategory == 'defi' ? defiColor : veriteColor;
 
   /// Bloque [category] si la choisir une fois de plus ferait
   /// `consecutiveChoiceLimit` fois d'affilée (donc dès `limit - 1` envois
@@ -481,7 +499,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
               child: _CategoryTile(
                 label: LocaleScope.of(context).t('truth_or_dare_truth_label'),
                 icon: Icons.psychology_alt_rounded,
-                color: _veriteColor,
+                color: veriteColor,
                 remaining: _deckVerite.length,
                 blockedByStreak: veriteBlocked,
                 onTap: _deckVerite.isEmpty ? null : (veriteBlocked ? null : () => _pickCategory('verite')),
@@ -494,7 +512,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
               child: _CategoryTile(
                 label: LocaleScope.of(context).t('truth_or_dare_dare_label'),
                 icon: Icons.local_fire_department_rounded,
-                color: _defiColor,
+                color: defiColor,
                 remaining: _deckDefi.length,
                 blockedByStreak: defiBlocked,
                 onTap: _deckDefi.isEmpty ? null : (defiBlocked ? null : () => _pickCategory('defi')),
@@ -550,6 +568,9 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
       key: ValueKey('fan-$_chosenCategory'),
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Voir demande utilisateur : la catégorie imposée par le binôme
+        // n'est pas un choix qu'on peut changer d'avis ici.
+        if (widget.lockedCategory == null)
         GestureDetector(
           onTap: _backToCategoryChoice,
           child: Row(
@@ -644,7 +665,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
   Widget _buildFocusedCard(ThemePalette theme, AppUser? partner) {
     final card = _selected!;
     final isDefi = card.isDefi;
-    final categoryColor = isDefi ? _defiColor : _veriteColor;
+    final categoryColor = isDefi ? defiColor : veriteColor;
     final deck = _currentDeck;
 
     return Column(

@@ -196,6 +196,29 @@ class GameService {
     return Send.fromJson(data);
   }
 
+  /// "Vérité ou Défi" uniquement — demande à son binôme de choisir la
+  /// catégorie à sa place (voir TruthOrDareRequestController::store),
+  /// plutôt que de la choisir soi-même à l'aveugle (voir sendCard
+  /// ci-dessus, flux existant inchangé).
+  Future<Send> sendTruthOrDareRequest(String gameId, {String? replyToSendId}) async {
+    final data = await ApiClient.instance.post(
+      '/games/$gameId/truth-or-dare-requests',
+      body: {if (replyToSendId != null) 'reply_to_send_id': replyToSendId},
+    ) as Map<String, dynamic>;
+    return Send.fromJson(data);
+  }
+
+  /// Réponse à une demande reçue — réservé à qui a été désigné pour choisir
+  /// (voir TruthOrDareRequestController::answer). [category] : 'verite' |
+  /// 'defi'.
+  Future<Send> answerTruthOrDareRequest(String requestId, String category) async {
+    final data = await ApiClient.instance.put(
+      '/truth-or-dare-requests/$requestId/answer',
+      body: {'category': category},
+    ) as Map<String, dynamic>;
+    return Send.fromJson(data);
+  }
+
   /// Propose une devinette suivante (après une réponse fausse avec une
   /// nouvelle chance, voir submitCardVerdict) — réservé aux jeux
   /// `session_type = 'quiz'` (voir Game.isQuiz). La toute première tentative

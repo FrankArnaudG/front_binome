@@ -36,6 +36,7 @@ import '../content/widgets/slide_pack_viewer.dart';
 import '../shop/subscription_status_notifier.dart';
 import '../shop/wallet_balance_notifier.dart';
 import 'game_box_session_screen.dart';
+import 'game_card_inbox_service.dart';
 import 'game_service.dart';
 import 'truth_or_dare_session_screen.dart';
 import 'widgets/blind_poll_match_scoreboard.dart';
@@ -959,6 +960,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     // affichée alors que le binôme avait déjà répondu (voir demande
     // utilisateur : ça doit être du temps réel).
     if (event.event == 'GameCardUpdated') {
+      final sendJson = event.data?['send'] as Map<String, dynamic>?;
+      if (sendJson == null) return;
+      final updated = Send.fromJson(sendJson);
+      if (updated.id != _rootSend.id && !_replies.any((r) => r.id == updated.id)) return;
+      if (!mounted) return;
+      setState(() => _updateSend(updated));
+      return;
+    }
+    // Le binôme vient de répondre à une demande "choisis Vérité ou Défi"
+    // (voir TruthOrDareRequestController::answer) — même principe que
+    // GameCardUpdated juste au-dessus : la bulle existante se met à jour en
+    // place, jamais une nouvelle bulle.
+    if (event.event == 'TruthOrDareRequestUpdated') {
       final sendJson = event.data?['send'] as Map<String, dynamic>?;
       if (sendJson == null) return;
       final updated = Send.fromJson(sendJson);
@@ -2110,6 +2124,92 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     return (category: lastCategory, streak: streak);
   }
 
+  /// Même principe que [_myTrailingCategoryStreak], mais pour MES réponses
+  /// à une demande "choisis Vérité ou Défi" (voir TruthOrDareRequest) —
+  /// évite qu'on puisse contourner la règle des 3 choix identiques
+  /// d'affilée en répondant toujours "Défi" à chaque nouvelle demande.
+  ({String? category, int streak}) get _myTrailingResponseStreak {
+    final mine = _replies
+        .where((r) =>
+            r.isTruthOrDareRequest &&
+            r.truthOrDareRequest != null &&
+            r.truthOrDareRequest!.isAnswered &&
+            r.truthOrDareRequest!.responderId == widget.user.id)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    String? lastCategory;
+    var streak = 0;
+    for (final send in mine) {
+      final category = send.truthOrDareRequest!.chosenCategory;
+      if (category == null) continue;
+      if (category == lastCategory) {
+        streak++;
+      } else {
+        lastCategory = category;
+        streak = 1;
+      }
+    }
+    return (category: lastCategory, streak: streak);
+  }
+
+  /// Même règle que TruthOrDareSessionScreen._isBlocked, appliquée à MES
+  /// réponses plutôt qu'à mes propres cartes envoyées (voir demande
+  /// utilisateur : "la contrainte des 3 choix identiques s'applique à
+  /// celui/celle qui choisit"). Ne vérifie pas l'exclusion des questions
+  /// déjà jouées dans CE fil (contrairement à TruthOrDareSessionScreen) —
+  /// simple indicateur du côté "répondre à une demande", pas une vraie
+  /// pioche.
+  bool _isResponseBlocked(String category) {
+    final trailing = _myTrailingResponseStreak;
+    if (trailing.category != category || trailing.streak < widget.game.consecutiveChoiceLimit - 1) return false;
+    final other = category == 'verite' ? widget.box.questions.where((q) => q.isDefi) : widget.box.questions.where((q) => q.isVerite);
+    return other.isNotEmpty;
+  }
+
+  Future<void> _answerTruthOrDareRequest(Send reply, String category) async {
+    try {
+      final updated = await GameService.instance.answerTruthOrDareRequest(reply.truthOrDareRequest!.id, category);
+      GameCardInboxService.instance.removePending(reply.id);
+      if (!mounted) return;
+      setState(() {
+        _replies = _replies.map((r) => r.id == updated.id ? updated : r).toList();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'enregistrer ta réponse. Réessaie dans un instant.")),
+      );
+    }
+  }
+
+  /// Le binôme a répondu — je pioche maintenant une carte DANS la
+  /// catégorie qu'il/elle a choisie (voir TruthOrDareSessionScreen.
+  /// lockedCategory, qui saute l'écran de choix habituel).
+  Future<void> _openTruthOrDareFromRequest(Send reply) async {
+    final category = reply.truthOrDareRequest?.chosenCategory;
+    if (category == null) return;
+    final result = await Navigator.of(context).push<Send>(
+      MaterialPageRoute(
+        builder: (_) => TruthOrDareSessionScreen(
+          game: widget.game,
+          box: widget.box,
+          user: widget.user,
+          excludeQuestionIds: _questionIdsAlreadyInThread,
+          replyToSendId: widget.send.id,
+          lockedCategory: category,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _composeFocusNode.unfocus();
+    if (result == null) return;
+    if (!_replies.any((r) => r.id == result.id)) {
+      setState(() => _replies = [..._replies, result]);
+    }
+    _scrollToBottom();
+    _syncRepliesCacheSilently();
+  }
+
   /// Repart de l'éventail de la même boîte pour en choisir et envoyer une
   /// autre — rejoint CETTE discussion comme un nouveau message (voir
   /// GameBoxSessionScreen._send/TruthOrDareSessionScreen._send,
@@ -2781,6 +2881,11 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             ),
           ),
         ));
+      } else if (reply.isTruthOrDareRequest && reply.truthOrDareRequest != null) {
+        entries.add(_TimelineEntry(
+          reply.createdAt,
+          _buildTruthOrDareRequestBubble(theme, reply),
+        ));
       } else {
         // Un message de chat normal peut lui-même être une réponse citée
         // (voir _encodeQuoted/_showMessageActionsMenu) — décodé ici pour
@@ -2968,6 +3073,110 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Bulle "demande Vérité ou Défi" (voir TruthOrDareRequest) — trois états
+  /// visuels possibles : en attente côté auteur·e de la demande, à répondre
+  /// côté destinataire (boutons, verrouillés par [_isResponseBlocked]), ou
+  /// répondue (avec une pioche "Choisir une carte" côté auteur·e une fois la
+  /// catégorie connue).
+  Widget _buildTruthOrDareRequestBubble(ThemePalette theme, Send reply) {
+    final req = reply.truthOrDareRequest!;
+    final isMine = reply.senderId == widget.user.id; // j'ai envoyé la demande
+    final iMustAnswer = !isMine && req.isPending;
+
+    Widget body;
+    if (req.isPending) {
+      body = iMustAnswer
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${reply.sender?.prenom ?? "Ton binôme"} te demande de choisir :',
+                  style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: _buildTruthOrDareAnswerButton(theme, reply, 'verite', veriteColor, 'Vérité')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildTruthOrDareAnswerButton(theme, reply, 'defi', defiColor, 'Défi')),
+                  ],
+                ),
+              ],
+            )
+          : Text(
+              'En attente du choix de ${reply.recipient?.prenom ?? "ton binôme"}...',
+              style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
+            );
+    } else {
+      final categoryLabel = req.isDefi ? 'Défi' : 'Vérité';
+      final categoryColor = req.isDefi ? defiColor : veriteColor;
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.check_circle_rounded, size: 16, color: categoryColor),
+              const SizedBox(width: 6),
+              Text(
+                isMine
+                    ? '${reply.recipient?.prenom ?? "Ton binôme"} a choisi : $categoryLabel'
+                    : 'Tu as choisi : $categoryLabel',
+                style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+              ),
+            ],
+          ),
+          // Voir demande utilisateur : "il clique sur défi et choisit une
+          // carte et m'envoie" — seul l'auteur·e de la demande pioche la
+          // carte ; rien à faire côté destinataire une fois répondu.
+          if (isMine) ...[
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: () => _openTruthOrDareFromRequest(reply),
+              icon: const Icon(Icons.style_rounded, size: 18),
+              label: const Text('Choisir une carte'),
+              style: ElevatedButton.styleFrom(backgroundColor: categoryColor, foregroundColor: Colors.white),
+            ),
+          ],
+        ],
+      );
+    }
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 260),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: theme.primary.withValues(alpha: 0.2)),
+        ),
+        child: body,
+      ),
+    );
+  }
+
+  Widget _buildTruthOrDareAnswerButton(ThemePalette theme, Send reply, String category, Color color, String label) {
+    final blocked = _isResponseBlocked(category);
+    return OutlinedButton(
+      onPressed: blocked ? null : () => _answerTruthOrDareRequest(reply, category),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: blocked ? theme.textOnBackgroundMuted : color,
+        side: BorderSide(color: blocked ? theme.textOnBackgroundMuted.withValues(alpha: 0.3) : color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (blocked) ...[
+            Icon(Icons.lock_outline_rounded, size: 14, color: theme.textOnBackgroundMuted),
+            const SizedBox(width: 4),
+          ],
+          Text(label),
+        ],
       ),
     );
   }
@@ -3976,6 +4185,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 label: t('composer_reply_poem_tooltip'),
                 onTap: () => Navigator.of(sheetContext).pop('poem'),
               ),
+              // Voir demande utilisateur : "mon binôme peut m'envoyer une
+              // demande me disant de choisir défi ou vérité" — réservé à ce
+              // jeu précis, chemin inverse du choix à l'aveugle habituel
+              // (voir "Envoyer une autre carte" ci-dessus).
+              if (widget.game.isTruthOrDare) ...[
+                const SizedBox(height: 8),
+                ComposeMenuTile(
+                  theme: theme,
+                  icon: Icons.help_outline_rounded,
+                  label: 'Demander Vérité ou Défi',
+                  onTap: () => Navigator.of(sheetContext).pop('truth_or_dare_request'),
+                ),
+              ],
             ],
           ),
         ),
@@ -3990,6 +4212,29 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         _openHeartbeatReplyOptions();
       case 'new_card':
         _sendAnotherCard();
+      case 'truth_or_dare_request':
+        _sendTruthOrDareRequest();
+    }
+  }
+
+  /// Voir demande utilisateur : envoie la demande, puis se comporte comme
+  /// les 3 autres actions du menu "+" (clavier jamais rouvert tout seul au
+  /// retour, voir demande utilisateur "le clavier s'ouvre automatiquement").
+  Future<void> _sendTruthOrDareRequest() async {
+    try {
+      final result = await GameService.instance.sendTruthOrDareRequest(widget.game.id, replyToSendId: widget.send.id);
+      if (!mounted) return;
+      _composeFocusNode.unfocus();
+      if (!_replies.any((r) => r.id == result.id)) {
+        setState(() => _replies = [..._replies, result]);
+      }
+      _scrollToBottom();
+      _syncRepliesCacheSilently();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'envoyer la demande. Réessaie dans un instant.")),
+      );
     }
   }
 }

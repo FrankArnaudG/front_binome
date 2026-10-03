@@ -209,7 +209,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 outlinedIcon: Icons.forum_outlined,
                 filledIcon: Icons.forum_rounded,
                 label: t('nav_game_chats'),
-                badgeCount: GameCardInboxService.instance.pending.where((s) => s.isGameCard).length,
+                badgeCount: GameCardInboxService.instance.pending
+                    .where((s) => s.isGameCard || (s.isTruthOrDareRequest && s.truthOrDareRequest?.isPending == true))
+                    .length,
               ),
               NavItem(outlinedIcon: Icons.person_outline_rounded, filledIcon: Icons.person_rounded, label: t('nav_profile')),
             ];

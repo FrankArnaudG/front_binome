@@ -6,6 +6,7 @@ import 'heartbeat_image.dart';
 import 'pack.dart';
 import 'send_reaction.dart';
 import 'slide.dart';
+import 'truth_or_dare_request.dart';
 
 // STX/ETX (caractères de contrôle qu'aucun clavier/IME ne produit jamais) —
 // voir GameCardThreadScreen._encodeQuoted/_decodeQuoted, qui encode une
@@ -53,6 +54,7 @@ class Send {
   final EmojiStorySend? emojiStory;
   final String? emojiReplyText;
   final String? textReplyText;
+  final TruthOrDareRequest? truthOrDareRequest;
   final List<SendReaction> reactions;
   final Send? replyTo;
   // Le message le plus récent de cette discussion (voir Send::latestReply
@@ -89,6 +91,7 @@ class Send {
     this.emojiStory,
     this.emojiReplyText,
     this.textReplyText,
+    this.truthOrDareRequest,
     this.reactions = const [],
     this.replyTo,
     this.latestReply,
@@ -142,6 +145,9 @@ class Send {
         textReplyText: json['sendable_type'] == 'text_reply' && json['sendable'] != null
             ? (json['sendable'] as Map<String, dynamic>)['text'] as String?
             : null,
+        truthOrDareRequest: json['sendable_type'] == 'truth_or_dare_request' && json['sendable'] != null
+            ? TruthOrDareRequest.fromJson(json['sendable'] as Map<String, dynamic>)
+            : null,
         reactions: json['reactions'] != null
             ? (json['reactions'] as List)
                 .map((e) => SendReaction.fromJson(e as Map<String, dynamic>))
@@ -169,6 +175,7 @@ class Send {
     DateTime? deliveredAt,
     Send? latestReply,
     GameCardSend? gameCard,
+    TruthOrDareRequest? truthOrDareRequest,
   }) =>
       Send(
         id: id,
@@ -196,6 +203,7 @@ class Send {
         emojiStory: emojiStory,
         emojiReplyText: emojiReplyText,
         textReplyText: textReplyText,
+        truthOrDareRequest: truthOrDareRequest ?? this.truthOrDareRequest,
         reactions: reactions ?? this.reactions,
         replyTo: replyTo,
         latestReply: latestReply ?? this.latestReply,
@@ -210,6 +218,7 @@ class Send {
   bool get isEmojiStory => sendableType == 'emoji_story';
   bool get isEmojiReply => sendableType == 'emoji_reply';
   bool get isTextReply => sendableType == 'text_reply';
+  bool get isTruthOrDareRequest => sendableType == 'truth_or_dare_request';
   bool get isReply => replyToSendId != null;
 
   /// Le message effectif à afficher dans une liste de discussions : le
@@ -234,6 +243,7 @@ class Send {
     // _withoutQuotedPrefix) — seul le vrai message compte dans un aperçu
     // de liste (voir demande utilisateur).
     if (isTextReply) return _withoutQuotedPrefix(textReplyText ?? '');
+    if (isTruthOrDareRequest) return 'Vérité ou Défi ?';
     return '';
   }
 

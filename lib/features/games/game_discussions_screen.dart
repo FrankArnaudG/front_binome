@@ -95,7 +95,9 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
   /// GameCardInboxService) — même source que le badge de l'onglet
   /// "Discussions" dans la barre de navigation.
   int _unreadFor(Game game) => GameCardInboxService.instance.pending
-      .where((s) => s.isGameCard && s.gameCard?.gameId == game.id)
+      .where((s) =>
+          (s.isGameCard && s.gameCard?.gameId == game.id) ||
+          (s.isTruthOrDareRequest && s.truthOrDareRequest?.isPending == true && s.truthOrDareRequest?.gameId == game.id))
       .length;
 
   @override
