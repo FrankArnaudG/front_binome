@@ -787,6 +787,14 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // pour que seul le bouton précis tapé, sur la carte précise, affiche son
   // loader.
   String? _submittingDefiVerdict;
+  // Voir demande utilisateur : une fois le verdict "esquivé" donné, qui a
+  // jugé choisit la suite derrière un bouton "Et maintenant ?" plutôt que
+  // d'afficher les 3 options tout de suite (surcharge la bulle) — ids des
+  // cartes pour lesquelles ce bouton a déjà été ouvert/la suite abandonnée.
+  // Jamais persisté (voir _buildDefiFollowUp) : un pense-bête purement
+  // local à cette ouverture d'écran, pas un vrai état métier à retenir.
+  final Set<String> _defiFollowUpExpanded = {};
+  final Set<String> _defiFollowUpDismissed = {};
   List<Send> _replies = [];
   // État du mini-flux deviner/verdict pour les jeux `session_type = 'quiz'`
   // (voir Game.isQuiz) — inutilisés pour tous les autres jeux à boîtes.
@@ -2593,6 +2601,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: answer, quoteSendId: _rootSend.id),
               ),
             ),
+          if (widget.game.isTruthOrDare && card.isDefi) _buildDefiFollowUp(theme, _rootSend, answer),
           // Sinon (jeu à réponse libre "classique", ni Oui/Non ni quiz ni
           // Sondage Surprise) : la réponse est rendue plus bas, TOUJOURS en
           // fin de fil (voir la boucle _lateClassicAnswers en bas de cette
@@ -2852,6 +2861,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                     ),
                   ),
                 ],
+                if (widget.game.isTruthOrDare && reply.gameCard!.isDefi && reply.gameCard!.answer != null)
+                  _buildDefiFollowUp(theme, reply, reply.gameCard!.answer!),
                 _buildInviteStatusLabel(theme, reply),
                 if (reply.senderId == widget.user.id && reply.gameCard!.needsSenderAnswer) ...[
                   // Picker Oui/Non pour MA réponse en tant qu'expéditeur·rice
@@ -3729,6 +3740,106 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Suite donnée au verdict d'un défi (voir _buildDefiVerdictBar) — voir
+  /// demande utilisateur : "si le défi est relevé, féliciter mon binôme ET
+  /// lui dire que c'est son tour de me demander Vérité ou Défi ; si le
+  /// défi n'est pas relevé, me demander d'abord si je veux changer de
+  /// carte ou laisser tomber, et [pouvoir] demander à mon binôme de
+  /// choisir". "Défi relevé" félicite automatiquement (texte fixe,
+  /// confirmé par l'utilisateur) et propose à qui a relevé le défi de
+  /// prendre la main ; "Défi esquivé" laisse qui a jugé choisir la suite
+  /// derrière un bouton "Et maintenant ?" (confirmé) plutôt que d'imposer
+  /// les 3 options d'office.
+  Widget _buildDefiFollowUp(ThemePalette theme, Send target, String answer) {
+    final t = LocaleScope.of(context).t;
+    final isCompleted = answer == t('truth_or_dare_dare_completed');
+    final isDodged = answer == t('truth_or_dare_dare_dodged');
+    if (!isCompleted && !isDodged) return const SizedBox.shrink();
+
+    if (isCompleted) {
+      final performerName = target.recipient?.prenom ?? 'ton binôme';
+      final isPerformer = target.recipientId == widget.user.id;
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: theme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'Bravo $performerName, défi relevé ! 🎉',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+              ),
+            ),
+            // Seule la personne qui vient de relever le défi voit ce
+            // raccourci — c'est elle, maintenant, qui prend la main (voir
+            // demande utilisateur), pas qui vient de la féliciter.
+            if (isPerformer) ...[
+              const SizedBox(height: 8),
+              _QuizActionButton(
+                label: "C'est ton tour : demander à ton binôme de choisir",
+                icon: Icons.swap_horiz_rounded,
+                color: theme.primary,
+                filled: false,
+                onTap: _sendTruthOrDareRequest,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    // isDodged — réservé à qui a jugé (seul·e concerné·e par "et
+    // maintenant ?", voir demande utilisateur).
+    if (target.senderId != widget.user.id || _defiFollowUpDismissed.contains(target.id)) {
+      return const SizedBox.shrink();
+    }
+    final expanded = _defiFollowUpExpanded.contains(target.id);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: !expanded
+          ? Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(() => _defiFollowUpExpanded.add(target.id)),
+                child: const Text('Et maintenant ?'),
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _QuizActionButton(
+                  label: 'Changer de carte',
+                  icon: Icons.style_rounded,
+                  color: theme.primary,
+                  filled: false,
+                  onTap: _sendAnotherCard,
+                ),
+                const SizedBox(height: 6),
+                _QuizActionButton(
+                  label: 'Demander à mon binôme de choisir',
+                  icon: Icons.psychology_alt_rounded,
+                  color: theme.primary,
+                  filled: false,
+                  onTap: _sendTruthOrDareRequest,
+                ),
+                const SizedBox(height: 6),
+                _QuizActionButton(
+                  label: 'Laisser tomber',
+                  color: theme.textOnBackgroundMuted,
+                  filled: false,
+                  onTap: () => setState(() => _defiFollowUpDismissed.add(target.id)),
+                ),
+              ],
+            ),
     );
   }
 
