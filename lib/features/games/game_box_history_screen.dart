@@ -3266,6 +3266,17 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 label: const Text('Choisir une carte'),
                 style: ElevatedButton.styleFrom(backgroundColor: categoryColor, foregroundColor: Colors.white),
               ),
+          ] else if (!req.isFulfilled) ...[
+            // Voir demande utilisateur : "ajouter ici patienter, {prénom}
+            // t'enverra le défi/la carte de vérité" — côté destinataire qui
+            // vient de choisir, rien à faire tant que l'auteur·e de la
+            // demande n'a pas encore pioché/envoyé sa carte.
+            const SizedBox(height: 6),
+            Text(
+              'Patiente, ${reply.sender?.prenom ?? "ton binôme"} va t\'envoyer '
+              '${req.isDefi ? "le défi" : "la carte de vérité"}.',
+              style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+            ),
           ],
         ],
       );
