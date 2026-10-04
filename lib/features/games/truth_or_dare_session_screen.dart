@@ -573,7 +573,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
                 TextButton(
                   onPressed: _sending ? null : _requestFromBrowse,
                   child: Text(
-                    'Demander à mon binôme de choisir',
+                    'Demander à mon binôme de choisir entre Vérité ou Défi',
                     style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.primary),
                   ),
                 ),
@@ -820,7 +820,9 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
         const SizedBox(height: 24),
         GameCardActions(
           theme: theme,
-          sendLabel: widget.browseOnly ? 'Demander à mon binôme de choisir' : partnerSendLabel(context, partner, card.id),
+          sendLabel: widget.browseOnly
+              ? 'Demander à mon binôme de choisir entre Vérité ou Défi'
+              : partnerSendLabel(context, partner, card.id),
           sending: _sending || _completing,
           onSend: widget.browseOnly ? _requestFromBrowse : _send,
           onBack: _backToFan,
