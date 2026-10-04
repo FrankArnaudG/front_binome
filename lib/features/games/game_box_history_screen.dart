@@ -3762,6 +3762,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     if (isCompleted) {
       final performerName = target.recipient?.prenom ?? 'ton binôme';
       final isPerformer = target.recipientId == widget.user.id;
+      // Voir demande utilisateur : "celui qui a jugé ne doit pas voir
+      // bravo défi relevé" — la félicitation s'adresse à qui a relevé le
+      // défi, jamais à qui vient de le juger (rien à montrer de son côté).
+      if (!isPerformer) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Column(
@@ -3779,19 +3783,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
               ),
             ),
-            // Seule la personne qui vient de relever le défi voit ce
-            // raccourci — c'est elle, maintenant, qui prend la main (voir
-            // demande utilisateur), pas qui vient de la féliciter.
-            if (isPerformer) ...[
-              const SizedBox(height: 8),
-              _QuizActionButton(
-                label: "C'est ton tour : demander à ton binôme de choisir",
-                icon: Icons.swap_horiz_rounded,
-                color: theme.primary,
-                filled: false,
-                onTap: _sendTruthOrDareRequest,
-              ),
-            ],
+            const SizedBox(height: 8),
+            _QuizActionButton(
+              label: "Demander à ton binôme de choisir entre Vérité ou Défi",
+              icon: Icons.swap_horiz_rounded,
+              color: theme.primary,
+              filled: false,
+              // Texte plus long que les autres boutons de cette bulle (voir
+              // demande utilisateur : "s'assurer que ça ne déborde pas") —
+              // 2 lignes avec une taille réduite plutôt qu'une troncature
+              // en "..." qui couperait la précision "entre Vérité ou Défi".
+              maxLines: 2,
+              onTap: _sendTruthOrDareRequest,
+            ),
           ],
         ),
       );
@@ -5535,6 +5539,11 @@ class _QuizActionButton extends StatelessWidget {
   final bool filled;
   final bool loading;
   final VoidCallback? onTap;
+  // Voir demande utilisateur : certains libellés (ex. "Demander à ton
+  // binôme de choisir entre Vérité ou Défi") sont trop longs pour tenir
+  // sur une ligne sans troncature en "..." — 2 lignes par défaut dans ce
+  // cas précis, 1 seule pour tous les autres boutons existants (inchangé).
+  final int maxLines;
 
   const _QuizActionButton({
     required this.label,
@@ -5543,6 +5552,7 @@ class _QuizActionButton extends StatelessWidget {
     required this.filled,
     this.loading = false,
     required this.onTap,
+    this.maxLines = 1,
   });
 
   @override
@@ -5578,7 +5588,8 @@ class _QuizActionButton extends StatelessWidget {
                       Flexible(
                         child: Text(
                           label,
-                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          maxLines: maxLines,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
                         ),
