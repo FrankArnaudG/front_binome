@@ -2580,10 +2580,14 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               key: _answerKeyFor(_rootSend.id),
               child: _ChatBubble(
                 theme: theme,
-                isMine: !_isMine,
+                // Voir demande utilisateur : le verdict vient maintenant de
+                // qui a ENVOYÉ le défi (_isMine), pas de qui l'a reçu —
+                // bulle alignée en conséquence (jamais négée), contrairement
+                // à un Oui/Non classique juste au-dessus.
+                isMine: _isMine,
                 text: answer,
                 time: card.answeredAt ?? widget.send.createdAt,
-                tick: !_isMine ? SendTick.sent : null,
+                tick: _isMine ? SendTick.sent : null,
                 replyPreview: card.questionTextFor(LocaleScope.of(context).current.code),
                 onReplyTap: () => _scrollToCard(_rootSend.id),
                 onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: answer, quoteSendId: _rootSend.id),
@@ -2613,9 +2617,12 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           // ont été envoyées depuis (voir demande utilisateur).
           const SizedBox(height: 6),
           _buildYesNoAnswerBar(theme, _rootSend),
-        ] else if (widget.game.isTruthOrDare && card.isDefi && !_isMine) ...[
-          // Verdict Défi collé à CETTE carte, même principe que le picker
-          // Oui/Non juste au-dessus (voir demande utilisateur).
+        ] else if (widget.game.isTruthOrDare && card.isDefi && _isMine) ...[
+          // Verdict Défi collé à CETTE carte — voir demande utilisateur :
+          // "en tant normal qui doit juger si le défi est relevé ou pas" →
+          // qui a ENVOYÉ le défi juge (seul·e à savoir si son binôme l'a
+          // vraiment relevé dans la vraie vie), jamais qui le reçoit
+          // (auto-déclaration non fiable).
           const SizedBox(height: 6),
           _buildDefiVerdictBar(theme, _rootSend),
         ] else if (widget.game.isBlindPoll && _isMine && card.senderAnswer != null) ...[
@@ -2827,10 +2834,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                     key: _answerKeyFor(reply.id),
                     child: _ChatBubble(
                       theme: theme,
-                      isMine: reply.recipientId == widget.user.id,
+                      // Voir demande utilisateur : le verdict vient de qui a
+                      // ENVOYÉ le défi, jamais négé contrairement à un
+                      // Oui/Non classique (voir plus haut pour la racine).
+                      isMine: reply.senderId == widget.user.id,
                       text: reply.gameCard!.answer!,
                       time: reply.gameCard!.answeredAt ?? reply.createdAt,
-                      tick: reply.recipientId == widget.user.id ? SendTick.sent : null,
+                      tick: reply.senderId == widget.user.id ? SendTick.sent : null,
                       replyPreview: reply.gameCard!.questionTextFor(localeCode),
                       onReplyTap: () => _scrollToCard(reply.id),
                       onLongPress: (pos) => _showMessageActionsMenu(
@@ -2857,9 +2867,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 // captait le seul picker partagé (voir demande utilisateur).
                 const SizedBox(height: 6),
                 _buildYesNoAnswerBar(theme, reply),
-              ] else if (widget.game.isTruthOrDare && reply.gameCard!.isDefi && reply.recipientId == widget.user.id) ...[
+              ] else if (widget.game.isTruthOrDare && reply.gameCard!.isDefi && reply.senderId == widget.user.id) ...[
                 // Verdict Défi collé à CETTE carte relancée, même principe
-                // que pour la racine.
+                // que pour la racine (voir plus haut).
                 const SizedBox(height: 6),
                 _buildDefiVerdictBar(theme, reply),
               ],
@@ -3670,6 +3680,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   /// attendre un verdict en même temps).
   Widget _buildDefiVerdictBar(ThemePalette theme, Send target) {
     final t = LocaleScope.of(context).t;
+    final performerName = target.recipient?.prenom ?? _partner?.prenom ?? 'ton binôme';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -3677,30 +3688,44 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.primary.withValues(alpha: 0.3)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _QuizActionButton(
-              label: t('truth_or_dare_dare_completed'),
-              color: theme.primary,
-              filled: true,
-              loading: _submittingDefiVerdict == '${target.id}|${t('truth_or_dare_dare_completed')}',
-              onTap: _submitting
-                  ? null
-                  : () => _submitDefiVerdict(target, t('truth_or_dare_dare_completed')),
-            ),
+          // Voir demande utilisateur : "mettre une phrase au-dessus avant
+          // les boutons" — sans ça, rien n'indiquait explicitement à qui
+          // revient le jugement ni ce qui est demandé.
+          Text(
+            'Est-ce que $performerName a relevé ce défi ?',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _QuizActionButton(
-              label: t('truth_or_dare_dare_dodged'),
-              color: theme.primary,
-              filled: false,
-              loading: _submittingDefiVerdict == '${target.id}|${t('truth_or_dare_dare_dodged')}',
-              onTap: _submitting
-                  ? null
-                  : () => _submitDefiVerdict(target, t('truth_or_dare_dare_dodged')),
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuizActionButton(
+                  label: t('truth_or_dare_dare_completed'),
+                  color: theme.primary,
+                  filled: true,
+                  loading: _submittingDefiVerdict == '${target.id}|${t('truth_or_dare_dare_completed')}',
+                  onTap: _submitting
+                      ? null
+                      : () => _submitDefiVerdict(target, t('truth_or_dare_dare_completed')),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuizActionButton(
+                  label: t('truth_or_dare_dare_dodged'),
+                  color: theme.primary,
+                  filled: false,
+                  loading: _submittingDefiVerdict == '${target.id}|${t('truth_or_dare_dare_dodged')}',
+                  onTap: _submitting
+                      ? null
+                      : () => _submitDefiVerdict(target, t('truth_or_dare_dare_dodged')),
+                ),
+              ),
+            ],
           ),
         ],
       ),
