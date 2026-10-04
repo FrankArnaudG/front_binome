@@ -251,7 +251,16 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
       return;
     }
 
-    if (send.sendableType != 'game_card' || send.gameCard?.gameId != widget.game.id) return;
+    // Voir demande utilisateur : "mon binôme ne réussi pas à voir la
+    // nouvelle discussion créée" — une discussion peut aussi démarrer par
+    // une demande "Vérité ou Défi" plutôt que par une carte (voir
+    // TruthOrDareRequestController::store/GameBoxesScreen::
+    // _openTruthOrDareBox) ; les deux types de racine pour CE jeu doivent
+    // apparaître en temps réel, pas seulement les cartes.
+    final matchesThisGame = send.isTruthOrDareRequest
+        ? send.truthOrDareRequest?.gameId == widget.game.id
+        : send.sendableType == 'game_card' && send.gameCard?.gameId == widget.game.id;
+    if (!matchesThisGame) return;
     if (current.any((s) => s.id == send.id)) return;
     setState(() => _sends = [send, ...current]);
     _scheduleReload();
@@ -317,16 +326,19 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
 
   Future<void> _open(Send send) async {
     final card = send.gameCard;
-    if (card == null || _openingSendId != null) return;
-    // Voir demande utilisateur : "colorier légèrement pour montrer que
-    // l'on a cliqué en attendant que ça s'ouvre" — teinte UNIQUEMENT la
-    // ligne tapée (voir GameHistoryRow.opening), pas tout l'écran.
+    // Voir demande utilisateur : une discussion peut démarrer par une
+    // demande "Vérité ou Défi" plutôt que par une carte (voir
+    // GameBoxesScreen._openTruthOrDareBox) — la boîte à rouvrir vient alors
+    // de la demande elle-même (voir TruthOrDareRequest.gameBoxId), pas
+    // d'une carte qui n'existe peut-être pas encore.
+    final gameBoxId = card?.gameBoxId ?? send.truthOrDareRequest?.gameBoxId;
+    if (gameBoxId == null || _openingSendId != null) return;
     setState(() => _openingSendId = send.id);
     try {
       var game = widget.game;
-      var box = await _boxFor(card.gameBoxId);
+      var box = await _boxFor(gameBoxId);
       if (box == null) {
-        final elsewhere = await _resolveElsewhere(card.gameBoxId);
+        final elsewhere = await _resolveElsewhere(gameBoxId);
         if (elsewhere != null) {
           game = elsewhere.$1;
           box = elsewhere.$2;
@@ -390,7 +402,7 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
     if (_error) {
       return Center(child: EmptyState(icon: Icons.wifi_off_rounded, message: t('game_history_load_error')));
     }
-    final sends = (_sends ?? []).where((s) => s.gameCard != null).toList();
+    final sends = (_sends ?? []).where((s) => s.gameCard != null || s.isTruthOrDareRequest).toList();
     if (sends.isEmpty) {
       return RefreshIndicator(
         onRefresh: _load,
@@ -414,12 +426,16 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
     final entries = <Widget>[];
     for (var i = 0; i < sends.length; i++) {
       final send = sends[i];
-      final card = send.gameCard!;
+      final card = send.gameCard;
       final lastMessage = send.lastMessage;
       final isMine = lastMessage.senderId == widget.user.id;
       final senderName = lastMessage.sender?.prenom ?? lastMessage.sender?.name ?? t('game_partner_name_fallback');
       final by = t('game_sent_by', {'sender': isMine ? t('game_sent_by_you') : senderName});
-      final subtitle = '${card.gameBoxTitleFor(localeCode)} · $by';
+      // Une discussion peut démarrer par une demande "Vérité ou Défi" plutôt
+      // que par une carte (voir GameBoxesScreen._openTruthOrDareBox) — pas
+      // de thème de boîte à afficher tant qu'aucune carte n'a encore été
+      // piochée dans ce fil.
+      final subtitle = card == null ? by : '${card.gameBoxTitleFor(localeCode)} · $by';
 
       final dateLabel = dateHeaderLabel(context, lastMessage.createdAt.toLocal());
       final prevLabel = i == 0 ? null : dateHeaderLabel(context, sends[i - 1].lastMessage.createdAt.toLocal());

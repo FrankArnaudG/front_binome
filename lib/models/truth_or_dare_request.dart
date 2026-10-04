@@ -13,6 +13,12 @@ class TruthOrDareRequest {
   // promise réellement envoyée (voir GameCardController::send), un lien
   // persistant plutôt qu'un simple état local éphémère.
   final String? gameCardSendId;
+  // Boîte (thème) d'origine — renseigné seulement quand cette demande est
+  // elle-même la RACINE d'un fil (voir GameBoxesScreen._openTruthOrDareBox),
+  // `null` quand elle est envoyée en réponse dans un fil déjà ouvert (le
+  // thème vient alors de la racine du fil, pas de la demande). Sert à
+  // GameConversationsScreen pour retrouver quelle boîte rouvrir.
+  final String? gameBoxId;
 
   const TruthOrDareRequest({
     required this.id,
@@ -22,6 +28,7 @@ class TruthOrDareRequest {
     required this.status,
     this.chosenCategory,
     this.gameCardSendId,
+    this.gameBoxId,
   });
 
   bool get isPending => status == 'pending';
@@ -38,6 +45,7 @@ class TruthOrDareRequest {
         status: json['status'] as String,
         chosenCategory: json['chosen_category'] as String?,
         gameCardSendId: json['game_card_send_id'] as String?,
+        gameBoxId: json['game_box_id'] as String?,
       );
 
   TruthOrDareRequest copyWith({String? status, String? chosenCategory, String? gameCardSendId}) => TruthOrDareRequest(
@@ -48,5 +56,6 @@ class TruthOrDareRequest {
         status: status ?? this.status,
         chosenCategory: chosenCategory ?? this.chosenCategory,
         gameCardSendId: gameCardSendId ?? this.gameCardSendId,
+        gameBoxId: gameBoxId,
       );
 }

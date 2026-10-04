@@ -309,6 +309,7 @@ class _TruthOrDareSessionScreenState extends State<TruthOrDareSessionScreen> wit
       final sentSend = await GameService.instance.sendTruthOrDareRequest(
         widget.game.id,
         replyToSendId: widget.replyToSendId,
+        gameBoxId: widget.box.id,
       );
       if (!mounted) return;
       if (widget.replyToSendId != null) {

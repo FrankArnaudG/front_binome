@@ -187,7 +187,7 @@ class _GameBoxesScreenState extends State<GameBoxesScreen> {
   /// NOUVELLE discussion plutôt que d'en poursuivre une déjà ouverte.
   Future<void> _sendFreshTruthOrDareRequest(GameBox box) async {
     try {
-      final sentSend = await GameService.instance.sendTruthOrDareRequest(widget.game.id);
+      final sentSend = await GameService.instance.sendTruthOrDareRequest(widget.game.id, gameBoxId: box.id);
       if (!mounted) return;
       AppRouter.showGlobalNavBar.value = false;
       await Navigator.of(context).push(

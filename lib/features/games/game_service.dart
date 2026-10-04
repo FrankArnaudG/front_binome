@@ -205,10 +205,13 @@ class GameService {
   /// catégorie à sa place (voir TruthOrDareRequestController::store),
   /// plutôt que de la choisir soi-même à l'aveugle (voir sendCard
   /// ci-dessus, flux existant inchangé).
-  Future<Send> sendTruthOrDareRequest(String gameId, {String? replyToSendId}) async {
+  Future<Send> sendTruthOrDareRequest(String gameId, {String? replyToSendId, String? gameBoxId}) async {
     final data = await ApiClient.instance.post(
       '/games/$gameId/truth-or-dare-requests',
-      body: {if (replyToSendId != null) 'reply_to_send_id': replyToSendId},
+      body: {
+        if (replyToSendId != null) 'reply_to_send_id': replyToSendId,
+        if (gameBoxId != null) 'game_box_id': gameBoxId,
+      },
     ) as Map<String, dynamic>;
     return Send.fromJson(data);
   }
