@@ -170,7 +170,7 @@ class _DashboardTabState extends State<DashboardTab> {
     // l'event SendSeen ci-dessus (marqué lu en direct par cet écran) — la
     // bannière, elle, reste affichée quelques secondes quoi qu'il arrive,
     // c'est une simple confirmation visuelle de réception.
-    if ((send.isGameCard || send.isEmojiStory || send.isPack || send.isHeartbeat) &&
+    if ((send.isGameCard || send.isEmojiStory || send.isPack || send.isHeartbeat || send.isTruthOrDareRequest) &&
         send.recipientId == widget.user.id) {
       GameCardInboxService.instance.addPending(send);
       if (mounted) InboxToast.show(context, send);

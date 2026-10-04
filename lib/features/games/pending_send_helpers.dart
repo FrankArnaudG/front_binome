@@ -20,6 +20,7 @@ IconData iconForPendingSend(Send send) {
   if (send.isEmojiStory) return Icons.emoji_emotions_rounded;
   if (send.isPack) return Icons.auto_stories_rounded;
   if (send.isHeartbeat) return Icons.favorite_rounded;
+  if (send.isTruthOrDareRequest) return Icons.psychology_alt_rounded;
   return Icons.style_rounded;
 }
 
@@ -28,6 +29,7 @@ String previewForPendingSend(Send send, String localeCode) {
   if (send.isEmojiStory) return send.emojiStory?.emojis ?? '💬';
   if (send.isPack) return send.pack?.titleFor(localeCode) ?? 'Un poème';
   if (send.isHeartbeat) return send.heartbeatMessageFor(localeCode) ?? 'Un cœur qui bat pour toi 💓';
+  if (send.isTruthOrDareRequest) return 'Choisis Vérité ou Défi';
   return send.gameCard?.questionTextFor(localeCode) ?? 'Une question';
 }
 
@@ -90,7 +92,14 @@ Future<void> openPendingSend(Send send) async {
   }
 
   final gameCard = send.gameCard;
-  if (gameCard == null) {
+  // Voir demande utilisateur : une demande "Vérité ou Défi" reçue (sans
+  // carte encore piochée, voir TruthOrDareRequest) doit s'ouvrir comme
+  // n'importe quel autre envoi en attente — le jeu/la boîte se résolvent
+  // alors depuis la demande elle-même plutôt que depuis une carte qui
+  // n'existe pas encore (voir GameConversationsScreen._open, même repli).
+  final gameId = gameCard?.gameId ?? send.truthOrDareRequest?.gameId;
+  final gameBoxId = gameCard?.gameBoxId ?? send.truthOrDareRequest?.gameBoxId;
+  if (gameId == null || gameBoxId == null) {
     GameCardInboxService.instance.removePending(send.id);
     return;
   }
@@ -101,11 +110,11 @@ Future<void> openPendingSend(Send send) async {
     final user = AppUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
 
     final games = await GameService.instance.fetchGames();
-    final gameMatches = games.where((g) => g.id == gameCard.gameId);
+    final gameMatches = games.where((g) => g.id == gameId);
     final game = gameMatches.isEmpty ? null : gameMatches.first;
 
-    final boxes = await GameService.instance.fetchBoxes(gameCard.gameId);
-    final boxMatches = boxes.where((b) => b.id == gameCard.gameBoxId);
+    final boxes = await GameService.instance.fetchBoxes(gameId);
+    final boxMatches = boxes.where((b) => b.id == gameBoxId);
     final box = boxMatches.isEmpty ? null : boxMatches.first;
 
     if (game == null || box == null) throw StateError('Boîte de jeu introuvable.');
