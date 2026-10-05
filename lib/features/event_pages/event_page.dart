@@ -7,6 +7,7 @@ class EventPage {
   final String type;
   final String design;
   final String slug;
+  final String? coverImageUrl;
   final String status;
   final bool sharedWithPartner;
   final String? coupleNames;
@@ -29,6 +30,7 @@ class EventPage {
     required this.type,
     required this.design,
     required this.slug,
+    this.coverImageUrl,
     required this.status,
     required this.sharedWithPartner,
     this.coupleNames,
@@ -56,6 +58,7 @@ class EventPage {
       type: json['type'] as String? ?? 'mariage',
       design: json['design'] as String,
       slug: json['slug'] as String,
+      coverImageUrl: json['cover_image_url'] as String?,
       status: json['status'] as String? ?? 'draft',
       sharedWithPartner: json['shared_with_partner'] as bool? ?? false,
       coupleNames: json['couple_names'] as String?,

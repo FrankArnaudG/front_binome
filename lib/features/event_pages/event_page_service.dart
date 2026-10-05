@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../../core/api_client.dart';
 import 'event_page.dart';
 import 'event_page_rsvp.dart';
@@ -67,5 +69,23 @@ class EventPageService {
   Future<String> fetchPreviewUrl(String id) async {
     final data = await ApiClient.instance.get('/event-pages/$id/preview-url') as Map<String, dynamic>;
     return data['url'] as String;
+  }
+
+  /// Image de couverture optionnelle — voir demande utilisateur : "des
+  /// gens trouvent ça assez basique, veulent ajouter une image" ;
+  /// compressée à 50 Ko max côté serveur (voir EventPageController::
+  /// compressCoverImage), jamais ici.
+  Future<EventPage> uploadCoverImage(String id, File file) async {
+    final data = await ApiClient.instance.postMultipart(
+      '/event-pages/$id/cover-image',
+      fieldName: 'cover_image',
+      file: file,
+    ) as Map<String, dynamic>;
+    return EventPage.fromJson(data);
+  }
+
+  Future<EventPage> deleteCoverImage(String id) async {
+    final data = await ApiClient.instance.delete('/event-pages/$id/cover-image') as Map<String, dynamic>;
+    return EventPage.fromJson(data);
   }
 }

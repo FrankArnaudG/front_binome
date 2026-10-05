@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
@@ -49,6 +52,7 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
 
   bool _saving = false;
   bool _previewing = false;
+  bool _uploadingImage = false;
 
   /// Vrai tant que le contenu affiché est l'exemple du thème (voir demande
   /// utilisateur : "pour chaque theme creer des example") et non du
@@ -198,6 +202,50 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
     }
   }
 
+  /// Image de couverture optionnelle — voir demande utilisateur : "des
+  /// gens trouvent ça assez basique, veulent ajouter une image" ; la
+  /// compression (50 Ko max) se fait côté serveur (voir
+  /// EventPageController::compressCoverImage), jamais ici. L'upload a
+  /// besoin d'un id de page existant — un brouillon est créé
+  /// silencieusement d'abord si on n'en a pas encore (même principe que
+  /// _publish/_preview).
+  Future<void> _pickAndUploadCoverImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingImage = true);
+    try {
+      if (_page == null && !await _save(silent: true)) return;
+      if (!mounted) return;
+      final updated = await EventPageService.instance.uploadCoverImage(_page!.id, File(picked.path));
+      if (!mounted) return;
+      setState(() => _page = updated);
+    } catch (e) {
+      if (!mounted) return;
+      final message = e is ApiException ? e.message : 'Impossible d\'ajouter cette image.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
+  }
+
+  Future<void> _removeCoverImage() async {
+    final page = _page;
+    if (page == null) return;
+    setState(() => _uploadingImage = true);
+    try {
+      final updated = await EventPageService.instance.deleteCoverImage(page.id);
+      if (!mounted) return;
+      setState(() => _page = updated);
+    } catch (e) {
+      if (!mounted) return;
+      final message = e is ApiException ? e.message : 'Impossible de retirer cette image.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
+  }
+
   void _addProgrammeItem() {
     setState(() {
       _programme.add({'time': '', 'title': '', 'subtitle': ''});
@@ -235,6 +283,9 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
               const SizedBox(height: 12),
               _sectionTitle(theme, 'Design'),
               _designPicker(theme),
+              const SizedBox(height: 20),
+              _sectionTitle(theme, 'Photo de couverture'),
+              _coverImagePicker(theme),
               const SizedBox(height: 20),
               _sectionTitle(theme, 'Contenu'),
               _field(theme, _coupleNamesCtrl, 'Noms du couple', hint: 'Aïcha & Karim'),
@@ -410,6 +461,69 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _coverImagePicker(dynamic theme) {
+    final url = _page?.coverImageUrl;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: AspectRatio(
+            aspectRatio: 4 / 3,
+            child: url != null
+                ? Image.network(url, fit: BoxFit.cover, width: double.infinity)
+                : InkWell(
+                    onTap: _uploadingImage ? null : _pickAndUploadCoverImage,
+                    child: Container(
+                      color: theme.surface,
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_photo_alternate_outlined, color: theme.textOnBackgroundMuted, size: 28),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Ajouter une image',
+                            style: GoogleFonts.nunito(fontSize: 12.5, color: theme.textOnBackgroundMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        if (_uploadingImage) const CircularProgressIndicator(),
+        if (url != null && !_uploadingImage)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Row(
+              children: [
+                _coverImageActionButton(Icons.edit_rounded, _pickAndUploadCoverImage),
+                const SizedBox(width: 6),
+                _coverImageActionButton(Icons.close_rounded, _removeCoverImage),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _coverImageActionButton(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.55),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, size: 16, color: Colors.white),
+        ),
       ),
     );
   }
