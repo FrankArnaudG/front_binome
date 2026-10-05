@@ -65,7 +65,17 @@ class GameService {
   Future<List<GameBox>?> cachedBoxes(String gameId) async {
     final cached = await LocalCache.instance.readJson<List<dynamic>>('cache_game_boxes_$gameId');
     if (cached == null) return null;
-    return cached.map((e) => GameBox.fromJson(e as Map<String, dynamic>)).toList();
+    try {
+      return cached.map((e) => GameBox.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {
+      // Un cache écrit avant un correctif de format côté serveur (vécu en
+      // réel : titre/thème envoyés en texte brut plutôt qu'en carte de
+      // langues) ne doit jamais planter tout l'écran — traité comme une
+      // absence de cache, l'appelant retente alors un vrai appel réseau
+      // (voir GamesMenuScreen._playGame) au lieu de rester bloqué dessus
+      // pour toujours, y compris hors-ligne.
+      return null;
+    }
   }
 
   /// Vide pour un jeu sans boîtes (voir GameSessionScreen, le gabarit à
