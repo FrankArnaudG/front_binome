@@ -13,28 +13,17 @@ import 'widgets/glass_session_card.dart';
 
 enum _Phase { ready, playing, recap }
 
-const _roundSeconds = 300;
-
 // Combien de secondes minimum doivent s'écouler après l'apparition d'un mot
 // avant de pouvoir le marquer "Deviné !" — évite de valider par réflexe
 // avant même d'avoir commencé à mimer.
 const _wordLockSeconds = 5;
 
-/// "300" → "5 min", "90" → "90s" — affichage lisible de _roundSeconds
-/// (voir Commencer/_RecapView) plutôt qu'un nombre de secondes à trois
-/// chiffres.
-String _durationLabel(BuildContext context, int seconds) {
-  final t = LocaleScope.of(context).t;
-  return seconds % 60 == 0
-      ? t('charades_duration_minutes', {'count': '${seconds ~/ 60}'})
-      : t('charades_duration_seconds', {'count': '$seconds'});
-}
-
-/// Manche de mime pour une catégorie (voir CharadesCategoriesScreen) : jeu
-/// en présentiel, un seul téléphone passé de main en main, aucune
-/// synchronisation réseau — un chrono local (voir _roundSeconds) ou un mode
-/// libre sans chrono (voir _timed), un mot à la fois, "Deviné" ou "Passer"
-/// (le mot passé repart en fin de pioche).
+/// Manche de mime pour une catégorie (voir CharadesCategoriesScreen/
+/// CharadesWhoStartsScreen) : jeu en présentiel, un seul téléphone passé de
+/// main en main, aucune synchronisation réseau — voir demande utilisateur
+/// "ne pas mettre de chrono" : aucune limite de temps, la manche se termine
+/// quand on appuie soi-même sur "Terminer", un mot à la fois, "Deviné" ou
+/// "Passer" (le mot passé repart en fin de pioche).
 class CharadesMimeSessionScreen extends StatefulWidget {
   final Game game;
   final GameBox box;
@@ -52,14 +41,6 @@ class CharadesMimeSessionScreen extends StatefulWidget {
 
 class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
     with TickerProviderStateMixin {
-  late final AnimationController _timer =
-      AnimationController(
-        vsync: this,
-        duration: const Duration(seconds: _roundSeconds),
-      )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) _endRound();
-      });
-
   // Verrou anti-réflexe sur "Deviné !" (voir _wordLockSeconds) — redémarré à
   // chaque nouveau mot affiché, qu'il vienne du début de manche, d'un
   // "Deviné" ou d'un "Passer".
@@ -71,10 +52,6 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
   late List<GameBoxQuestion> _deck;
   _Phase _phase = _Phase.ready;
   int _score = 0;
-  // Mode libre (voir _ReadyView) : pas de compte à rebours, la manche se
-  // termine quand on appuie soi-même sur "Terminer" — le résumé de fin
-  // n'affiche alors pas de jugement basé sur un temps qui n'existe pas.
-  bool _timed = true;
 
   @override
   void initState() {
@@ -87,21 +64,16 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
 
   @override
   void dispose() {
-    _timer.dispose();
     _wordLock.dispose();
     super.dispose();
   }
 
   void _resetWordLock() => _wordLock.forward(from: 0);
 
-  void _startRound({required bool timed}) {
+  void _startRound() {
     HapticFeedback.mediumImpact();
-    setState(() {
-      _phase = _Phase.playing;
-      _timed = timed;
-    });
+    setState(() => _phase = _Phase.playing);
     _resetWordLock();
-    if (timed) _timer.forward(from: 0);
   }
 
   void _correct() {
@@ -110,8 +82,8 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
     setState(() {
       _deck.removeAt(0);
       _score++;
-      // La manche est bornée par le chrono (ou par l'appui sur "Terminer" en
-      // mode libre), pas par la pioche : on la ré-remplit si elle se vide.
+      // La manche est bornée par l'appui sur "Terminer", pas par la pioche :
+      // on la ré-remplit si elle se vide.
       if (_deck.isEmpty) _deck = _shuffledDeck();
     });
     _resetWordLock();
@@ -139,7 +111,6 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
       _score = 0;
       _phase = _Phase.ready;
     });
-    _timer.value = 0;
     _wordLock.value = 0;
   }
 
@@ -174,25 +145,21 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
                   _Phase.ready => _ReadyView(
                     theme: theme,
                     box: widget.box,
-                    onStartTimed: () => _startRound(timed: true),
-                    onStartUntimed: () => _startRound(timed: false),
+                    onStart: _startRound,
                   ),
                   _Phase.playing => _PlayingView(
                     theme: theme,
-                    timer: _timer,
                     wordLock: _wordLock,
-                    timed: _timed,
                     word: _deck.first.textFor(localeCode),
                     score: _score,
                     canSkip: _deck.length > 1,
                     onCorrect: _correct,
                     onSkip: _skip,
-                    onEndUntimed: _endRound,
+                    onFinish: _endRound,
                   ),
                   _Phase.recap => _RecapView(
                     theme: theme,
                     score: _score,
-                    timed: _timed,
                     onNextRound: _prepareNextRound,
                     onChangeCategory: () => Navigator.of(context).pop(),
                   ),
@@ -209,14 +176,12 @@ class _CharadesMimeSessionScreenState extends State<CharadesMimeSessionScreen>
 class _ReadyView extends StatelessWidget {
   final ThemePalette theme;
   final GameBox box;
-  final VoidCallback onStartTimed;
-  final VoidCallback onStartUntimed;
+  final VoidCallback onStart;
 
   const _ReadyView({
     required this.theme,
     required this.box,
-    required this.onStartTimed,
-    required this.onStartUntimed,
+    required this.onStart,
   });
 
   @override
@@ -278,13 +243,11 @@ class _ReadyView extends StatelessWidget {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: onStartTimed,
+                onTap: onStart,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Text(
-                    LocaleScope.of(context).t('charades_start_button', {
-                      'duration': _durationLabel(context, _roundSeconds),
-                    }),
+                    LocaleScope.of(context).t('charades_start_untimed_button'),
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w700,
@@ -293,29 +256,6 @@ class _ReadyView extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: onStartUntimed,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: BorderSide(
-                color: theme.textOnBackgroundMuted.withValues(alpha: 0.3),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Text(
-              LocaleScope.of(context).t('charades_start_untimed_button'),
-              style: GoogleFonts.nunito(
-                fontWeight: FontWeight.w700,
-                color: theme.textOnBackgroundMuted,
               ),
             ),
           ),
@@ -348,27 +288,23 @@ class _ReadyBadge extends StatelessWidget {
 
 class _PlayingView extends StatelessWidget {
   final ThemePalette theme;
-  final AnimationController timer;
   final AnimationController wordLock;
-  final bool timed;
   final String word;
   final int score;
   final bool canSkip;
   final VoidCallback onCorrect;
   final VoidCallback onSkip;
-  final VoidCallback onEndUntimed;
+  final VoidCallback onFinish;
 
   const _PlayingView({
     required this.theme,
-    required this.timer,
     required this.wordLock,
-    required this.timed,
     required this.word,
     required this.score,
     required this.canSkip,
     required this.onCorrect,
     required this.onSkip,
-    required this.onEndUntimed,
+    required this.onFinish,
   });
 
   Widget _scoreBadge() => Container(
@@ -400,75 +336,28 @@ class _PlayingView extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (timed)
-          AnimatedBuilder(
-            animation: timer,
-            builder: (context, _) {
-              final remaining = (_roundSeconds * (1 - timer.value))
-                  .ceil()
-                  .clamp(0, _roundSeconds);
-              final urgent = remaining <= 10;
-              return Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _scoreBadge(),
-                      Text(
-                        '$remaining s',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: urgent
-                              ? Colors.redAccent
-                              : theme.textOnBackground,
-                          // Chiffres à chasse fixe : sans ça, "9 s"→"10 s"
-                          // décale légèrement le texte à chaque changement de
-                          // chiffre.
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: 1 - timer.value,
-                      minHeight: 6,
-                      backgroundColor: theme.primary.withValues(alpha: 0.15),
-                      valueColor: AlwaysStoppedAnimation(
-                        urgent ? Colors.redAccent : theme.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          )
-        else
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _scoreBadge(),
-              TextButton(
-                onPressed: onEndUntimed,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                ),
-                child: Text(
-                  LocaleScope.of(context).t('charades_finish_button'),
-                  style: GoogleFonts.nunito(
-                    fontWeight: FontWeight.w700,
-                    color: theme.textOnBackgroundMuted,
-                  ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _scoreBadge(),
+            TextButton(
+              onPressed: onFinish,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
                 ),
               ),
-            ],
-          ),
+              child: Text(
+                LocaleScope.of(context).t('charades_finish_button'),
+                style: GoogleFonts.nunito(
+                  fontWeight: FontWeight.w700,
+                  color: theme.textOnBackgroundMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 32),
         Container(
           width: double.infinity,
@@ -598,28 +487,15 @@ class _PlayingView extends StatelessWidget {
   }
 }
 
-/// Phrase de complicité selon le score — paliers fixes pensés pour une
-/// manche de 5 minutes (voir _roundSeconds).
-String _complicityPhrase(BuildContext context, int score) {
-  final t = LocaleScope.of(context).t;
-  if (score <= 4) return t('charades_complicity_1');
-  if (score <= 10) return t('charades_complicity_2');
-  if (score <= 17) return t('charades_complicity_3');
-  if (score <= 25) return t('charades_complicity_4');
-  return t('charades_complicity_5');
-}
-
 class _RecapView extends StatelessWidget {
   final ThemePalette theme;
   final int score;
-  final bool timed;
   final VoidCallback onNextRound;
   final VoidCallback onChangeCategory;
 
   const _RecapView({
     required this.theme,
     required this.score,
-    required this.timed,
     required this.onNextRound,
     required this.onChangeCategory,
   });
@@ -631,46 +507,25 @@ class _RecapView extends StatelessWidget {
       children: [
         Icon(Icons.emoji_events_rounded, color: theme.primary, size: 44),
         const SizedBox(height: 14),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: LocaleScope.of(context).t(
-                  score > 1
-                      ? 'charades_words_guessed_other'
-                      : 'charades_words_guessed_one',
-                  {'count': '$score'},
-                ),
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 20,
-                  color: theme.textOnBackground,
-                ),
-              ),
-              // En mode libre, aucune référence de temps n'a de sens (voir
-              // _ReadyView.onStartUntimed) — ni la durée, ni le jugement
-              // du score qui irait avec, l'objectif étant justement de
-              // lâcher prise plutôt que de performer — donc rien à ajouter
-              // du tout, plutôt qu'une mention "mode libre" superflue.
-              if (timed)
-                TextSpan(
-                  text:
-                      ' ${LocaleScope.of(context).t('charades_recap_timed', {'duration': _durationLabel(context, _roundSeconds)})}',
-                  style: GoogleFonts.nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: theme.textOnBackgroundMuted,
-                  ),
-                ),
-            ],
+        Text(
+          LocaleScope.of(context).t(
+            score > 1 ? 'charades_words_guessed_other' : 'charades_words_guessed_one',
+            {'count': '$score'},
           ),
           textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w800,
+            fontSize: 20,
+            color: theme.textOnBackground,
+          ),
         ),
         const SizedBox(height: 10),
+        // Voir demande utilisateur : aucune manche n'est chronométrée, donc
+        // aucun jugement basé sur un temps qui n'existe pas — toujours la
+        // même note, l'objectif étant de passer un bon moment plutôt que de
+        // performer.
         Text(
-          timed
-              ? _complicityPhrase(context, score)
-              : LocaleScope.of(context).t('charades_untimed_note'),
+          LocaleScope.of(context).t('charades_untimed_note'),
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 13,

@@ -14,7 +14,7 @@ import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/empty_state.dart';
-import 'charades_categories_screen.dart';
+import 'charades_intro_screen.dart';
 import 'emoji_story_history_screen.dart';
 import 'friend_challenge_screen.dart';
 import 'game_boxes_screen.dart';
@@ -312,7 +312,7 @@ class _GamesMenuScreenState extends State<GamesMenuScreen> {
     // (voir CharadesCategoriesScreen) — écran dédié plutôt que GameBoxesScreen.
     if (game.isCharades && boxes.isNotEmpty) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => CharadesCategoriesScreen(game: game, boxes: boxes)),
+        MaterialPageRoute(builder: (_) => CharadesIntroScreen(game: game, boxes: boxes)),
       );
       return;
     }

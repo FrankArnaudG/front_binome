@@ -7,7 +7,7 @@ import '../../models/game_box.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
-import 'charades_mime_session_screen.dart';
+import 'charades_who_starts_screen.dart';
 import 'widgets/game_box_icon.dart';
 
 /// Liste des catégories de mots à mimer (voir GameBox côté backend) — à la
@@ -47,12 +47,27 @@ class CharadesCategoriesScreen extends StatelessWidget {
                 Text(description, style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
                 const SizedBox(height: 20),
               ],
+              // Voir demande utilisateur, maquette "Écran 2" : "Possibilité :
+              // 🎲 Toutes les catégories" — mélange les mots de toutes les
+              // boîtes en une seule pioche plutôt que de choisir un thème.
+              if (boxes.length > 1) ...[
+                _CategoryTile(
+                  box: _allCategoriesBox(boxes),
+                  theme: theme,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => CharadesWhoStartsScreen(game: game, box: _allCategoriesBox(boxes)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               for (final box in boxes) ...[
                 _CategoryTile(
                   box: box,
                   theme: theme,
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => CharadesMimeSessionScreen(game: game, box: box)),
+                    MaterialPageRoute(builder: (_) => CharadesWhoStartsScreen(game: game, box: box)),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -64,6 +79,20 @@ class CharadesCategoriesScreen extends StatelessWidget {
     );
   }
 }
+
+/// Catégorie synthétique "Toutes les catégories" (voir demande utilisateur)
+/// — mélange les mots de toutes les boîtes du jeu en une seule pioche,
+/// jamais persistée côté backend (juste construite ici, à la volée).
+GameBox _allCategoriesBox(List<GameBox> boxes) => GameBox(
+      id: 'all',
+      title: const {'fr': 'Toutes les catégories'},
+      theme: const {'fr': 'Un peu de tout, en vrac'},
+      iconKey: 'star',
+      order: 0,
+      completed: false,
+      unlocked: true,
+      questions: [for (final box in boxes) ...box.questions],
+    );
 
 class _CategoryTile extends StatelessWidget {
   final GameBox box;
