@@ -28,6 +28,11 @@ const List<EventPageDesign> kEventPageDesigns = [
   // demande utilisateur, bouton "Minimaliste" qui ne se voyait pas).
   EventPageDesign(key: 'minimaliste', label: 'Minimaliste moderne', color: Color(0xFFFFFFFF), textColor: Color(0xFF1A1A17), borderColor: Color(0xFFD5D5CF)),
   EventPageDesign(key: 'enveloppe', label: 'Enveloppe', color: Color(0xFFB08D57)),
+  // Voir demande utilisateur : "un design pareil avec la photo" — la photo
+  // de couverture occupe tout l'écran d'ouverture en fond, texte doré
+  // superposé (voir prestige.blade.php), plutôt que la bande 4:3 des
+  // 6 autres designs.
+  EventPageDesign(key: 'prestige', label: 'Prestige (photo pleine page)', color: Color(0xFF2A2316)),
 ];
 
 class EventPageSection {
@@ -155,6 +160,20 @@ const Map<String, EventPageExample> kEventPageExamples = {
     programme: [
       {'time': '10h30', 'title': 'Cérémonie religieuse'},
       {'time': '15h00', 'title': 'Mairie'},
+      {'time': '18h00', 'title': 'Réception'},
+    ],
+  ),
+  'prestige': EventPageExample(
+    coupleNames: 'Samuella & Kodjo',
+    venueName: 'Palais des Congrès',
+    venueCity: 'Abidjan',
+    venueAddress: 'Plateau, Avenue Chardy',
+    notreHistoire: 'Deux cœurs, une même histoire, pour la vie.',
+    dressCodeText: 'Tenue de gala — noir et or de rigueur.',
+    merciMessage: 'Merci d\'être à nos côtés pour ce jour si précieux.',
+    programme: [
+      {'time': '10h00', 'title': 'Cérémonie traditionnelle'},
+      {'time': '14h00', 'title': 'Mairie'},
       {'time': '18h00', 'title': 'Réception'},
     ],
   ),
