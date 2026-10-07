@@ -53,6 +53,12 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
   bool _saving = false;
   bool _previewing = false;
   bool _uploadingImage = false;
+  // Point de focus de l'image de couverture (voir demande utilisateur :
+  // "l'image est coupée" → point de focus ajustable) — état local pour un
+  // retour visuel immédiat pendant le glisser, synchronisé avec _page à
+  // chaque remplacement (initState, après upload/suppression d'image).
+  double _coverFocusX = 50;
+  double _coverFocusY = 50;
 
   /// Vrai tant que le contenu affiché est l'exemple du thème (voir demande
   /// utilisateur : "pour chaque theme creer des example") et non du
@@ -77,6 +83,8 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
     _dressCodeCtrl.text = _page?.dressCodeText ?? '';
     _merciCtrl.text = _page?.merciMessage ?? '';
     _eventDate = _page?.eventDate;
+    _coverFocusX = _page?.coverImageFocusX ?? 50;
+    _coverFocusY = _page?.coverImageFocusY ?? 50;
 
     if (_page == null) {
       _usingExample = true;
@@ -126,6 +134,8 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
         'merci_message': _merciCtrl.text.trim(),
         'programme': _programme,
         'sections_visibility': _sections,
+        'cover_image_focus_x': _coverFocusX,
+        'cover_image_focus_y': _coverFocusY,
       };
 
   /// Crée la page au premier enregistrement, met à jour ensuite — un seul
@@ -219,7 +229,11 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
       if (!mounted) return;
       final updated = await EventPageService.instance.uploadCoverImage(_page!.id, File(picked.path));
       if (!mounted) return;
-      setState(() => _page = updated);
+      setState(() {
+        _page = updated;
+        _coverFocusX = updated.coverImageFocusX;
+        _coverFocusY = updated.coverImageFocusY;
+      });
     } catch (e) {
       if (!mounted) return;
       final message = e is ApiException ? e.message : 'Impossible d\'ajouter cette image.';
@@ -286,6 +300,13 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
               const SizedBox(height: 20),
               _sectionTitle(theme, 'Photo de couverture'),
               _coverImagePicker(theme),
+              if (_page?.coverImageUrl != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Glisse sur la photo pour choisir la partie qui reste visible.',
+                  style: GoogleFonts.nunito(fontSize: 11.5, color: theme.textOnBackgroundMuted),
+                ),
+              ],
               const SizedBox(height: 20),
               _sectionTitle(theme, 'Contenu'),
               _field(theme, _coupleNamesCtrl, 'Noms du couple', hint: 'Aïcha & Karim'),
@@ -465,6 +486,17 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
     );
   }
 
+  /// Voir demande utilisateur : "l'image est coupée" → point de focus
+  /// ajustable plutôt qu'un cadre adapté au ratio de la photo. [localPos]
+  /// est relatif au widget du GestureDetector (voir _coverImagePicker).
+  void _updateCoverFocusFrom(Offset localPos, Size size) {
+    if (size.width == 0 || size.height == 0) return;
+    setState(() {
+      _coverFocusX = (localPos.dx / size.width * 100).clamp(0, 100);
+      _coverFocusY = (localPos.dy / size.height * 100).clamp(0, 100);
+    });
+  }
+
   Widget _coverImagePicker(dynamic theme) {
     final url = _page?.coverImageUrl;
     return Stack(
@@ -475,7 +507,44 @@ class _EventPageEditorScreenState extends State<EventPageEditorScreen> {
           child: AspectRatio(
             aspectRatio: 4 / 3,
             child: url != null
-                ? Image.network(url, fit: BoxFit.cover, width: double.infinity)
+                ? LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = Size(constraints.maxWidth, constraints.maxHeight);
+                      return GestureDetector(
+                        onPanUpdate: (details) => _updateCoverFocusFrom(details.localPosition, size),
+                        onPanEnd: (_) => _save(silent: true),
+                        onTapUp: (details) {
+                          _updateCoverFocusFrom(details.localPosition, size);
+                          _save(silent: true);
+                        },
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.network(
+                              url,
+                              fit: BoxFit.cover,
+                              alignment: Alignment((_coverFocusX / 100) * 2 - 1, (_coverFocusY / 100) * 2 - 1),
+                            ),
+                            Positioned(
+                              left: _coverFocusX / 100 * size.width - 12,
+                              top: _coverFocusY / 100 * size.height - 12,
+                              child: IgnorePointer(
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                    boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4)],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  )
                 : InkWell(
                     onTap: _uploadingImage ? null : _pickAndUploadCoverImage,
                     child: Container(

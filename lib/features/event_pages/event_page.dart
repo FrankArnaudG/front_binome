@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart' show Alignment;
+
 /// Reflète le modèle EventPage côté backend (voir
 /// app/Models/EventPage.php) — page événement mariage, créée en brouillon,
 /// publiée moyennant un tarif fixe.
@@ -8,6 +10,10 @@ class EventPage {
   final String design;
   final String slug;
   final String? coverImageUrl;
+  // Point de focus (0-100, 50/50 = centre) — voir demande utilisateur :
+  // "l'image est coupée", mêmes bornes que GameBox.imageFocusX/Y.
+  final double coverImageFocusX;
+  final double coverImageFocusY;
   final String status;
   final bool sharedWithPartner;
   final String? coupleNames;
@@ -31,6 +37,8 @@ class EventPage {
     required this.design,
     required this.slug,
     this.coverImageUrl,
+    this.coverImageFocusX = 50,
+    this.coverImageFocusY = 50,
     required this.status,
     required this.sharedWithPartner,
     this.coupleNames,
@@ -51,6 +59,14 @@ class EventPage {
   bool get isPublished => status == 'published';
   String get publicUrl => 'https://binomecouple.com/e/$slug';
 
+  /// Traduit [coverImageFocusX]/[coverImageFocusY] (0-100) en [Alignment]
+  /// (-1 à 1) pour `Image.network(..., alignment: ...)` — même principe
+  /// que GameBox.imageAlignment.
+  Alignment get coverImageAlignment => Alignment(
+        (coverImageFocusX.clamp(0, 100) / 100) * 2 - 1,
+        (coverImageFocusY.clamp(0, 100) / 100) * 2 - 1,
+      );
+
   factory EventPage.fromJson(Map<String, dynamic> json) {
     return EventPage(
       id: json['id'] as String,
@@ -59,6 +75,8 @@ class EventPage {
       design: json['design'] as String,
       slug: json['slug'] as String,
       coverImageUrl: json['cover_image_url'] as String?,
+      coverImageFocusX: (json['cover_image_focus_x'] as num?)?.toDouble() ?? 50,
+      coverImageFocusY: (json['cover_image_focus_y'] as num?)?.toDouble() ?? 50,
       status: json['status'] as String? ?? 'draft',
       sharedWithPartner: json['shared_with_partner'] as bool? ?? false,
       coupleNames: json['couple_names'] as String?,
