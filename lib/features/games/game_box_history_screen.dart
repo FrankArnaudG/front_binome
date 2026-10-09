@@ -2998,7 +2998,12 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         final messageText = reply.heartbeatMessageFor(localeCode) ?? LocaleScope.of(context).t('heartbeat_default_message');
         entries.add(_TimelineEntry(
           reply.createdAt,
-          _buildHeartbeatBubble(theme, reply, messageText),
+          // Enregistrée via _messageKeyFor (voir _scrollToQuoted) pour que
+          // "remonter à" fonctionne aussi quand une réponse cite CE
+          // battement de cœur — sans cette clé, le tap ne trouvait aucune
+          // cible et ne faisait rien (voir demande utilisateur : "le
+          // deuxieme ca marche pa").
+          KeyedSubtree(key: _messageKeyFor(reply.id), child: _buildHeartbeatBubble(theme, reply, messageText)),
           key: ValueKey('timeline-heartbeat-${reply.id}'),
         ));
       } else if (reply.isPack && reply.pack != null) {
@@ -3008,15 +3013,18 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         // le titre du pack.
         entries.add(_TimelineEntry(
           reply.createdAt,
-          _PoemReplyBubble(
-            theme: theme,
-            reply: reply,
-            isMine: reply.senderId == widget.user.id,
-            onLongPress: (pos) => _showMessageActionsMenu(
-              context,
-              pos,
-              quoteText: reply.pack!.titleFor(localeCode),
-              quoteSendId: reply.id,
+          KeyedSubtree(
+            key: _messageKeyFor(reply.id),
+            child: _PoemReplyBubble(
+              theme: theme,
+              reply: reply,
+              isMine: reply.senderId == widget.user.id,
+              onLongPress: (pos) => _showMessageActionsMenu(
+                context,
+                pos,
+                quoteText: reply.pack!.titleFor(localeCode),
+                quoteSendId: reply.id,
+              ),
             ),
           ),
           key: ValueKey('timeline-poem-${reply.id}'),
@@ -3024,7 +3032,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       } else if (reply.isTruthOrDareRequest && reply.truthOrDareRequest != null) {
         entries.add(_TimelineEntry(
           reply.createdAt,
-          _buildTruthOrDareRequestBubble(theme, reply),
+          KeyedSubtree(key: _messageKeyFor(reply.id), child: _buildTruthOrDareRequestBubble(theme, reply)),
           key: ValueKey('timeline-tod-${reply.id}'),
         ));
       } else {
