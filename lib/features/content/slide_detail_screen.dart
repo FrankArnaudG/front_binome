@@ -98,6 +98,11 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   // suivant pendant qu'on lisait l'historique tout en haut (constaté en
   // réel).
   bool _followLatest = true;
+  // Voir demande utilisateur (même correctif que GameCardThreadScreen) :
+  // le clavier ne doit recoller la vue au dernier message que si on y
+  // était déjà avant son ouverture — comparé à chaque build() via
+  // MediaQuery pour détecter le moment précis où il s'ouvre.
+  double _lastKeyboardInset = 0;
   Timer? _pollTimer;
   final ScrollController _scrollController = ScrollController();
   // "Partenaire en ligne" (voir PartnerPresenceBadge) — même canal presence
@@ -1207,6 +1212,16 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     final theme = ThemeScope.paletteOf(context);
     final isMine = widget.isMine;
     final t = LocaleScope.of(context).t;
+
+    // Voir demande utilisateur : même correctif que GameCardThreadScreen —
+    // ne recoller la vue au dernier message à l'ouverture du clavier que
+    // si on y était déjà (voir _followLatest), jamais si on avait défilé
+    // ailleurs dans l'historique.
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardInset > _lastKeyboardInset && _lastKeyboardInset == 0 && _followLatest) {
+      _scrollToBottomSoon();
+    }
+    _lastKeyboardInset = keyboardInset;
 
     return Scaffold(
         backgroundColor: theme.background,
