@@ -730,6 +730,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   final _composeController = TextEditingController();
   final _composeFocusNode = FocusNode();
   final _scrollController = ScrollController();
+  // Voir demande utilisateur : le clavier ne doit recouvrir les messages
+  // QUE si on n'était pas déjà tout en bas — mis à jour à chaque défilement
+  // (voir _updateNearBottom), lu au moment où le clavier s'ouvre (voir
+  // build(), _lastKeyboardInset) pour décider de recoller ou non la vue au
+  // dernier message.
+  bool _isNearBottom = true;
+  double _lastKeyboardInset = 0;
   // Message précisément cité par un clic-maintenu → "Répondre" (voir
   // _showMessageActionsMenu) — N'IMPORTE QUEL message du fil, y compris le
   // sien propre, et autant de fois que voulu (voir demande utilisateur) :
@@ -857,6 +864,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     _initRealtime();
     _loadHeartbeatPrice();
     _resyncSub = RealtimeClient.instance.resyncRequests.listen((_) => _loadReplies());
+    _scrollController.addListener(_updateNearBottom);
+  }
+
+  /// Voir demande utilisateur : "si on a pas défilé" — la vue démarre
+  /// collée au dernier message (voir _scrollToBottom, appelé dès le
+  /// chargement), donc ne pas avoir défilé revient au même cas que "déjà
+  /// en bas". Seuil généreux (80px) plutôt qu'une égalité stricte avec
+  /// maxScrollExtent : un pixel d'écart dû à l'inertie du défilement ne
+  /// doit pas faire basculer dans le mauvais cas.
+  void _updateNearBottom() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    _isNearBottom = position.pixels >= position.maxScrollExtent - 80;
   }
 
   Future<void> _loadHeartbeatPrice() async {
@@ -1028,7 +1048,18 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     if (_replies.any((r) => r.id == reply.id)) return;
 
     if (!mounted) return;
-    setState(() => _replies = [..._replies, reply]);
+    setState(() {
+      _replies = [..._replies, reply];
+      // Voir demande utilisateur : "si j'envoie un message il apparaît en
+      // double avant que l'un disparaisse rapidement" — l'écho temps réel
+      // de MON PROPRE envoi peut arriver avant que la réponse HTTP de
+      // _sendPending ne revienne retirer la bulle "en cours d'envoi" ;
+      // sans ce retrait ici, les deux bulles coexistent un court instant.
+      if (reply.senderId == widget.user.id) {
+        final text = _replyText(reply);
+        _pending = _pending.where((p) => p.text != text).toList();
+      }
+    });
     _scrollToBottom();
     // Le fil est ouvert : le nouveau message reçu est immédiatement "lu",
     // pas juste "envoyé" — l'expéditeur·rice voit son double-check passer
@@ -2297,6 +2328,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
+    // Voir demande utilisateur : "si c'est le dernier message qu'on voit,
+    // le clavier ne doit pas cacher les messages... il apparaît et le
+    // dernier message se repositionne au-dessus" vs. "si on a défilé, le
+    // clavier se superpose sans les faire bouger" — le Scaffold rétrécit
+    // déjà le corps au-dessus du clavier (resizeToAvoidBottomInset), mais
+    // rien ne recollait explicitement la vue au dernier message quand on y
+    // était déjà avant l'ouverture : seul ce cas-là redéfile maintenant,
+    // la position de lecture reste intacte si on avait défilé ailleurs.
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardInset > _lastKeyboardInset && _lastKeyboardInset == 0 && _isNearBottom) {
+      _scrollToBottom();
+    }
+    _lastKeyboardInset = keyboardInset;
     // La carte évolue en place (réponse/devinette/verdict, voir _rootSend) —
     // widget.send.gameCard reste figé sur l'état d'ouverture de l'écran.
     final card = _rootSend.gameCard;
