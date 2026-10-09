@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../theme/theme_scope.dart';
 import '../../widgets/coin_icon.dart';
@@ -223,9 +224,8 @@ class _RomanPhotoLibraryScreenState extends State<RomanPhotoLibraryScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _openingStory = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(LocaleScope.of(context).t('roman_photo_load_error'))));
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('roman_photo_load_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
       return;
     }
@@ -794,11 +794,10 @@ class _VolumeRowState extends State<_VolumeRow> {
     try {
       await RomanPhotoDownloadService.instance.download(widget.volume, widget.storyId);
       await _refreshDownloaded();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(LocaleScope.of(context).t('roman_photo_download_error'))));
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('roman_photo_download_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }

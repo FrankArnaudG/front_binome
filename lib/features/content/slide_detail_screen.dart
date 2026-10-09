@@ -708,10 +708,11 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
         SnackBar(content: Text(LocaleScope.of(context).t('heartbeat_reply_sent_snackbar'))),
       );
       _loadLatestReplies();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('common_network_error');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(LocaleScope.of(context).t('common_network_error'))),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {

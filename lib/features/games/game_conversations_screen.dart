@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
@@ -360,11 +361,10 @@ class _GameConversationsScreenState extends State<GameConversationsScreen> {
       );
       AppRouter.showGlobalNavBar.value = true;
       _load();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('game_history_load_error'))),
-      );
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('game_history_load_error');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted && _openingSendId == send.id) setState(() => _openingSendId = null);
     }

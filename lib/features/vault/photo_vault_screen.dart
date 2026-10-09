@@ -144,11 +144,10 @@ class _PhotoVaultScreenState extends State<PhotoVaultScreen> {
         _photos = _photos?.where((p) => p.id != photo.id).toList();
         if (_selectedId == photo.id) _selectedId = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('vault_delete_error'))),
-      );
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('vault_delete_error');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

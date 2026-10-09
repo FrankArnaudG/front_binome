@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:screen_protector/screen_protector.dart';
 
+import '../../core/api_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../theme/theme_scope.dart';
 import 'roman_photo_download_service.dart';
@@ -128,11 +129,10 @@ class _RomanPhotoReaderScreenState extends State<RomanPhotoReaderScreen> {
       if (mounted && _localPages == null) {
         setState(() => _downloadSucceededButNotShown = true);
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(LocaleScope.of(context).t('roman_photo_download_error'))));
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('roman_photo_download_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }

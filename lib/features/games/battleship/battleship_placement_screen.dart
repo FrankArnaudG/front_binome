@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/api_client.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/battleship_session.dart';
@@ -258,11 +259,10 @@ class _BattleshipPlacementScreenState extends State<BattleshipPlacementScreen> {
     setState(() => _submitting = true);
     try {
       await widget.transport.submitFleet(_placedShips);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(LocaleScope.t(context, 'battleship_placement_error'))),
-        );
+        final message = e is ApiException ? e.message : LocaleScope.t(context, 'battleship_placement_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     }
     if (mounted) setState(() => _submitting = false);

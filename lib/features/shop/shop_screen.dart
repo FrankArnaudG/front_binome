@@ -118,11 +118,10 @@ class _ShopScreenState extends State<ShopScreen> {
 
     try {
       await CurrencyService.instance.setPreferredCurrency(chosen);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('common_network_error'))),
-      );
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('common_network_error');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       return;
     }
 

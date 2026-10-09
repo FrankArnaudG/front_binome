@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
 import '../../core/timeline_refresh_signal.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -203,11 +204,10 @@ class _GiftsScreenState extends State<GiftsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('« ${gift.name} » envoyé 💕')));
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('common_network_error'))),
-      );
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('common_network_error');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

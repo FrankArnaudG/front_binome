@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/api_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/mood.dart';
@@ -62,11 +63,10 @@ class _MoodScreenState extends State<MoodScreen> {
     try {
       await MoodService.instance.share(moodKey: _moodKey!, needKey: _needKey, desireKey: _desireKey);
       if (mounted) Navigator.of(context).pop(true);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(LocaleScope.of(context).t('mood_error'))),
-        );
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('mood_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

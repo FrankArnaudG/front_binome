@@ -180,11 +180,10 @@ class _SharedSoundsScreenState extends State<SharedSoundsScreen> {
         _sounds = _sounds?.where((s) => s.id != sound.id).toList();
         if (_selectedId == sound.id) _selectedId = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible de supprimer ce son.')),
-      );
+      final message = e is ApiException ? e.message : 'Impossible de supprimer ce son.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

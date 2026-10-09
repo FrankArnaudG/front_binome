@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/api_client.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../widgets/themed_card.dart';
@@ -70,11 +71,10 @@ class _CurrencyCardState extends State<CurrencyCard> {
       // Notifie tous les écrans à l'écoute (dont la Boutique si déjà
       // ouverte) — voir PreferredCurrencyNotifier.
       PreferredCurrencyNotifier.instance.set(chosen);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('common_network_error'))),
-      );
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('common_network_error');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
