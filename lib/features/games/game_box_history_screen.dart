@@ -4773,13 +4773,30 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   ),
                 ),
               ),
-              ComposeMenuTile(
-                theme: theme,
-                icon: Icons.style_rounded,
-                label: t('game_action_send_new_card'),
-                onTap: () => Navigator.of(sheetContext).pop('new_card'),
-              ),
-              const SizedBox(height: 8),
+              // Voir demande utilisateur : pour "Vérité ou Défi", on ne peut
+              // JAMAIS piocher et envoyer une carte à l'aveugle depuis ce
+              // menu — il faut d'abord savoir si le binôme a choisi Vérité
+              // ou Défi (via une demande), sans quoi on ne sait pas dans
+              // quelle catégorie piocher. "Demander Vérité ou Défi" est donc
+              // la toute première option pour ce jeu, et "Piocher une
+              // nouvelle carte" n'est proposé que pour les autres jeux.
+              if (widget.game.isTruthOrDare) ...[
+                ComposeMenuTile(
+                  theme: theme,
+                  icon: Icons.help_outline_rounded,
+                  label: 'Demander Vérité ou Défi',
+                  onTap: () => Navigator.of(sheetContext).pop('truth_or_dare_request'),
+                ),
+                const SizedBox(height: 8),
+              ] else ...[
+                ComposeMenuTile(
+                  theme: theme,
+                  icon: Icons.style_rounded,
+                  label: t('game_action_send_new_card'),
+                  onTap: () => Navigator.of(sheetContext).pop('new_card'),
+                ),
+                const SizedBox(height: 8),
+              ],
               ComposeMenuTile(
                 theme: theme,
                 icon: Icons.favorite_rounded,
@@ -4793,19 +4810,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 label: t('composer_reply_poem_tooltip'),
                 onTap: () => Navigator.of(sheetContext).pop('poem'),
               ),
-              // Voir demande utilisateur : "mon binôme peut m'envoyer une
-              // demande me disant de choisir défi ou vérité" — réservé à ce
-              // jeu précis, chemin inverse du choix à l'aveugle habituel
-              // (voir "Envoyer une autre carte" ci-dessus).
-              if (widget.game.isTruthOrDare) ...[
-                const SizedBox(height: 8),
-                ComposeMenuTile(
-                  theme: theme,
-                  icon: Icons.help_outline_rounded,
-                  label: 'Demander Vérité ou Défi',
-                  onTap: () => Navigator.of(sheetContext).pop('truth_or_dare_request'),
-                ),
-              ],
             ],
           ),
         ),
