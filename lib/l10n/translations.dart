@@ -480,7 +480,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_action_reply': 'Répondre',
     'game_action_send_thought': 'Envoyer une pensée',
     'game_action_send_poem': 'Envoyer un poème',
-    'game_action_send_new_card': 'Envoyer une nouvelle carte',
+    'game_action_send_new_card': 'Piocher une nouvelle carte de jeu-question',
     'game_action_send_heartbeat': 'Envoyer un battement de cœur',
     'game_invite_to_answer': 'Inviter {partner} à répondre à la même question',
     'game_invite_already_sent':
