@@ -1660,18 +1660,37 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               ],
             ),
           ),
-        PopupMenuItem(
-          value: 'new_card',
-          child: Row(
-            children: [
-              Icon(Icons.style_rounded, size: 18, color: theme.primary),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
-              ),
-            ],
+        // Même raison que le menu "+" (_openComposerMenu, voir demande
+        // utilisateur) : pour "Vérité ou Défi", on ne sait pas dans quelle
+        // catégorie piocher tant que le binôme n'a pas choisi — "Demander
+        // Vérité ou Défi" remplace "Piocher une nouvelle carte" pour ce
+        // jeu précis, jamais les deux à la fois.
+        if (widget.game.isTruthOrDare)
+          PopupMenuItem(
+            value: 'truth_or_dare_request',
+            child: Row(
+              children: [
+                Icon(Icons.help_outline_rounded, size: 18, color: theme.primary),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text('Demander Vérité ou Défi', style: GoogleFonts.nunito(color: theme.textOnBackground)),
+                ),
+              ],
+            ),
+          )
+        else
+          PopupMenuItem(
+            value: 'new_card',
+            child: Row(
+              children: [
+                Icon(Icons.style_rounded, size: 18, color: theme.primary),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+                ),
+              ],
+            ),
           ),
-        ),
         PopupMenuItem(
           value: 'heartbeat',
           child: Row(
@@ -1728,6 +1747,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         break;
       case 'new_card':
         _sendAnotherCard();
+        break;
+      case 'truth_or_dare_request':
+        _sendTruthOrDareRequest();
         break;
       case 'info':
         _showMessageInfoSheet(
