@@ -70,7 +70,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   // _GameCardThreadScreenState) — le panneau flotte désormais au-dessus de
   // la carte via une Overlay ancrée sur le cercle de réaction, au lieu
   // d'être déployé en ligne (ça poussait le reste du fil vers le bas).
-  final LayerLink _reactionLink = LayerLink();
+  final GlobalKey _reactionAnchorKey = GlobalKey();
   OverlayEntry? _reactionOverlayEntry;
   bool _sendingHeartbeatReply = false;
   bool _composerActionsOpen = false;
@@ -861,19 +861,33 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       );
     }
     if (trigger == null) return null;
-    return CompositedTransformTarget(link: _reactionLink, child: trigger);
+    return KeyedSubtree(key: _reactionAnchorKey, child: trigger);
   }
 
   /// Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
-  /// en dessous comme actuellement" — panneau flottant ancré juste au-dessus
-  /// du cercle de réaction (voir CompositedTransformTarget/Follower), jamais
-  /// en ligne dans le fil (même principe que _GameCardThreadScreenState.
-  /// _toggleReactionPanel).
+  /// en dessous comme actuellement" puis "c'est coupé" (CompositedTransformFollower
+  /// centré sur le petit cercle débordait de l'écran et chevauchait la
+  /// carte) — même correctif que _GameCardThreadScreenState.
+  /// _toggleReactionPanel : position calculée à partir du RenderBox du
+  /// cercle, bornée aux limites de l'écran.
   void _toggleReactionPanel() {
     if (_reactionPickerOpen) {
       _closeReactionPanel();
       return;
     }
+    final anchorBox = _reactionAnchorKey.currentContext?.findRenderObject() as RenderBox?;
+    if (anchorBox == null || !anchorBox.hasSize) return;
+    final anchorTopLeft = anchorBox.localToGlobal(Offset.zero);
+    final anchorSize = anchorBox.size;
+    final screenSize = MediaQuery.of(context).size;
+    const panelWidth = 240.0;
+    const sideMargin = 12.0;
+    final left = (anchorTopLeft.dx + anchorSize.width / 2 - panelWidth / 2).clamp(
+      sideMargin,
+      screenSize.width - panelWidth - sideMargin,
+    );
+    final bottom = screenSize.height - anchorTopLeft.dy + 14;
+
     final theme = ThemeScope.paletteOf(context);
     final entry = OverlayEntry(
       builder: (overlayContext) => Stack(
@@ -881,12 +895,10 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
           Positioned.fill(
             child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: _closeReactionPanel),
           ),
-          CompositedTransformFollower(
-            link: _reactionLink,
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.topCenter,
-            followerAnchor: Alignment.bottomCenter,
-            offset: const Offset(0, -8),
+          Positioned(
+            left: left,
+            bottom: bottom,
+            width: panelWidth,
             child: Material(
               color: Colors.transparent,
               child: Container(

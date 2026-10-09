@@ -827,10 +827,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // en dessous comme actuellement" — le panneau n'est plus déployé EN
   // LIGNE (ça poussait le reste du fil vers le bas) mais flotte au-dessus
   // de la carte via une Overlay ancrée sur le cercle de réaction (voir
-  // _reactionLinkFor/_toggleReactionPanel), jamais caché derrière la barre
-  // de saisie contrairement à l'ancienne version.
-  final Map<String, LayerLink> _reactionLinks = {};
-  LayerLink _reactionLinkFor(String sendId) => _reactionLinks.putIfAbsent(sendId, () => LayerLink());
+  // _reactionAnchorKeyFor/_toggleReactionPanel), jamais caché derrière la
+  // barre de saisie contrairement à l'ancienne version.
+  final Map<String, GlobalKey> _reactionAnchorKeys = {};
+  GlobalKey _reactionAnchorKeyFor(String sendId) => _reactionAnchorKeys.putIfAbsent(sendId, () => GlobalKey());
   OverlayEntry? _reactionOverlayEntry;
   String? _reactionPickerOpenForSendId;
   String? _reactingSendId;
@@ -1164,22 +1164,37 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     } else {
       trigger = _SingleReactionBadge(emoji: (mine ?? partner)!.emoji, onTap: onTap);
     }
-    return CompositedTransformTarget(link: _reactionLinkFor(send.id), child: trigger);
+    return KeyedSubtree(key: _reactionAnchorKeyFor(send.id), child: trigger);
   }
 
   /// Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
-  /// en dessous comme actuellement" — ouvre/ferme le panneau de réactions
-  /// dans une Overlay flottante (jamais en ligne dans le fil, donc ne
-  /// pousse plus jamais le reste de la discussion vers le bas), ancrée
-  /// juste au-dessus du cercle de réaction tapé (voir CompositedTransformTarget/
-  /// Follower) — toujours visible, contrairement à l'ancienne version qui
-  /// pouvait rester cachée derrière la barre de saisie près du bas.
+  /// en dessous comme actuellement" puis "c'est coupé" (CompositedTransformFollower
+  /// centré sur le petit cercle débordait de l'écran côté droit, et
+  /// chevauchait la carte faute de marge) — position calculée manuellement
+  /// à partir du RenderBox du cercle, bornée aux limites de l'écran plutôt
+  /// qu'un simple ancrage centré, jamais en ligne dans le fil (donc ne
+  /// pousse plus jamais le reste de la discussion vers le bas).
   void _toggleReactionPanel(Send send) {
     if (_reactionPickerOpenForSendId == send.id) {
       _closeReactionPanel();
       return;
     }
     _closeReactionPanel();
+    final anchorBox = _reactionAnchorKeyFor(send.id).currentContext?.findRenderObject() as RenderBox?;
+    if (anchorBox == null || !anchorBox.hasSize) return;
+    final anchorTopLeft = anchorBox.localToGlobal(Offset.zero);
+    final anchorSize = anchorBox.size;
+    final screenSize = MediaQuery.of(context).size;
+    const panelWidth = 260.0;
+    const sideMargin = 12.0;
+    final left = (anchorTopLeft.dx + anchorSize.width / 2 - panelWidth / 2).clamp(
+      sideMargin,
+      screenSize.width - panelWidth - sideMargin,
+    );
+    // Collé au-dessus du HAUT du cercle (pas de son centre) + marge, pour
+    // ne jamais chevaucher la carte juste au-dessus de lui.
+    final bottom = screenSize.height - anchorTopLeft.dy + 14;
+
     final theme = ThemeScope.paletteOf(context);
     final entry = OverlayEntry(
       builder: (overlayContext) => Stack(
@@ -1193,25 +1208,20 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               onTap: _closeReactionPanel,
             ),
           ),
-          CompositedTransformFollower(
-            link: _reactionLinkFor(send.id),
-            showWhenUnlinked: false,
-            targetAnchor: Alignment.topCenter,
-            followerAnchor: Alignment.bottomCenter,
-            offset: const Offset(0, -8),
+          Positioned(
+            left: left,
+            bottom: bottom,
+            width: panelWidth,
             child: Material(
               color: Colors.transparent,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 280),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: theme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 14, offset: Offset(0, 6))],
-                  ),
-                  child: _reactionPanel(theme, send),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 14, offset: Offset(0, 6))],
                 ),
+                child: _reactionPanel(theme, send),
               ),
             ),
           ),
