@@ -1636,44 +1636,48 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           PopupMenuItem(
             value: 'reply',
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.reply_rounded, size: 18, color: theme.primary),
                 const SizedBox(width: 10),
-                Text(t('game_action_reply'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+                Flexible(
+                  child: Text(t('game_action_reply'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+                ),
               ],
             ),
           ),
         PopupMenuItem(
           value: 'new_card',
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.style_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              Flexible(
+                child: Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
         PopupMenuItem(
           value: 'heartbeat',
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.favorite_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_heartbeat'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              Flexible(
+                child: Text(t('game_action_send_heartbeat'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
         PopupMenuItem(
           value: 'poem',
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.auto_stories_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_poem'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              Flexible(
+                child: Text(t('game_action_send_poem'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
@@ -4116,7 +4120,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             children: [
               Icon(Icons.style_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              Expanded(
+                child: Text(t('game_action_send_new_card'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
@@ -4126,7 +4132,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             children: [
               Icon(Icons.auto_stories_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_poem'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              Expanded(
+                child: Text(t('game_action_send_poem'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
@@ -4136,7 +4144,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             children: [
               Icon(Icons.favorite_rounded, size: 18, color: theme.primary),
               const SizedBox(width: 10),
-              Text(t('game_action_send_heartbeat'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              Expanded(
+                child: Text(t('game_action_send_heartbeat'), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+              ),
             ],
           ),
         ),
