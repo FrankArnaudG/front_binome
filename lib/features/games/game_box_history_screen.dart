@@ -3384,7 +3384,30 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: theme.primary.withValues(alpha: 0.2)),
         ),
-        child: body,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            body,
+            const SizedBox(height: 6),
+            // Heure + accusé de lecture, comme sur toutes les autres bulles
+            // du fil (voir _ChatBubble/_buildHeartbeatBubble) — manquaient
+            // ici, seule bulle du fil sans (voir demande utilisateur : "ca
+            // ny es pa la sur la bulle").
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  '${reply.createdAt.toLocal().hour.toString().padLeft(2, '0')}:${reply.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
+                  style: GoogleFonts.nunito(fontSize: 10.5, color: theme.textOnBackgroundMuted),
+                ),
+                if (isMine) ...[
+                  const SizedBox(width: 4),
+                  SendTickIcon(tick: sendTickFor(reply), color: theme.textOnBackgroundMuted),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
