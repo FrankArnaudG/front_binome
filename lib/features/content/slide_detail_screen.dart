@@ -65,6 +65,13 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   bool _togglingFavorite = false;
   bool _reacting = false;
   bool _reactionPickerOpen = false;
+  // Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
+  // en dessous comme actuellement" (même correctif que
+  // _GameCardThreadScreenState) — le panneau flotte désormais au-dessus de
+  // la carte via une Overlay ancrée sur le cercle de réaction, au lieu
+  // d'être déployé en ligne (ça poussait le reste du fil vers le bas).
+  final LayerLink _reactionLink = LayerLink();
+  OverlayEntry? _reactionOverlayEntry;
   bool _sendingHeartbeatReply = false;
   bool _composerActionsOpen = false;
   final _messageComposeController = TextEditingController();
@@ -383,6 +390,9 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
 
   @override
   void dispose() {
+    // Voir _toggleReactionPanel : l'Overlay du panneau de réactions est
+    // indépendante de l'arbre de cet écran, jamais nettoyée toute seule.
+    _reactionOverlayEntry?.remove();
     _pollTimer?.cancel();
     RealtimeClient.instance.unsubscribeFromBox(
       _send.boxId,
@@ -424,6 +434,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
 
   Future<void> _addReaction(String emoji) async {
     if (_reacting) return;
+    _reactionOverlayEntry?.remove();
+    _reactionOverlayEntry = null;
     setState(() {
       _reacting = true;
       _reactionPickerOpen = false;
@@ -807,26 +819,6 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                 )
               : _bubbleContent(theme),
         ),
-        // Le chevauchement du cercle/de la réaction laisse déjà ~16px de
-        // creux naturel sous la carte — pas besoin d'en rajouter beaucoup.
-        const SizedBox(height: 2),
-        // Réactions rapides (un tap) — repliées derrière le petit cercle
-        // sur la bulle, juste au-dessus.
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _reactionPickerOpen
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: _ReactionBar(
-                    enabled: !_reacting,
-                    onPick: _addReaction,
-                    theme: theme,
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
         if (_send.message != null && _send.message!.isNotEmpty) ...[
           const SizedBox(height: 16),
           Text(
@@ -859,19 +851,71 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       return const _ReactionLoadingCircle();
     }
 
+    final Widget? trigger;
     if (reaction == null) {
-      if (!canReact) return null;
-      return _ReactionTriggerCircle(
-        onTap: () => setState(() => _reactionPickerOpen = !_reactionPickerOpen),
+      trigger = canReact ? _ReactionTriggerCircle(onTap: _toggleReactionPanel) : null;
+    } else {
+      trigger = _SingleReactionBadge(
+        emoji: reaction.emoji,
+        onTap: canReact ? _toggleReactionPanel : null,
       );
     }
+    if (trigger == null) return null;
+    return CompositedTransformTarget(link: _reactionLink, child: trigger);
+  }
 
-    return _SingleReactionBadge(
-      emoji: reaction.emoji,
-      onTap: canReact
-          ? () => setState(() => _reactionPickerOpen = !_reactionPickerOpen)
-          : null,
+  /// Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
+  /// en dessous comme actuellement" — panneau flottant ancré juste au-dessus
+  /// du cercle de réaction (voir CompositedTransformTarget/Follower), jamais
+  /// en ligne dans le fil (même principe que _GameCardThreadScreenState.
+  /// _toggleReactionPanel).
+  void _toggleReactionPanel() {
+    if (_reactionPickerOpen) {
+      _closeReactionPanel();
+      return;
+    }
+    final theme = ThemeScope.paletteOf(context);
+    final entry = OverlayEntry(
+      builder: (overlayContext) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: _closeReactionPanel),
+          ),
+          CompositedTransformFollower(
+            link: _reactionLink,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.topCenter,
+            followerAnchor: Alignment.bottomCenter,
+            offset: const Offset(0, -8),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 14, offset: Offset(0, 6))],
+                ),
+                child: _ReactionBar(enabled: !_reacting, onPick: _addReaction, theme: theme),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+    _reactionOverlayEntry = entry;
+    setState(() => _reactionPickerOpen = true);
+    Overlay.of(context).insert(entry);
+  }
+
+  void _closeReactionPanel() {
+    _reactionOverlayEntry?.remove();
+    _reactionOverlayEntry = null;
+    if (_reactionPickerOpen && mounted) {
+      setState(() => _reactionPickerOpen = false);
+    } else {
+      _reactionPickerOpen = false;
+    }
   }
 
   String _mainText(Send send) {

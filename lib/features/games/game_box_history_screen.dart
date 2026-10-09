@@ -774,11 +774,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // en question", vrai aussi pour un message cité tout court).
   final Map<String, GlobalKey> _messageKeys = {};
   GlobalKey _messageKeyFor(String sendId) => _messageKeys.putIfAbsent(sendId, () => GlobalKey());
-  // Même principe, pour le panneau de réactions déployé sous une carte/un
-  // message (voir _reactionPanel) — permet de le faire défiler jusqu'à
-  // rester visible dès son ouverture (voir _reactionOverlay).
-  final Map<String, GlobalKey> _reactionPanelKeys = {};
-  GlobalKey _reactionPanelKeyFor(String sendId) => _reactionPanelKeys.putIfAbsent(sendId, () => GlobalKey());
   String? _localAnswer;
   // Quelle carte + quel bouton (Oui/Non) est en train d'envoyer (voir
   // _buildYesNoAnswerBar), sous la forme "<sendId>|<choix>" — plusieurs
@@ -827,9 +822,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   // Réaction rapide accrochée à N'IMPORTE QUELLE carte-jeu de la discussion
   // (la racine ET toute carte relancée via "envoyer une autre carte", voir
   // _replies) — même principe que SlideDetailScreen (un seul cercle par
-  // carte, la barre se déploie au tap), voir _reactionOverlay/_addReaction.
-  // L'id du Send dont le panneau est ouvert/dont une réaction est en cours
-  // d'envoi, jamais deux à la fois.
+  // carte), voir _reactionOverlay/_addReaction.
+  // Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
+  // en dessous comme actuellement" — le panneau n'est plus déployé EN
+  // LIGNE (ça poussait le reste du fil vers le bas) mais flotte au-dessus
+  // de la carte via une Overlay ancrée sur le cercle de réaction (voir
+  // _reactionLinkFor/_toggleReactionPanel), jamais caché derrière la barre
+  // de saisie contrairement à l'ancienne version.
+  final Map<String, LayerLink> _reactionLinks = {};
+  LayerLink _reactionLinkFor(String sendId) => _reactionLinks.putIfAbsent(sendId, () => LayerLink());
+  OverlayEntry? _reactionOverlayEntry;
   String? _reactionPickerOpenForSendId;
   String? _reactingSendId;
 
@@ -899,6 +901,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = true;
     });
+    // Le panneau de réactions flottant (voir _toggleReactionPanel) a sa
+    // propre OverlayEntry, indépendante de l'arbre de cet écran — jamais
+    // nettoyée toute seule en quittant l'écran sans ce retrait explicite.
+    _reactionOverlayEntry?.remove();
     _composeController.dispose();
     _composeFocusNode.dispose();
     _scrollController.dispose();
@@ -1142,60 +1148,100 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   /// Cercle accroché au bord de [send] : ma réaction si j'en ai posé une,
   /// sinon celle de mon binôme, sinon un cercle "vide" qui invite à réagir —
   /// les deux côtés peuvent toujours taper dessus pour ouvrir le panneau
-  /// (résumé + choix d'émoji, voir _reactionPanel).
+  /// (résumé + choix d'émoji, voir _reactionPanel/_toggleReactionPanel).
+  /// Enveloppé dans un CompositedTransformTarget : c'est sur CE cercle que
+  /// le panneau flottant s'ancre (voir _toggleReactionPanel).
   Widget? _reactionOverlay(ThemePalette theme, Send send) {
     final mine = _myReactionOn(send);
     final partner = _partnerReactionOn(send);
-    void onTap() {
-      final opening = _reactionPickerOpenForSendId != send.id;
-      setState(() => _reactionPickerOpenForSendId = opening ? send.id : null);
-      // Le panneau s'ouvre EN PLACE, juste sous [send] (voir _reactionPanel)
-      // — sans ça, une carte proche du bas de l'écran fait apparaître le
-      // panneau hors du cadre visible, juste au-dessus de la barre de
-      // saisie fixe, donnant l'impression qu'il reste "caché derrière le
-      // bouton +" (voir demande utilisateur). Il est déployé par un
-      // AnimatedSize (220ms, voir _buildMessageList) : le mesurer dès la
-      // frame suivante (comme _scrollToAnswer) donnait une hauteur encore
-      // proche de zéro, donc un calcul de défilement correct la première
-      // fois (peu de distance à parcourir) mais insuffisant les fois
-      // suivantes (davantage de contenu déjà accumulé au-dessus, voir
-      // demande utilisateur : "la seconde ou troisième fois ça reste
-      // caché") — attendre la fin de l'animation avant de mesurer donne un
-      // résultat fiable à chaque fois.
-      if (opening) {
-        // alignment: 1 (pas 0.8) — colle le BAS du panneau au bas du
-        // cadre visible, la révélation la plus complète possible plutôt
-        // qu'une simple approximation (voir demande utilisateur : "même
-        // au premier clic" — 0.8 laissait apparemment encore le bas du
-        // panneau hors champ selon la hauteur exacte du contenu déjà
-        // affiché). 300ms (pas 230) : marge de sécurité au-delà des 220ms
-        // de l'AnimatedSize, pour ne jamais mesurer une hauteur encore en
-        // cours d'animation sur un appareil plus lent.
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) return;
-          final ctx = _reactionPanelKeyFor(send.id).currentContext;
-          if (ctx == null) return;
-          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 1);
-        });
-      }
-    }
+    void onTap() => _toggleReactionPanel(send);
 
+    final Widget trigger;
     if (mine == null && partner == null) {
-      return _ReactionTriggerCircle(emoji: _reactionEmojis.first, onTap: onTap);
+      trigger = _ReactionTriggerCircle(emoji: _reactionEmojis.first, onTap: onTap);
+    } else if (mine != null && partner != null) {
+      trigger = _DualReactionBadge(mineEmoji: mine.emoji, partnerEmoji: partner.emoji, onTap: onTap);
+    } else {
+      trigger = _SingleReactionBadge(emoji: (mine ?? partner)!.emoji, onTap: onTap);
     }
-    if (mine != null && partner != null) {
-      return _DualReactionBadge(mineEmoji: mine.emoji, partnerEmoji: partner.emoji, onTap: onTap);
-    }
-    return _SingleReactionBadge(emoji: (mine ?? partner)!.emoji, onTap: onTap);
+    return CompositedTransformTarget(link: _reactionLinkFor(send.id), child: trigger);
   }
 
-  /// Panneau déployé sous [send] au tap sur son cercle de réaction : d'abord
-  /// la "bande" listant qui a réagi avec quoi (si au moins une réaction
-  /// existe), puis la rangée d'émojis pour poser/changer la mienne — jamais
-  /// celle de mon binôme, chacun·e ne modifie que la sienne.
+  /// Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
+  /// en dessous comme actuellement" — ouvre/ferme le panneau de réactions
+  /// dans une Overlay flottante (jamais en ligne dans le fil, donc ne
+  /// pousse plus jamais le reste de la discussion vers le bas), ancrée
+  /// juste au-dessus du cercle de réaction tapé (voir CompositedTransformTarget/
+  /// Follower) — toujours visible, contrairement à l'ancienne version qui
+  /// pouvait rester cachée derrière la barre de saisie près du bas.
+  void _toggleReactionPanel(Send send) {
+    if (_reactionPickerOpenForSendId == send.id) {
+      _closeReactionPanel();
+      return;
+    }
+    _closeReactionPanel();
+    final theme = ThemeScope.paletteOf(context);
+    final entry = OverlayEntry(
+      builder: (overlayContext) => Stack(
+        children: [
+          // Ferme au tap n'importe où en dehors du panneau — même principe
+          // que l'ancien GestureDetector plein écran, déplacé ici puisque
+          // le panneau n'est plus dans l'arbre normal du fil.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeReactionPanel,
+            ),
+          ),
+          CompositedTransformFollower(
+            link: _reactionLinkFor(send.id),
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.topCenter,
+            followerAnchor: Alignment.bottomCenter,
+            offset: const Offset(0, -8),
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 280),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: theme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 14, offset: Offset(0, 6))],
+                  ),
+                  child: _reactionPanel(theme, send),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    _reactionOverlayEntry = entry;
+    setState(() => _reactionPickerOpenForSendId = send.id);
+    Overlay.of(context).insert(entry);
+  }
+
+  void _closeReactionPanel() {
+    _reactionOverlayEntry?.remove();
+    _reactionOverlayEntry = null;
+    if (_reactionPickerOpenForSendId != null && mounted) {
+      setState(() => _reactionPickerOpenForSendId = null);
+    } else {
+      _reactionPickerOpenForSendId = null;
+    }
+  }
+
+  /// Panneau flottant au-dessus de [send] (voir _toggleReactionPanel) :
+  /// d'abord la "bande" listant qui a réagi avec quoi (si au moins une
+  /// réaction existe), puis la rangée d'émojis pour poser/changer la
+  /// mienne — jamais celle de mon binôme, chacun·e ne modifie que la
+  /// sienne.
   Widget _reactionPanel(ThemePalette theme, Send send) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (send.reactions.isNotEmpty) ...[
           _ReactionSummaryStrip(theme: theme, reactions: send.reactions, myUserId: widget.user.id),
@@ -1239,6 +1285,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       emoji: emoji,
       createdAt: DateTime.now(),
     );
+    _reactionOverlayEntry?.remove();
+    _reactionOverlayEntry = null;
     setState(() {
       _reactingSendId = send.id;
       _reactionPickerOpenForSendId = null;
@@ -2463,7 +2511,11 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              if (_reactionPickerOpenForSendId != null) setState(() => _reactionPickerOpenForSendId = null);
+              // Repli : le panneau flottant a sa propre Overlay plein
+              // écran qui ferme déjà au tap (voir _toggleReactionPanel) —
+              // gardé ici pour le cas marginal où elle n'intercepterait
+              // pas le tap la première.
+              if (_reactionPickerOpenForSendId != null) _closeReactionPanel();
             },
             child: (card == null && !_rootSend.isTruthOrDareRequest)
                 ? EmptyState(icon: Icons.style_rounded, message: LocaleScope.of(context).t('game_card_not_found'))
@@ -2537,25 +2589,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             // thématisé selon le jeu (voir _reactionEmojis).
             reactionOverlay: _reactionOverlay(theme, _rootSend),
           ),
-        ),
-        // Repliée derrière le cercle de réaction, juste au-dessus — même
-        // principe que SlideDetailScreen._buildHeader.
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _reactionPickerOpenForSendId == _rootSend.id
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 20, bottom: 4),
-                  child: Align(
-                    alignment: _isMine ? Alignment.centerRight : Alignment.centerLeft,
-                    child: KeyedSubtree(
-                      key: _reactionPanelKeyFor(_rootSend.id),
-                      child: _reactionPanel(theme, _rootSend),
-                    ),
-                  ),
-                )
-              : const SizedBox.shrink(),
         ),
         if (answer != null) ...[
           const SizedBox(height: 6),
@@ -2786,24 +2819,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   // simplement dès la deuxième carte envoyée dans le fil.
                   reactionOverlay: _reactionOverlay(theme, reply),
                 ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                alignment: Alignment.topCenter,
-                child: _reactionPickerOpenForSendId == reply.id
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 20, bottom: 4),
-                        child: Align(
-                          alignment:
-                              reply.senderId == widget.user.id ? Alignment.centerRight : Alignment.centerLeft,
-                          child: KeyedSubtree(
-                            key: _reactionPanelKeyFor(reply.id),
-                            child: _reactionPanel(theme, reply),
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
               ),
               // Révélation de CETTE carte relancée — sans ça, seule la carte
               // racine affichait jamais "Vous êtes raccord/Chacun sa vibe" ;
