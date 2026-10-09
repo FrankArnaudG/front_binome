@@ -1311,12 +1311,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               reactions: SendReaction.dedupeByUser(updated.reactions),
             )));
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _updateSend(send.copyWith(reactions: previousReactions)));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(LocaleScope.of(context).t('game_reaction_send_failed'))),
-      );
+      // Voir demande utilisateur : "l'erreur n'est pas explicite comme tu
+      // l'as dit" — ce catch(_) ignorait systématiquement la vraie cause
+      // (pas d'internet, serveur injoignable...) au profit d'un message
+      // générique fixe, qui ne montrait jamais le message précis
+      // d'ApiException (voir ApiClient._networkErrorToApiException).
+      final message = e is ApiException ? e.message : LocaleScope.of(context).t('game_reaction_send_failed');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _reactingSendId = null);
     }
@@ -1857,9 +1861,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         }
       });
       _syncRepliesCacheSilently();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => pending.failed = true);
+      // Voir demande utilisateur : même correctif que _addReaction —
+      // l'icône "échec" seule ne dit jamais POURQUOI, affiche maintenant
+      // le message précis d'ApiException (ex. absence réelle d'internet)
+      // plutôt que de laisser deviner.
+      final message = e is ApiException ? e.message : 'Message non envoyé, réessaie.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
