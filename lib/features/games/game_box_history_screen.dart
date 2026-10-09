@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -4988,11 +4989,25 @@ class _GameCardMessageBubble extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       if (hasImage)
-                        Image.network(
-                          imagePath!,
+                        // CachedNetworkImage plutôt qu'Image.network (voir
+                        // PhotoVaultScreen/RomanPhotoLibraryScreen, même
+                        // motif) — sans cache disque, chaque nouvelle carte
+                        // envoyée retéléchargeait l'image de la boîte depuis
+                        // zéro et affichait l'icône de repli pendant ce
+                        // temps, même quand une carte précédente du même fil
+                        // avait déjà chargé exactement la même image (voir
+                        // demande utilisateur, constaté en réel : "ça
+                        // apparaît comme ça... et des secondes après tout
+                        // apparaît bien").
+                        CachedNetworkImage(
+                          imageUrl: imagePath!,
                           fit: BoxFit.cover,
                           alignment: _imageAlignment,
-                          errorBuilder: (context, error, stackTrace) => Center(
+                          fadeInDuration: Duration.zero,
+                          placeholder: (context, url) => Center(
+                            child: Icon(iconForGameBox(iconKey), size: 56, color: Colors.white.withValues(alpha: 0.55)),
+                          ),
+                          errorWidget: (context, url, error) => Center(
                             child: Icon(iconForGameBox(iconKey), size: 56, color: Colors.white.withValues(alpha: 0.55)),
                           ),
                         )
