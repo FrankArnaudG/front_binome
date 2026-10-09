@@ -170,7 +170,23 @@ class ApiClient {
     if (error is TimeoutException) {
       return ApiException('Le serveur met trop de temps à répondre. Réessaie dans un instant.', 0);
     }
-    if (error is SocketException || error is http.ClientException) {
+    if (error is SocketException) {
+      // Voir demande utilisateur : "précise le problème de connexion
+      // internet si c'est bien ça" — une résolution DNS impossible (ex.
+      // "Failed host lookup", constaté en réel) signifie que l'appareil
+      // n'a AUCUN accès réseau, Wi-Fi/données activées ou non, à
+      // distinguer d'un serveur simplement injoignable (connexion
+      // refusée) alors que l'appareil, lui, est bien en ligne.
+      final detail = error.osError?.message.toLowerCase() ?? error.message.toLowerCase();
+      final isDnsFailure = detail.contains('failed host lookup') ||
+          detail.contains('no address associated') ||
+          detail.contains('network is unreachable');
+      if (isDnsFailure) {
+        return ApiException('Pas de connexion internet. Vérifie ton Wi-Fi ou tes données mobiles.', 0);
+      }
+      return ApiException('Impossible de joindre le serveur. Vérifie ta connexion.', 0);
+    }
+    if (error is http.ClientException) {
       return ApiException('Impossible de joindre le serveur. Vérifie ta connexion.', 0);
     }
     return ApiException('Une erreur réseau est survenue.', 0);
