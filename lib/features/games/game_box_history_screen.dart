@@ -2148,11 +2148,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       // arrière-plan sans bloquer l'apparition du message — l'utilisateur
       // n'a pas besoin d'attendre ça pour voir sa pensée envoyée.
       unawaited(WalletBalanceNotifier.instance.refresh());
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(LocaleScope.of(context).t('common_network_error'))),
-        );
+        final message = e is ApiException ? e.message : LocaleScope.of(context).t('common_network_error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _sendingHeartbeatReply = false);
@@ -2292,11 +2291,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       // GameBoxesScreen._openTruthOrDareBox) et pas seulement une réponse
       // parmi _replies — _updateSend sait déjà distinguer les deux cas.
       setState(() => _updateSend(updated));
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Impossible d'enregistrer ta réponse. Réessaie dans un instant.")),
-      );
+      final message = e is ApiException ? e.message : "Impossible d'enregistrer ta réponse. Réessaie dans un instant.";
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -4580,11 +4578,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       }
       _scrollToBottom();
       _syncRepliesCacheSilently();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Impossible d'envoyer la demande. Réessaie dans un instant.")),
-      );
+      final message = e is ApiException ? e.message : "Impossible d'envoyer la demande. Réessaie dans un instant.";
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 }
