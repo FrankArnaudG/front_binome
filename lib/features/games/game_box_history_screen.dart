@@ -9,6 +9,7 @@ import '../../core/last_seen_label.dart';
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
 import '../../core/realtime_client.dart';
+import '../../core/uuid7.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/game.dart';
@@ -1854,7 +1855,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   Future<void> _sendPending(_PendingText pending) async {
     setState(() => pending.failed = false);
     try {
-      final reply = await ContentService.instance.sendTextReply(widget.send.id, pending.text);
+      final reply = await ContentService.instance.sendTextReply(widget.send.id, pending.text, clientId: pending.localId);
       if (!mounted) return;
       // Meme protection que _sendHeartbeatReply : l'echo temps reel peut
       // deja avoir ajoute ce message avant que cette reponse HTTP revienne.
@@ -3069,24 +3070,26 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       final decoded = _decodeQuoted(pending.text);
       entries.add(_TimelineEntry(
         pending.time,
-        _ChatBubble(
-          theme: theme,
-          isMine: true,
-          text: decoded.text,
-          time: pending.time,
-          tick: pending.failed ? SendTick.failed : SendTick.sending,
-          onRetry: pending.failed ? () => _sendPending(pending) : null,
-          replyPreview: decoded.quote,
-          // Le message cité (s'il y en a un) a déjà un id stable, même si
-          // CE message-ci (encore en attente, voir _PendingText) n'en a pas
-          // lui-même — le lien "remonter à" fonctionne donc dès l'affichage
-          // optimiste, pas seulement une fois confirmé.
-          onReplyTap: decoded.quoteId == null ? null : () => _scrollToQuoted(decoded.quoteId!),
-          // Pas encore d'id serveur stable pour CE message — citation
-          // possible, mais personne ne peut encore "remonter à" lui tant
-          // que l'envoi n'est pas confirmé (voir onLongPress sans
-          // quoteSendId).
-          onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: decoded.text),
+        KeyedSubtree(
+          key: _messageKeyFor(pending.localId),
+          child: _ChatBubble(
+            theme: theme,
+            isMine: true,
+            text: decoded.text,
+            time: pending.time,
+            tick: pending.failed ? SendTick.failed : SendTick.sending,
+            onRetry: pending.failed ? () => _sendPending(pending) : null,
+            replyPreview: decoded.quote,
+            onReplyTap: decoded.quoteId == null ? null : () => _scrollToQuoted(decoded.quoteId!),
+            // pending.localId est stable dès la création (voir _PendingText)
+            // et transmis au serveur comme id final (voir _sendPending) — la
+            // citation reste donc valable même si on répond à CE message
+            // avant sa confirmation serveur (voir demande utilisateur : les
+            // deux derniers messages envoyés juste après l'avoir corrigé une
+            // première fois ne fonctionnaient toujours pas).
+            onLongPress: (pos) =>
+                _showMessageActionsMenu(context, pos, quoteText: decoded.text, quoteSendId: pending.localId),
+          ),
         ),
         key: ValueKey('timeline-pending-${identityHashCode(pending)}'),
       ));
@@ -5155,9 +5158,14 @@ class _ReactionBar extends StatelessWidget {
 class _PendingText {
   final String text;
   final DateTime time;
+  // Id généré ici, avant même l'envoi (voir generateUuid7) — transmis au
+  // serveur comme id final du message (voir ContentService.sendTextReply),
+  // pour que le citer dans un autre message fonctionne dès l'affichage
+  // optimiste, pas seulement une fois la confirmation serveur revenue.
+  final String localId;
   bool failed = false;
 
-  _PendingText({required this.text, required this.time});
+  _PendingText({required this.text, required this.time}) : localId = generateUuid7();
 }
 
 /// Badge de coût pour l'envoi d'une pensée — même rendu que

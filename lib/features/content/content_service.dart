@@ -288,10 +288,15 @@ class ContentService {
   /// Envoie un message texte libre en réponse à un envoi — transforme un
   /// fil ponctuel (ex. carte-question "À nous deux") en vraie discussion,
   /// des deux côtés, sans limite de nombre de messages (voir
-  /// GameCardThreadScreen).
-  Future<Send> sendTextReply(String sendId, String text) async {
+  /// GameCardThreadScreen). [clientId] (voir generateUuid7) permet au
+  /// serveur d'adopter cet id comme id final du message plutôt que d'en
+  /// générer un lui-même — sans ça, citer un message tout juste envoyé (pas
+  /// encore confirmé) ne pouvait jamais être relié au bon message une fois
+  /// confirmé (voir GameCardThreadScreen._PendingText.localId).
+  Future<Send> sendTextReply(String sendId, String text, {String? clientId}) async {
     final data = await ApiClient.instance.post('/sends/$sendId/reply', body: {
       'text': text,
+      if (clientId != null) 'client_id': clientId,
     }) as Map<String, dynamic>;
     return Send.fromJson(data);
   }
