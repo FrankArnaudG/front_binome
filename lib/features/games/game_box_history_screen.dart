@@ -1609,6 +1609,20 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     // en chat — donc "Répondre" n'a pas de sens pour elle (voir demande
     // utilisateur).
     bool hideReply = false,
+    // "Infos sur le message" (voir _showMessageInfoSheet) — uniquement sur
+    // SES PROPRES messages (voir demande utilisateur, même logique que les
+    // coches ✓/✓✓) : [infoSentAt] null quand ce contenu n'a aucun suivi de
+    // statut propre (ex. réponse Oui/Non stockée dans GameCardSend.answer,
+    // sans Send propre, voir les call sites correspondants).
+    bool isMine = false,
+    DateTime? infoSentAt,
+    DateTime? infoDeliveredAt,
+    DateTime? infoSeenAt,
+    String? infoExtraLine,
+    // false pour une réponse stockée dans GameCardSend.answer (Oui/Non,
+    // verdict Défi) — aucun Send propre, donc aucun statut reçu/lu à
+    // montrer, même provisoirement (voir _showMessageInfoSheet).
+    bool infoTracksDelivery = true,
   }) async {
     // Petit retour tactile au moment où le menu apparaît — même geste que
     // le clic-maintenu d'un vrai clavier/chat natif, confirme que le
@@ -1682,6 +1696,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             ],
           ),
         ),
+        if (isMine && infoSentAt != null)
+          PopupMenuItem(
+            value: 'info',
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 18, color: theme.primary),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(t('game_action_message_info'), style: GoogleFonts.nunito(color: theme.textOnBackground)),
+                ),
+              ],
+            ),
+          ),
       ],
     );
     if (!mounted) return;
@@ -1702,7 +1729,108 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       case 'new_card':
         _sendAnotherCard();
         break;
+      case 'info':
+        _showMessageInfoSheet(
+          context,
+          sentAt: infoSentAt!,
+          deliveredAt: infoDeliveredAt,
+          seenAt: infoSeenAt,
+          extraLine: infoExtraLine,
+          tracksDelivery: infoTracksDelivery,
+        );
+        break;
     }
+  }
+
+  /// "Infos sur le message" façon WhatsApp — heure d'envoi/réception/lecture
+  /// (voir Send.deliveredAt/seenAt, jusqu'ici jamais affichées nulle part,
+  /// voir demande utilisateur). [extraLine] sert à préciser un détail
+  /// propre au type de contenu (ex. l'heure à laquelle le binôme a choisi
+  /// Vérité ou Défi, voir _buildTruthOrDareRequestBubble).
+  void _showMessageInfoSheet(
+    BuildContext context, {
+    required DateTime sentAt,
+    DateTime? deliveredAt,
+    DateTime? seenAt,
+    String? extraLine,
+    bool tracksDelivery = true,
+  }) {
+    final theme = ThemeScope.paletteOf(context);
+    final t = LocaleScope.of(context).t;
+    String fmt(DateTime d) {
+      final local = d.toLocal();
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: theme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: theme.textOnBackgroundMuted.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                t('game_message_info_title'),
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
+              ),
+              const SizedBox(height: 16),
+              _MessageInfoRow(
+                icon: Icons.done_rounded,
+                iconColor: theme.textOnBackgroundMuted,
+                label: t('game_message_info_sent'),
+                time: fmt(sentAt),
+              ),
+              if (tracksDelivery) ...[
+                const SizedBox(height: 10),
+                _MessageInfoRow(
+                  icon: Icons.done_all_rounded,
+                  iconColor: theme.textOnBackgroundMuted,
+                  label: t('game_message_info_delivered'),
+                  time: deliveredAt != null ? fmt(deliveredAt) : t('game_message_info_pending'),
+                ),
+                const SizedBox(height: 10),
+                _MessageInfoRow(
+                  icon: Icons.done_all_rounded,
+                  iconColor: Colors.lightBlueAccent,
+                  label: t('game_message_info_read'),
+                  time: seenAt != null ? fmt(seenAt) : t('game_message_info_pending'),
+                ),
+              ],
+              if (extraLine != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    extraLine,
+                    style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Enrobe _submitSpecialAnswer pour les boutons Oui/Non — mémorise
@@ -2593,6 +2721,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             quoteText: card.questionTextFor(LocaleScope.of(context).current.code),
             quoteSendId: _rootSend.id,
             hideReply: card.isDefi,
+            isMine: _isMine,
+            infoSentAt: _rootSend.createdAt,
+            infoDeliveredAt: _rootSend.deliveredAt,
+            infoSeenAt: _rootSend.seenAt,
           ),
           child: _GameCardMessageBubble(
             key: _keyFor(_rootSend.id),
@@ -2677,7 +2809,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               masked: _isMine && card.needsSenderAnswer,
               onLongPress: card.needsSenderAnswer && _isMine
                   ? null
-                  : (pos) => _showMessageActionsMenu(context, pos, quoteText: answer, quoteSendId: _rootSend.id),
+                  : (pos) => _showMessageActionsMenu(
+                        context,
+                        pos,
+                        quoteText: answer,
+                        quoteSendId: _rootSend.id,
+                        isMine: !_isMine,
+                        infoSentAt: card.answeredAt ?? widget.send.createdAt,
+                        infoTracksDelivery: false,
+                      ),
               ),
             )
           else if (widget.game.isTruthOrDare && card.isDefi)
@@ -2698,7 +2838,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 tick: _isMine ? SendTick.sent : null,
                 replyPreview: card.questionTextFor(LocaleScope.of(context).current.code),
                 onReplyTap: () => _scrollToCard(_rootSend.id),
-                onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: answer, quoteSendId: _rootSend.id),
+                onLongPress: (pos) => _showMessageActionsMenu(
+                  context,
+                  pos,
+                  quoteText: answer,
+                  quoteSendId: _rootSend.id,
+                  isMine: _isMine,
+                  infoSentAt: card.answeredAt ?? widget.send.createdAt,
+                  infoTracksDelivery: false,
+                ),
               ),
             ),
           if (widget.game.isTruthOrDare && card.isDefi) _buildDefiFollowUp(theme, _rootSend, answer),
@@ -2822,6 +2970,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                   quoteText: reply.gameCard!.questionTextFor(localeCode),
                   quoteSendId: reply.id,
                   hideReply: reply.gameCard!.isDefi,
+                  isMine: reply.senderId == widget.user.id,
+                  infoSentAt: reply.createdAt,
+                  infoDeliveredAt: reply.deliveredAt,
+                  infoSeenAt: reply.seenAt,
                 ),
                 child: _GameCardMessageBubble(
                   key: _keyFor(reply.id),
@@ -2914,6 +3066,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                                 pos,
                                 quoteText: reply.gameCard!.answer!,
                                 quoteSendId: reply.id,
+                                isMine: reply.recipientId == widget.user.id,
+                                infoSentAt: reply.gameCard!.answeredAt ?? reply.createdAt,
+                                infoTracksDelivery: false,
                               ),
                     ),
                   ),
@@ -2939,6 +3094,9 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                         pos,
                         quoteText: reply.gameCard!.answer!,
                         quoteSendId: reply.id,
+                        isMine: reply.senderId == widget.user.id,
+                        infoSentAt: reply.gameCard!.answeredAt ?? reply.createdAt,
+                        infoTracksDelivery: false,
                       ),
                     ),
                   ),
@@ -3025,6 +3183,10 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 pos,
                 quoteText: reply.pack!.titleFor(localeCode),
                 quoteSendId: reply.id,
+                isMine: reply.senderId == widget.user.id,
+                infoSentAt: reply.createdAt,
+                infoDeliveredAt: reply.deliveredAt,
+                infoSeenAt: reply.seenAt,
               ),
             ),
           ),
@@ -3057,8 +3219,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               // envoyé AVANT l'ajout de ce lien (voir _decodeQuoted), pas
               // de lien plutôt que de planter dans ce cas.
               onReplyTap: decoded.quoteId == null ? null : () => _scrollToQuoted(decoded.quoteId!),
-              onLongPress: (pos) =>
-                  _showMessageActionsMenu(context, pos, quoteText: decoded.text, quoteSendId: reply.id),
+              onLongPress: (pos) => _showMessageActionsMenu(
+                context,
+                pos,
+                quoteText: decoded.text,
+                quoteSendId: reply.id,
+                isMine: reply.senderId == widget.user.id,
+                infoSentAt: reply.createdAt,
+                infoDeliveredAt: reply.deliveredAt,
+                infoSeenAt: reply.seenAt,
+              ),
             ),
           ),
           key: ValueKey('timeline-text-${reply.id}'),
@@ -3141,7 +3311,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
         // types de réponse, voir _buildPollRevealBubble/_buildQuizReplyBubble).
         replyPreview: card.questionTextFor(LocaleScope.of(context).current.code),
         onReplyTap: () => _scrollToCard(target.id),
-        onLongPress: (pos) => _showMessageActionsMenu(context, pos, quoteText: card.answer!, quoteSendId: target.id),
+        onLongPress: (pos) => _showMessageActionsMenu(
+          context,
+          pos,
+          quoteText: card.answer!,
+          quoteSendId: target.id,
+          isMine: isMine,
+          infoSentAt: card.answeredAt ?? target.createdAt,
+          infoTracksDelivery: false,
+        ),
       ),
     );
   }
@@ -3196,8 +3374,16 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
           family: reply.heartbeatFamily,
           senderGender: reply.sender?.gender,
         ),
-        onLongPressStart: (details) =>
-            _showMessageActionsMenu(context, details.globalPosition, quoteText: messageText, quoteSendId: reply.id),
+        onLongPressStart: (details) => _showMessageActionsMenu(
+          context,
+          details.globalPosition,
+          quoteText: messageText,
+          quoteSendId: reply.id,
+          isMine: isMine,
+          infoSentAt: reply.createdAt,
+          infoDeliveredAt: reply.deliveredAt,
+          infoSeenAt: reply.seenAt,
+        ),
         child: Stack(
           children: [
             card,
@@ -3298,6 +3484,15 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     } else {
       final categoryLabel = req.isDefi ? 'Défi' : 'Vérité';
       final categoryColor = req.isDefi ? defiColor : veriteColor;
+      // Heure du choix Vérité/Défi (voir demande utilisateur : "à quelle
+      // moment j'ai répondu") — TruthOrDareRequestController::answer pose
+      // seen_at = now() au moment exact où le/la destinataire choisit (pas
+      // un marquage "lu" générique, voir backend), donc reply.seenAt EST
+      // déjà cette heure-là, sans qu'aucun champ supplémentaire soit
+      // nécessaire côté backend.
+      final answeredSuffix = reply.seenAt != null
+          ? ' à ${reply.seenAt!.toLocal().hour.toString().padLeft(2, '0')}:${reply.seenAt!.toLocal().minute.toString().padLeft(2, '0')}'
+          : '';
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3305,11 +3500,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
             children: [
               Icon(Icons.check_circle_rounded, size: 16, color: categoryColor),
               const SizedBox(width: 6),
-              Text(
-                isMine
-                    ? '${reply.recipient?.prenom ?? "Ton binôme"} a choisi : $categoryLabel'
-                    : 'Tu as choisi : $categoryLabel',
-                style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+              Flexible(
+                child: Text(
+                  isMine
+                      ? '${reply.recipient?.prenom ?? "Ton binôme"} a choisi : $categoryLabel$answeredSuffix'
+                      : 'Tu as choisi : $categoryLabel$answeredSuffix',
+                  style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                ),
               ),
             ],
           ),
@@ -3374,9 +3571,36 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       );
     }
 
+    // "Infos sur le message" (voir _showMessageActionsMenu/
+    // _showMessageInfoSheet) — précise ici QUAND Vérité/Défi a été choisi
+    // (reply.seenAt, voir plus haut), en plus d'envoyé/reçu/lu (voir
+    // demande utilisateur).
+    String? infoExtraLine;
+    if (req.isAnswered && reply.seenAt != null) {
+      final categoryLabel = req.isDefi ? 'Défi' : 'Vérité';
+      final time =
+          '${reply.seenAt!.toLocal().hour.toString().padLeft(2, '0')}:${reply.seenAt!.toLocal().minute.toString().padLeft(2, '0')}';
+      final infoT = LocaleScope.of(context).t;
+      infoExtraLine = isMine
+          ? infoT('game_truth_or_dare_answered_at_partner', {'partner': reply.recipient?.prenom ?? 'Ton binôme', 'category': categoryLabel, 'time': time})
+          : infoT('game_truth_or_dare_answered_at_mine', {'category': categoryLabel, 'time': time});
+    }
+
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
+      child: GestureDetector(
+        onLongPressStart: (details) => _showMessageActionsMenu(
+          context,
+          details.globalPosition,
+          quoteText: req.isAnswered ? (req.isDefi ? 'Défi' : 'Vérité') : 'Vérité ou Défi ?',
+          quoteSendId: reply.id,
+          isMine: isMine,
+          infoSentAt: reply.createdAt,
+          infoDeliveredAt: reply.deliveredAt,
+          infoSeenAt: reply.seenAt,
+          infoExtraLine: infoExtraLine,
+        ),
+        child: Container(
         constraints: const BoxConstraints(maxWidth: 260),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -3407,6 +3631,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );
@@ -5189,6 +5414,34 @@ class _PendingText {
   bool failed = false;
 
   _PendingText({required this.text, required this.time}) : localId = generateUuid7();
+}
+
+/// Une ligne de la feuille "Infos sur le message" (voir
+/// _showMessageInfoSheet) — icône + libellé + heure (ou "Pas encore" tant
+/// que l'étape n'a pas eu lieu, jamais une ligne absente : le binôme sait
+/// toujours que CETTE étape existe, juste pas encore franchie).
+class _MessageInfoRow extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String time;
+
+  const _MessageInfoRow({required this.icon, required this.iconColor, required this.label, required this.time});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeScope.paletteOf(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: iconColor),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(label, style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackground)),
+        ),
+        Text(time, style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
+      ],
+    );
+  }
 }
 
 /// Badge de coût pour l'envoi d'une pensée — même rendu que
