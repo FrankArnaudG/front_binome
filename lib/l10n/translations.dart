@@ -573,7 +573,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_blind_poll_hidden_answer_label':
         'Ta réponse (cachée jusqu\'à ce que {partner} réponde aussi) 🤫',
     'game_choose_another_card': "Retourner à l'éventail",
-    'game_continue_playing': 'Continuer à jouer',
+    'game_continue_playing': 'Voir les cartes envoyées',
     'game_cards_sent_count_one': '{count} carte envoyée',
     'game_cards_sent_count_other': '{count} cartes envoyées',
     'truth_or_dare_deck_exhausted_title': 'Tu as fait le tour !',
