@@ -3484,15 +3484,6 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     } else {
       final categoryLabel = req.isDefi ? 'Défi' : 'Vérité';
       final categoryColor = req.isDefi ? defiColor : veriteColor;
-      // Heure du choix Vérité/Défi (voir demande utilisateur : "à quelle
-      // moment j'ai répondu") — TruthOrDareRequestController::answer pose
-      // seen_at = now() au moment exact où le/la destinataire choisit (pas
-      // un marquage "lu" générique, voir backend), donc reply.seenAt EST
-      // déjà cette heure-là, sans qu'aucun champ supplémentaire soit
-      // nécessaire côté backend.
-      final answeredSuffix = reply.seenAt != null
-          ? ' à ${reply.seenAt!.toLocal().hour.toString().padLeft(2, '0')}:${reply.seenAt!.toLocal().minute.toString().padLeft(2, '0')}'
-          : '';
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3503,8 +3494,8 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
               Flexible(
                 child: Text(
                   isMine
-                      ? '${reply.recipient?.prenom ?? "Ton binôme"} a choisi : $categoryLabel$answeredSuffix'
-                      : 'Tu as choisi : $categoryLabel$answeredSuffix',
+                      ? '${reply.recipient?.prenom ?? "Ton binôme"} a choisi : $categoryLabel'
+                      : 'Tu as choisi : $categoryLabel',
                   style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
                 ),
               ),
