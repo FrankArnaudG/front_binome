@@ -583,7 +583,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'game_blind_poll_waiting_for_partner':
         'En attente de la réponse de {partner}',
     'game_blind_poll_hidden_answer_label':
-        'Ta réponse (cachée jusqu\'à ce que {partner} réponde aussi) 🤫',
+        'Choisis ta réponse (elle sera cachée jusqu\'à ce que {partner} réponde aussi, puis on compare) 🤫',
     'game_choose_another_card': "Retourner à l'éventail",
     'game_continue_playing': 'Voir les cartes envoyées',
     'game_cards_sent_count_one': '{count} carte envoyée',
