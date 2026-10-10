@@ -29,6 +29,7 @@ import 'unread_timeline_service.dart';
 import 'packs_screen.dart';
 import 'widgets/eternal_rose.dart';
 import 'widgets/heartbeat_card.dart';
+import 'widgets/heartbeat_compose_sheet.dart';
 import 'widgets/heartbeat_reply_modal.dart';
 import 'widgets/pack_reply_modal.dart';
 import 'widgets/quantum_love_heart.dart';
@@ -641,67 +642,25 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     }
   }
 
+  /// Voir demande utilisateur : composition + prévisualisation obligatoire
+  /// de l'image, maintenant partagée entre les 4 endroits de l'app qui
+  /// proposent un battement de cœur personnalisé (voir
+  /// HeartbeatComposeDialog).
   Future<void> _composeCustomHeartbeatReply() async {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-    final controller = TextEditingController();
-
-    final message = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: theme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(t('heartbeat_reply_dialog_title'), style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 140,
-          maxLines: 3,
-          style: GoogleFonts.nunito(color: theme.textOnBackground),
-          cursorColor: theme.primary,
-          decoration: InputDecoration(
-            hintText: t('heartbeat_reply_dialog_hint'),
-            hintStyle: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: theme.textOnBackgroundMuted.withValues(alpha: 0.25)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: theme.primary, width: 1.5),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(t('common_cancel'), style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: theme.primary),
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              Navigator.of(dialogContext).pop(text);
-            },
-            child: Text(t('heartbeat_reply_send_button')),
-          ),
-        ],
-      ),
-    );
+    final result = await showHeartbeatComposeDialog(context, senderGender: widget.user.gender);
 
     if (!mounted) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    if (message != null && message.isNotEmpty) {
-      _sendHeartbeatReply(message: message);
+    if (result != null) {
+      _sendHeartbeatReply(message: result.message, family: result.family);
     }
   }
 
-  Future<void> _sendHeartbeatReply({String? message}) async {
+  Future<void> _sendHeartbeatReply({String? message, String? family}) async {
     if (_sendingHeartbeatReply) return;
     setState(() => _sendingHeartbeatReply = true);
     try {
-      await ContentService.instance.sendHeartbeat(message: message, replyToSendId: _send.id);
+      await ContentService.instance.sendHeartbeat(message: message, family: family, replyToSendId: _send.id);
       await WalletBalanceNotifier.instance.refresh();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -17,7 +17,7 @@ import '../../../widgets/coin_icon.dart';
 import '../../box/box_scope.dart';
 import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
-import '../../content/widgets/heartbeat_family_picker.dart';
+import '../../content/widgets/heartbeat_compose_sheet.dart';
 import '../../doodle/doodle_history_screen.dart';
 import '../../event_pages/event_pages_list_screen.dart';
 import '../../content/gifts_screen.dart';
@@ -250,79 +250,12 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
   }
 
   Future<void> _composeCustomHeartbeat() async {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-    final controller = TextEditingController();
-    String? selectedFamily;
-
-    // Voir demande utilisateur : "afficher la liste des images utilisées
-    // pour les familles et le user choisira l'image à associer" — même
-    // ajout que TimelineScreen._composeCustomHeartbeat (copie conforme).
-    final result = await showDialog<({String message, String? family})>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: theme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(t('heartbeat_compose_title'), style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                maxLength: 140,
-                maxLines: 3,
-                style: GoogleFonts.nunito(color: theme.textOnBackground),
-                cursorColor: theme.primary,
-                decoration: InputDecoration(
-                  hintText: t('heartbeat_compose_hint'),
-                  hintStyle: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: theme.textOnBackgroundMuted.withValues(alpha: 0.25)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: theme.primary, width: 1.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                t('heartbeat_family_picker_label'),
-                style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w600, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 6),
-              HeartbeatFamilyPicker(
-                theme: theme,
-                senderGender: widget.user.gender,
-                selected: selectedFamily,
-                onSelect: (family) => setDialogState(() => selectedFamily = family),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(t('common_cancel'), style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted)),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: theme.primary),
-              onPressed: () {
-                final text = controller.text.trim();
-                if (text.isEmpty) return;
-                Navigator.of(dialogContext).pop((message: text, family: selectedFamily));
-              },
-              child: Text(t('heartbeat_send_button')),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (result != null && result.message.isNotEmpty) {
+    // Voir demande utilisateur : composition + prévisualisation obligatoire
+    // de l'image, maintenant partagée entre les 4 endroits de l'app qui
+    // proposent un battement de cœur personnalisé (voir
+    // HeartbeatComposeDialog) — plus de copie conforme ici.
+    final result = await showHeartbeatComposeDialog(context, senderGender: widget.user.gender);
+    if (result != null) {
       _sendHeartbeat(message: result.message, family: result.family);
     }
   }

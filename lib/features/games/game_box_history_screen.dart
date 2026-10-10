@@ -32,6 +32,7 @@ import '../box/box_service.dart';
 import '../content/content_service.dart';
 import '../content/packs_screen.dart';
 import '../content/widgets/heartbeat_card.dart';
+import '../content/widgets/heartbeat_compose_sheet.dart';
 import '../content/widgets/heartbeat_reply_modal.dart';
 import '../content/widgets/pack_reply_modal.dart';
 import '../content/widgets/slide_pack_viewer.dart';
@@ -2225,80 +2226,25 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     _composeCustomHeartbeatReply();
   }
 
-  /// Le dialogue reste ouvert le temps de l'envoi (voir StatefulBuilder,
-  /// même principe que _openHeartbeatReplyOptions) — bouton "Envoyer"
-  /// remplacé par un petit loader plutôt que de fermer tout de suite en
-  /// laissant l'utilisateur face à la discussion sans indice d'envoi en
-  /// cours (voir demande utilisateur).
+  /// Voir demande utilisateur : composition + prévisualisation obligatoire
+  /// de l'image, maintenant partagée entre les 4 endroits de l'app qui
+  /// proposent un battement de cœur personnalisé (voir
+  /// HeartbeatComposeDialog) — remplace le dialogue dédié d'avant (texte
+  /// seul, loader inline pendant l'envoi) par ce même flux partagé ; l'envoi
+  /// se déclenche après fermeture du dialogue, comme pour les 3 autres
+  /// endroits.
   Future<void> _composeCustomHeartbeatReply() async {
-    final theme = ThemeScope.paletteOf(context);
-    final t = LocaleScope.of(context).t;
-    final controller = TextEditingController();
-    var sending = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: theme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(t('heartbeat_reply_dialog_title'), style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            enabled: !sending,
-            maxLength: 140,
-            maxLines: 3,
-            style: GoogleFonts.nunito(color: theme.textOnBackground),
-            cursorColor: theme.primary,
-            decoration: InputDecoration(
-              hintText: t('heartbeat_reply_dialog_hint'),
-              hintStyle: GoogleFonts.nunito(color: theme.textOnBackgroundMuted),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: theme.textOnBackgroundMuted.withValues(alpha: 0.25)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: theme.primary, width: 1.5),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: sending ? null : () => Navigator.of(dialogContext).pop(),
-              child: Text(t('common_cancel'), style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted)),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: theme.primary),
-              onPressed: sending
-                  ? null
-                  : () async {
-                      final text = controller.text.trim();
-                      if (text.isEmpty) return;
-                      setDialogState(() => sending = true);
-                      await _sendHeartbeatReply(message: text);
-                      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-                    },
-              child: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
-                    )
-                  : Text(t('heartbeat_reply_send_button')),
-            ),
-          ],
-        ),
-      ),
-    );
+    final result = await showHeartbeatComposeDialog(context, senderGender: widget.user.gender);
     // Voir demande utilisateur : même correctif que _sendAnotherCard/_reply
     // — pas de clavier qui se rouvre tout seul au retour sur cette
     // discussion une fois le battement de cœur envoyé.
     if (mounted) _composeFocusNode.unfocus();
+    if (result != null) {
+      await _sendHeartbeatReply(message: result.message, family: result.family);
+    }
   }
 
-  Future<void> _sendHeartbeatReply({String? message}) async {
+  Future<void> _sendHeartbeatReply({String? message, String? family}) async {
     if (_sendingHeartbeatReply) return;
     setState(() => _sendingHeartbeatReply = true);
     try {
@@ -2309,7 +2255,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       // de 4-5 secondes constaté en réel (voir demande utilisateur) : trois
       // appels réseau enchaînés (envoi, rafraîchissement du solde, puis
       // rechargement complet) avant que quoi que ce soit apparaisse.
-      final reply = await ContentService.instance.sendHeartbeat(message: message, replyToSendId: widget.send.id);
+      final reply = await ContentService.instance.sendHeartbeat(message: message, family: family, replyToSendId: widget.send.id);
       if (!mounted) return;
       // L'écho temps réel de notre propre envoi (voir _onRealtimeEvent) peut
       // arriver avant cette réponse HTTP et l'ajouter en premier — éviter un
