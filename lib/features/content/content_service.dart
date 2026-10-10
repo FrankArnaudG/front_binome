@@ -447,12 +447,18 @@ class ContentService {
   /// "Faire battre le cœur de son/sa partenaire" — sans [message], le
   /// serveur en choisit un aléatoirement dans le catalogue admin ; avec,
   /// c'est le petit mot personnalisé de l'appui long qui est envoyé.
+  /// [family] : voir demande utilisateur — pour un [message] personnalisé,
+  /// la clé de la famille d'image choisie dans HeartbeatFamilyPicker (voir
+  /// heartbeat_family.dart), jamais l'image elle-même ; ignoré côté serveur
+  /// quand [message] est vide (c'est alors la famille du message tiré au
+  /// sort qui s'applique, voir HeartbeatController::send).
   /// [replyToSendId] : répondre à un envoi précis (voir SlideDetailScreen)
   /// par un battement de cœur plutôt qu'un poème/émoji.
-  Future<Send> sendHeartbeat({String? message, String? replyToSendId}) async {
+  Future<Send> sendHeartbeat({String? message, String? family, String? replyToSendId}) async {
     final trimmed = message?.trim();
     final body = <String, dynamic>{
       if (trimmed != null && trimmed.isNotEmpty) 'message': trimmed,
+      if (trimmed != null && trimmed.isNotEmpty && family != null) 'family': family,
       if (replyToSendId != null) 'reply_to_send_id': replyToSendId,
     };
     final data = await ApiClient.instance.post(

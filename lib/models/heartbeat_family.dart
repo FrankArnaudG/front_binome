@@ -38,7 +38,11 @@ class HeartbeatFamilyStyle {
   }
 }
 
-const Map<String, HeartbeatFamilyStyle> _heartbeatFamilies = {
+// Public (pas de préfixe `_`) — voir demande utilisateur : "afficher la
+// liste des images utilisées pour les familles" pour l'option
+// "Personnalisé" (voir HeartbeatFamilyPicker), qui a besoin d'énumérer ces
+// mêmes familles plutôt que de les redéfinir en double.
+const Map<String, HeartbeatFamilyStyle> heartbeatFamilies = {
   'tendresse': HeartbeatFamilyStyle('tendresse', Alignment.topLeft, TextAlign.left, 0.72),
   'pensee': HeartbeatFamilyStyle('pensee', Alignment.topLeft, TextAlign.left, 0.72, byGender: true),
   'manque': HeartbeatFamilyStyle('manque', Alignment.topRight, TextAlign.right, 0.72, byGender: true),
@@ -52,4 +56,4 @@ const Map<String, HeartbeatFamilyStyle> _heartbeatFamilies = {
 
 /// `null` si la famille est absente ou n'a pas encore d'image dans l'app.
 HeartbeatFamilyStyle? heartbeatFamilyStyleFor(String? family) =>
-    family == null ? null : _heartbeatFamilies[family];
+    family == null ? null : heartbeatFamilies[family];

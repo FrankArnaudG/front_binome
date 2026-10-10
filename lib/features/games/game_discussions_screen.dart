@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../models/game.dart';
+import '../../models/send.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
@@ -63,22 +64,28 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
     final cached = await GameService.instance.cachedGames();
     if (cached != null && mounted) {
       setState(() {
-        _games = cached.where((g) => g.usesBoxes).toList();
+        _games = cached.where(_belongsHere).toList();
         _loading = false;
       });
     }
     await _load();
   }
 
+  // Voir Game.usesBoxes : seuls les jeux "à boîtes" (cartes-questions)
+  // produisent des envois `game_card` — les 7 jeux interactifs en temps réel
+  // (Mémoire, Morpion...) n'ont jamais de discussion ici. "Jeu de mime"
+  // utilise bien des boîtes (pour piocher un mot) mais ne propose jamais de
+  // carte à ENVOYER (voir demande utilisateur : "on propose de mimer et non
+  // d'envoyer des cartes") — exclu ici spécifiquement, sans toucher à
+  // Game.usesBoxes dont a toujours besoin son propre écran de pioche.
+  bool _belongsHere(Game g) => g.usesBoxes && !g.isCharades;
+
   Future<void> _load() async {
     try {
       final games = await GameService.instance.fetchGames();
       if (!mounted) return;
       setState(() {
-        // Voir Game.usesBoxes : seuls les jeux "à boîtes" (cartes-questions)
-        // produisent des envois `game_card` — les 7 jeux interactifs en
-        // temps réel (Mémoire, Morpion...) n'ont jamais de discussion ici.
-        _games = games.where((g) => g.usesBoxes).toList();
+        _games = games.where(_belongsHere).toList();
         _loading = false;
         _error = false;
       });
@@ -94,11 +101,27 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
   /// Nombre de cartes-questions de CE jeu reçues, pas encore traitées (voir
   /// GameCardInboxService) — même source que le badge de l'onglet
   /// "Discussions" dans la barre de navigation.
-  int _unreadFor(Game game) => GameCardInboxService.instance.pending
+  int _unreadFor(Game game) => _unreadSendsFor(game).length;
+
+  List<Send> _unreadSendsFor(Game game) => GameCardInboxService.instance.pending
       .where((s) =>
           (s.isGameCard && s.gameCard?.gameId == game.id) ||
           (s.isTruthOrDareRequest && s.truthOrDareRequest?.isPending == true && s.truthOrDareRequest?.gameId == game.id))
-      .length;
+      .toList();
+
+  /// Date du message non lu le plus récent de CE jeu, ou `null` s'il n'y en
+  /// a aucun — voir demande utilisateur : "si le message le plus récent
+  /// reçu est de [tel jeu], il sera en haut", pour classer [_buildBody]
+  /// dynamiquement plutôt que par l'ordre figé du catalogue. Se limite aux
+  /// envois non lus (seule donnée de récence déjà disponible côté app, voir
+  /// GameCardInboxService) — un jeu sans rien à traiter ne peut donc pas
+  /// remonter même si son dernier échange date d'hier (compromis assumé,
+  /// pas d'appel réseau supplémentaire pour ce tri).
+  DateTime? _lastUnreadAt(Game game) {
+    final sends = _unreadSendsFor(game);
+    if (sends.isEmpty) return null;
+    return sends.map((s) => s.createdAt).reduce((a, b) => a.isAfter(b) ? a : b);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,13 +201,17 @@ class _GameDiscussionsScreenState extends State<GameDiscussionsScreen> {
 
     final localeCode = LocaleScope.of(context).current.code;
     // Les jeux avec des cartes non lues remontent en tête (voir demande
-    // utilisateur : le badge doit se voir tout de suite) — tri STABLE,
-    // l'ordre du catalogue est conservé entre jeux à égalité.
+    // utilisateur : le badge doit se voir tout de suite), triés ENTRE EUX
+    // par date du dernier message non lu — "si le message le plus récent
+    // reçu est de [tel jeu], il sera en haut" — plutôt que l'ordre figé du
+    // catalogue. Les jeux sans non-lu gardent l'ordre du catalogue (aucune
+    // date de dernier échange connue côté app pour eux, voir _lastUnreadAt).
     final withUnread = <Game>[];
     final rest = <Game>[];
     for (final game in games) {
       (_unreadFor(game) > 0 ? withUnread : rest).add(game);
     }
+    withUnread.sort((a, b) => _lastUnreadAt(b)!.compareTo(_lastUnreadAt(a)!));
     final ordered = [...withUnread, ...rest];
 
     return AnimatedBuilder(

@@ -1002,6 +1002,13 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
       if (updated.id != _rootSend.id && !_replies.any((r) => r.id == updated.id)) return;
       if (!mounted) return;
       setState(() => _updateSend(updated));
+      // Voir demande utilisateur : côté qui REÇOIT ce verdict en temps réel
+      // (jamais appelé pour qui vient de répondre soi-même, déjà géré par
+      // _scrollToAnswer dans _submitSpecialAnswer), l'écran restait figé sur
+      // l'ancien contenu quelques secondes avant de sauter brusquement —
+      // aucun scroll n'accompagnait cette mise à jour distante, contrairement
+      // au cas local.
+      _scrollToAnswer(updated.id);
       return;
     }
     // Le binôme vient de répondre à une demande "choisis Vérité ou Défi"
@@ -1882,6 +1889,19 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     }
   }
 
+  /// Texte affiché dans la bulle de verdict d'une carte "défi" — voir
+  /// demande utilisateur : "défi relevé" et "bravo" répétaient la même
+  /// info pour qui a relevé le défi, fusionnées ici en un seul texte ;
+  /// qui a jugé (envoyé le défi) garde le texte brut "Défi relevé"
+  /// inchangé, seul·e concerné·e par la félicitation.
+  String _defiAnswerBubbleText(Send target, String answer) {
+    final t = LocaleScope.of(context).t;
+    final isPerformer = target.recipientId == widget.user.id;
+    if (!isPerformer || answer != t('truth_or_dare_dare_completed')) return answer;
+    final performerName = target.recipient?.prenom ?? 'ton binôme';
+    return 'Bravo $performerName, défi relevé ! 🎉';
+  }
+
   /// Toute première réponse à [target] (la racine OU une carte relancée) —
   /// pour les jeux classiques/quiz (voir _pendingSpecialAnswerSend), vient
   /// du champ de saisie libre ; pour `session_type = 'yes_no'`/
@@ -2438,6 +2458,17 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     return other.isNotEmpty;
   }
 
+  /// Voir demande utilisateur : le bouton bloqué par _isResponseBlocked
+  /// restait muet sur la raison (juste grisé avec un cadenas) — un tap
+  /// dessus affiche maintenant ce message, sur le ton de la plaisanterie
+  /// plutôt qu'une explication sèche (texte confirmé par l'utilisateur).
+  void _showResponseBlockedMessage(String category) {
+    final message = category == 'defi'
+        ? "Je sais que tu aimes le Défi, mais trois fois de suite c'est de la triche 😏 Laisse une petite place à Vérité cette fois !"
+        : "Je sais que tu aimes Vérité, mais trois fois de suite c'est de la triche 😏 Un peu de Défi, ça ne peut pas faire de mal !";
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _answerTruthOrDareRequest(Send reply, String category) async {
     try {
       final updated = await GameService.instance.answerTruthOrDareRequest(reply.truthOrDareRequest!.id, category);
@@ -2856,7 +2887,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                 // bulle alignée en conséquence (jamais négée), contrairement
                 // à un Oui/Non classique juste au-dessus.
                 isMine: _isMine,
-                text: answer,
+                text: _defiAnswerBubbleText(_rootSend, answer),
                 time: card.answeredAt ?? widget.send.createdAt,
                 tick: _isMine ? SendTick.sent : null,
                 replyPreview: card.questionTextFor(LocaleScope.of(context).current.code),
@@ -3107,7 +3138,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
                       // ENVOYÉ le défi, jamais négé contrairement à un
                       // Oui/Non classique (voir plus haut pour la racine).
                       isMine: reply.senderId == widget.user.id,
-                      text: reply.gameCard!.answer!,
+                      text: _defiAnswerBubbleText(reply, reply.gameCard!.answer!),
                       time: reply.gameCard!.answeredAt ?? reply.createdAt,
                       tick: reply.senderId == widget.user.id ? SendTick.sent : null,
                       replyPreview: reply.gameCard!.questionTextFor(localeCode),
@@ -3654,7 +3685,7 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
   Widget _buildTruthOrDareAnswerButton(ThemePalette theme, Send reply, String category, Color color, String label) {
     final blocked = _isResponseBlocked(category);
     return OutlinedButton(
-      onPressed: blocked ? null : () => _answerTruthOrDareRequest(reply, category),
+      onPressed: () => blocked ? _showResponseBlockedMessage(category) : _answerTruthOrDareRequest(reply, category),
       style: OutlinedButton.styleFrom(
         foregroundColor: blocked ? theme.textOnBackgroundMuted : color,
         side: BorderSide(color: blocked ? theme.textOnBackgroundMuted.withValues(alpha: 0.3) : color),
@@ -4125,30 +4156,20 @@ class _GameCardThreadScreenState extends State<GameCardThreadScreen> {
     if (!isCompleted && !isDodged) return const SizedBox.shrink();
 
     if (isCompleted) {
-      final performerName = target.recipient?.prenom ?? 'ton binôme';
       final isPerformer = target.recipientId == widget.user.id;
       // Voir demande utilisateur : "celui qui a jugé ne doit pas voir
       // bravo défi relevé" — la félicitation s'adresse à qui a relevé le
       // défi, jamais à qui vient de le juger (rien à montrer de son côté).
       if (!isPerformer) return const SizedBox.shrink();
+      // Voir demande utilisateur : "défi relevé" (bulle de réponse, voir
+      // _defiAnswerBubbleText) et "bravo" répétaient la même info pour qui
+      // a relevé le défi — fusionnées dans cette bulle-là, donc plus de
+      // texte "Bravo" séparé ici, juste la suite proposée.
       return Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: theme.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                'Bravo $performerName, défi relevé ! 🎉',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
-              ),
-            ),
-            const SizedBox(height: 8),
             _QuizActionButton(
               label: "Demander à ton binôme de choisir entre Vérité ou Défi",
               icon: Icons.swap_horiz_rounded,
