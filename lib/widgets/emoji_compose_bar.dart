@@ -7,20 +7,24 @@ import 'package:google_fonts/google_fonts.dart' hide Config;
 import '../l10n/locale_scope.dart';
 import '../theme/theme_palette.dart';
 
-/// Barre de composition façon messagerie (Telegram/WhatsApp) : pastille
-/// émoji à gauche (bascule le clavier maison, voir [EmojiPickerPanel]),
-/// aperçu du contenu au centre, bouton d'envoi rond à droite — pas de champ
-/// texte, pas de pièce jointe, pas de micro. Partagée entre tous les
-/// endroits de l'app où l'on compose UNIQUEMENT des émojis (jeu "Devine mon
-/// émoji", réactions du Carnet de bord...).
+/// Barre de composition façon messagerie (Telegram/WhatsApp) : pastille à
+/// gauche, aperçu/saisie au centre, bouton d'envoi rond à droite — pas de
+/// pièce jointe, pas de micro. Deux modes (voir [textMode], demande
+/// utilisateur : "on doit avoir la possibilité de mettre du texte ou
+/// emoji") : par défaut le clavier émoji maison (voir [EmojiPickerPanel],
+/// comportement d'origine), ou un vrai [TextField] avec le clavier système
+/// classique — la pastille affiche ce que le tap BASCULERA vers (icône
+/// texte en mode émoji, icône émoji en mode texte), pas le mode courant.
 class EmojiComposeBar extends StatelessWidget {
   final ThemePalette theme;
   final TextEditingController controller;
   final bool pickerOpen;
+  final bool textMode;
   final bool sending;
   final String placeholder;
+  final FocusNode? textFocusNode;
   final VoidCallback onTapField;
-  final VoidCallback onToggleEmoji;
+  final VoidCallback onToggleMode;
   final VoidCallback onSend;
 
   const EmojiComposeBar({
@@ -28,10 +32,12 @@ class EmojiComposeBar extends StatelessWidget {
     required this.theme,
     required this.controller,
     required this.pickerOpen,
+    this.textMode = false,
     required this.sending,
     this.placeholder = 'Compose en émojis…',
+    this.textFocusNode,
     required this.onTapField,
-    required this.onToggleEmoji,
+    required this.onToggleMode,
     required this.onSend,
   });
 
@@ -39,6 +45,7 @@ class EmojiComposeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasContent = controller.text.trim().isNotEmpty;
     final t = LocaleScope.of(context).t;
+    final active = pickerOpen || textMode;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -54,7 +61,7 @@ class EmojiComposeBar extends StatelessWidget {
               // légère : sur un thème clair et plat (fond uni, sans scène
               // illustrée derrière), une bordure trop pâle rendait la barre
               // quasi invisible, fondue dans le fond.
-              border: Border.all(color: theme.primary.withValues(alpha: pickerOpen ? 0.6 : 0.4)),
+              border: Border.all(color: theme.primary.withValues(alpha: active ? 0.6 : 0.4)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.08),
@@ -66,27 +73,51 @@ class EmojiComposeBar extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: onToggleEmoji,
+                  onPressed: onToggleMode,
                   icon: Icon(
-                    pickerOpen ? Icons.emoji_emotions_rounded : Icons.emoji_emotions_outlined,
-                    color: pickerOpen ? theme.primary : theme.textOnBackgroundMuted,
+                    textMode ? Icons.emoji_emotions_outlined : Icons.abc_rounded,
+                    color: active ? theme.primary : theme.textOnBackgroundMuted,
                   ),
                   visualDensity: VisualDensity.compact,
                 ),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: onTapField,
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: hasContent
-                          ? Text(controller.text, style: const TextStyle(fontSize: 22), maxLines: 2, overflow: TextOverflow.ellipsis)
-                          : Text(
-                              placeholder,
-                              style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
-                            ),
-                    ),
-                  ),
+                  child: textMode
+                      ? TextField(
+                          controller: controller,
+                          focusNode: textFocusNode,
+                          // Voir demande utilisateur : "je veux que ce soit
+                          // instantané" — autofocus laisse Flutter donner le
+                          // focus dès que ce TextField est monté, sans
+                          // scheduling manuel supplémentaire (voir
+                          // _toggleComposeMode côté EmojiStorySessionScreen).
+                          autofocus: true,
+                          minLines: 1,
+                          maxLines: 4,
+                          maxLength: 200,
+                          style: GoogleFonts.nunito(fontSize: 15, color: theme.textOnBackground),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            isCollapsed: true,
+                            border: InputBorder.none,
+                            counterText: '',
+                            hintText: placeholder,
+                            hintStyle: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: onTapField,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: hasContent
+                                ? Text(controller.text, style: const TextStyle(fontSize: 22), maxLines: 2, overflow: TextOverflow.ellipsis)
+                                : Text(
+                                    placeholder,
+                                    style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
+                                  ),
+                          ),
+                        ),
                 ),
                 if (hasContent)
                   IconButton(

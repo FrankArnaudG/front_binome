@@ -545,8 +545,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'emoji_story_delete_one_title': 'Supprimer cette story ?',
     'emoji_story_cancel_selection_tooltip': 'Annuler la sélection',
     'emoji_story_selection_count': '{count} sélectionné(s)',
-    'emoji_story_empty_title':
-        'Raconte ta journée à {name}, uniquement en émojis',
+    'emoji_story_empty_title': 'Discute avec {name}, uniquement en émojis 😊',
     'emoji_story_empty_subtitle':
         'Touche la pastille émoji en bas pour commencer',
     'emoji_story_deleted_message': 'Cette story a été supprimée',
