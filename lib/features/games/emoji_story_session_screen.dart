@@ -664,92 +664,6 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     }
   }
 
-  /// Voir demande utilisateur : "es-ce possible de mettre des exemples de
-  /// tout type" — un exemple par grande catégorie de story (film, humeur,
-  /// nourriture, sortie, activité, animal), pour inspirer sans imposer un
-  /// genre en particulier. Contenu statique (pas de source admin pour ça
-  /// pour l'instant), ouvert via l'icône ajoutée en haut à droite.
-  static const _emojiStoryExamples = [
-    (category: '🎬 Film ou série', emojis: '🦁👑🌅', meaning: 'Le Roi Lion'),
-    (category: '😌 Humeur du moment', emojis: '😴🛌☕', meaning: 'Je suis crevé(e) ce matin'),
-    (category: '🍽️ Nourriture', emojis: '🍝🧄🫒', meaning: 'Spaghetti à l\'ail'),
-    (category: '📍 Sortie ou lieu', emojis: '🏖️🍹☀️', meaning: 'Vacances à la plage'),
-    (category: '⚽ Activité', emojis: '⚽👟🏃', meaning: 'Partie de foot entre potes'),
-    (category: '🐾 Animal', emojis: '🐱😻🧶', meaning: 'Mon chat joue avec une pelote'),
-  ];
-
-  void _showEmojiStoryExamples() {
-    final theme = ThemeScope.paletteOf(context);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: theme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(
-                    color: theme.textOnBackgroundMuted.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                'Exemples d\'émoji-récits',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17, color: theme.textOnBackground),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Un peu d\'inspiration, quel que soit le type de story',
-                style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 16),
-              for (final example in _emojiStoryExamples)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              example.category,
-                              style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackgroundMuted),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(example.emojis, style: const TextStyle(fontSize: 22)),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.arrow_forward_rounded, size: 16, color: theme.textOnBackgroundMuted),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          example.meaning,
-                          style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w600, color: theme.textOnBackground),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
@@ -857,11 +771,6 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
                         ),
                       ),
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.lightbulb_outline_rounded),
-                    tooltip: 'Exemples',
-                    onPressed: _showEmojiStoryExamples,
-                  ),
                 ],
               ),
         body: ThemedBackground(
