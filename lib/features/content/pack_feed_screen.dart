@@ -180,13 +180,21 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
       final user = AppUser.fromJson(
         jsonDecode(userJson) as Map<String, dynamic>,
       );
-      await Navigator.of(context).push(
+      // pushReplacement (et non push + await + _pop()) : remplace CE feed
+      // par la discussion dans le MÊME geste de navigation, sans fenêtre où
+      // ce widget resterait monté avec une Navigator.pop() en attente. Avec
+      // l'ancien push+await, un tap sur un onglet de la barre de nav pendant
+      // que la discussion était affichée (AppShell.popUntil((r) =>
+      // r.isFirst)) fermait la discussion ET ce feed d'un coup — le pop()
+      // différé s'exécutait alors sur un Navigator déjà vidé, cassant la
+      // navigation (écran blanc, app à redémarrer — constaté en réel, voir
+      // demande utilisateur).
+      Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) =>
               SlideDetailScreen(send: send, isMine: true, user: user),
         ),
       );
-      if (mounted) _pop();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _sendingPack = false);
