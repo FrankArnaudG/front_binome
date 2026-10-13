@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:screen_protector/screen_protector.dart';
 
 import '../../core/api_client.dart';
+import '../../core/timeline_refresh_signal.dart';
 import '../../core/token_storage.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -154,6 +155,12 @@ class _PackFeedScreenState extends State<PackFeedScreen> {
       // demande utilisateur — même correctif déjà en place pour l'envoi
       // d'une pensée, voir GameCardThreadScreen._sendHeartbeatReply).
       unawaited(WalletBalanceNotifier.instance.refresh());
+      // Sinon le Carnet de bord (gardé en mémoire, voir MainTabScreen)
+      // n'affiche ce poème qu'après une actualisation manuelle — même
+      // correctif déjà en place pour un cadeau (voir GiftsScreen) ou un
+      // battement de cœur (voir DarkQuickActionsGrid), oublié ici jusque-là
+      // (voir demande utilisateur).
+      TimelineRefreshSignal.instance.requestRefresh();
       if (widget.replyToSendId != null) {
         // Mode réponse : un seul envoi suffit, on referme tout le parcours
         // de sélection (Packs → Catégorie → Feed) d'un coup pour revenir
