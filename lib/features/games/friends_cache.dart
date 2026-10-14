@@ -13,7 +13,7 @@ class FriendsCache {
 
   static const _key = 'cache_friends_list';
 
-  /// À appeler après chaque [GameService.fetchFriends] réussi (voir FriendsListScreen) — écrase la
+  /// À appeler après chaque [GameService.fetchFriends] réussi (voir FriendChallengeScreen) — écrase la
   /// copie précédente par la liste la plus à jour.
   static Future<void> save(List<PublicProfile> friends) {
     return LocalCache.instance.writeJson(

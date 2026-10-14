@@ -1,9 +1,9 @@
 import '../../models/game.dart';
 import 'memory_game/memory_emoji_pool.dart';
 
-/// Partagé entre FriendChallengeScreen (défi via code) et FriendsListScreen
-/// (défi direct depuis "Mes amis de jeu") — voir demande utilisateur : les
-/// deux écrans proposent le même choix des 7 jeux temps réel.
+/// Partagé entre AddFriendScreen (défi via code) et FriendChallengeScreen
+/// (défi direct depuis la liste "Mes amis de jeu") — voir demande
+/// utilisateur : les deux proposent le même choix des 7 jeux temps réel.
 
 /// Nombre de paires par défaut pour un défi d'ami au Jeu de Mémoire (voir
 /// demande utilisateur : pas de sélecteur de difficulté séparé ici — cette

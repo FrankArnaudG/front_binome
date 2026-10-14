@@ -849,7 +849,7 @@ class GameService {
     Map<String, dynamic>? payload,
     String? friendCode,
     // Voir demande utilisateur : défier directement depuis "Mes amis de
-    // jeu" (FriendsListScreen) — l'amitié est déjà établie, l'id suffit,
+    // jeu" (FriendChallengeScreen) — l'amitié est déjà établie, l'id suffit,
     // jamais les deux à la fois avec friendCode.
     String? friendUserId,
   }) async {

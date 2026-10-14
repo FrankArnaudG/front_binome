@@ -1,26 +1,35 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
-import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
-import '../../models/game.dart';
+import '../../models/public_profile.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
+import '../../widgets/empty_state.dart';
+import 'add_friend_screen.dart';
+import 'blocked_users_screen.dart';
 import 'friend_challenge_support.dart';
-import 'friends_list_screen.dart';
+import 'friends_cache.dart';
 import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
+import 'memory_game/memory_game_nearby_connect_screen.dart';
+import 'my_friend_code_screen.dart';
+import 'widgets/game_picker_sheet.dart';
 
-/// Écran "Défier un ami" (voir demande utilisateur : permettre de jouer
-/// ponctuellement avec quelqu'un hors de sa propre Box, via un code
-/// personnel — principe "TikTok" : pas de liste d'amis à constituer avant,
-/// l'amitié se crée automatiquement si le défi est accepté, voir
-/// GameInviteController::accept côté backend). Les 7 jeux temps réel sont
-/// proposés au choix (voir demande utilisateur — la Phase 1 d'origine se
-/// limitait au Jeu de Mémoire, le backend supporte désormais les 7).
+/// Écran "Défier un ami" (voir demande utilisateur : jouer ponctuellement
+/// avec quelqu'un hors de sa propre Box, via un code personnel — l'amitié
+/// se crée automatiquement si le défi est accepté, voir
+/// GameInviteController::accept côté backend).
+///
+/// Voir demande utilisateur (refonte) : "proposer d'abord directement de
+/// choisir un·e ami·e à défier" — la liste d'amis déjà connus (ex-
+/// FriendsListScreen, fusionnée ici) est donc le contenu PRINCIPAL de cet
+/// écran, "Ajouter un ami" et "Voir mon code d'amitié" restant toujours
+/// accessibles en haut, quel que soit l'état de la liste (y compris vide).
 class FriendChallengeScreen extends StatefulWidget {
   final AppUser user;
 
@@ -31,72 +40,37 @@ class FriendChallengeScreen extends StatefulWidget {
 }
 
 class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
-  final _codeController = TextEditingController();
-  // Voir demande utilisateur : "à chaque fois que j'ouvre ici ça charge" —
-  // le code ami ne change jamais une fois généré, et le catalogue de jeux
-  // change rarement : on affiche d'abord le dernier état connu (voir
-  // LocalCache côté GameService), avant même la réponse réseau, comme
-  // GameDiscussionsScreen._loadCachedThenRefresh pour le même catalogue.
-  String? _myCode;
-  List<Game>? _challengeableGames;
-  Game? _selectedGame;
+  List<PublicProfile>? _friends;
+  bool _loadError = false;
   bool _challenging = false;
 
   @override
   void initState() {
     super.initState();
-    _loadMyCode();
-    _loadGames();
+    _load();
   }
 
-  Future<void> _loadMyCode() async {
-    final cached = await GameService.instance.cachedFriendCode();
-    if (cached != null && mounted) setState(() => _myCode = cached);
-    try {
-      final code = await GameService.instance.fetchMyFriendCode();
-      if (mounted) setState(() => _myCode = code);
-    } catch (_) {
-      // Best effort — garde le code déjà en cache affiché, sinon pas bloquant.
+  /// Affiche d'abord la dernière liste connue (voir FriendsCache — permet
+  /// aussi de choisir un ami pour un défi Bluetooth sans connexion), puis
+  /// rafraîchit en arrière-plan, comme le reste de l'app (code ami, jeux).
+  Future<void> _load() async {
+    if (_friends == null) {
+      final cached = await FriendsCache.read();
+      if (cached.isNotEmpty && mounted) setState(() => _friends = cached);
     }
-  }
-
-  void _applyGames(List<Game> games) {
-    final challengeable = friendChallengeableGames(games);
-    setState(() {
-      _challengeableGames = challengeable;
-      // Le Jeu de Mémoire reste sélectionné par défaut — comportement
-      // historique de cet écran, avant l'ajout du sélecteur.
-      _selectedGame ??= challengeable.isNotEmpty
-          ? challengeable.firstWhere((g) => g.isMemoryGame, orElse: () => challengeable.first)
-          : null;
-    });
-  }
-
-  Future<void> _loadGames() async {
-    final cached = await GameService.instance.cachedGames();
-    if (cached != null && mounted) _applyGames(cached);
     try {
-      final games = await GameService.instance.fetchGames();
-      if (mounted) _applyGames(games);
+      final friends = await GameService.instance.fetchFriends();
+      unawaited(FriendsCache.save(friends));
+      if (!mounted) return;
+      setState(() {
+        _friends = friends;
+        _loadError = false;
+      });
     } catch (_) {
-      // Best effort — garde le catalogue déjà en cache affiché, sinon pas bloquant.
+      // Best effort — garde la liste déjà en cache affichée ; signale
+      // l'erreur seulement si on n'a vraiment rien à montrer.
+      if (mounted && _friends == null) setState(() => _loadError = true);
     }
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
-  }
-
-  void _shareCode(String code) {
-    Share.share('Défie-moi à un jeu sur Binome Couple avec mon code ami : $code');
-  }
-
-  void _copyCode(String code) {
-    Clipboard.setData(ClipboardData(text: code));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Code copié')));
   }
 
   void _showError(String message) {
@@ -104,28 +78,63 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _challenge() async {
-    final code = _codeController.text.trim().toUpperCase();
-    if (code.isEmpty) {
-      _showError("Entre le code ami de la personne que tu veux défier.");
-      return;
+  void _openAddFriend() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AddFriendScreen(user: widget.user)),
+    );
+  }
+
+  void _openMyCode() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MyFriendCodeScreen()),
+    );
+  }
+
+  /// Défier CET ami précis en Bluetooth (voir demande utilisateur) — Jeu de Mémoire uniquement pour
+  /// l'instant (voir MemoryGameNearbyConnectScreen.targetFriend), les 6 autres jeux suivront une fois
+  /// validé sur de vrais téléphones.
+  Future<void> _challengeFriendNearby(PublicProfile friend) async {
+    if (_challenging) return;
+    setState(() => _challenging = true);
+    try {
+      final games = await GameService.instance.fetchGames();
+      final memoryGame = games.where((g) => g.isMemoryGame).firstOrNull;
+      if (memoryGame == null || !mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MemoryGameNearbyConnectScreen(game: memoryGame, user: widget.user, targetFriend: friend),
+        ),
+      );
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _challenging = false);
     }
-    final game = _selectedGame;
-    if (game == null) {
-      _showError('Choisis un jeu.');
-      return;
-    }
+  }
+
+  Future<void> _challengeFriend(PublicProfile friend) async {
+    final theme = ThemeScope.paletteOf(context);
+    final games = await GameService.instance.fetchGames();
+    final challengeable = friendChallengeableGames(games);
+    if (!mounted || challengeable.isEmpty) return;
+
+    final game = await showGamePickerSheet(
+      context: context,
+      opponentLabel: friend.fullName,
+      games: challengeable,
+      theme: theme,
+    );
+    if (game == null || !mounted) return;
 
     // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
-    // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici (voir demande
-    // utilisateur : "à distance c'est facturé en fonction du temps de jeu, comme dans la Box").
+    // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici.
     setState(() => _challenging = true);
     try {
       final invite = await GameService.instance.createGameInvite(
         game.id,
         sessionType: game.sessionType,
         payload: friendChallengePayloadFor(game),
-        friendCode: code,
+        friendUserId: friend.id,
       );
       if (!mounted) return;
       Navigator.of(context).push(
@@ -143,6 +152,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.paletteOf(context);
+    final friends = _friends;
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -151,165 +161,128 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
         elevation: 0,
         systemOverlayStyle: theme.statusBarOverlayStyle,
         foregroundColor: theme.textOnBackground,
-        title: Text(
-          'Défier un ami',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground),
-        ),
+        title: Text('Défier un ami', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.people_outline_rounded),
-            tooltip: 'Mes amis de jeu',
+            icon: const Icon(Icons.block_rounded),
+            tooltip: 'Personnes bloquées',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => FriendsListScreen(user: widget.user)),
+              MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
             ),
           ),
         ],
       ),
       body: ThemedBackground(
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.all(24),
+          child: Stack(
             children: [
-              Text(
-                'Joue une partie avec quelqu\'un en dehors de ta Box, à l\'aide de son code ami.',
-                style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'Ton code ami :',
-                style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 10),
-              Builder(
-                builder: (context) {
-                  final code = _myCode;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(14)),
-                        child: code == null
-                            ? const Center(
-                                child: SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(strokeWidth: 2.5),
+              RefreshIndicator(
+                color: theme.primary,
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    // Voir demande utilisateur : "a tout moment ya un btn
+                    // ajouter ami en haut et clairement écrit. et un btn
+                    // voire mon code d'amitier" — toujours visibles, quel
+                    // que soit l'état de la liste ci-dessous.
+                    FilledButton.icon(
+                      onPressed: _openAddFriend,
+                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                      label: const Text('Ajouter un ami'),
+                      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _openMyCode,
+                      icon: const Icon(Icons.qr_code_2_rounded, size: 20),
+                      label: const Text("Voir mon code d'amitié"),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'Mes amis de jeu',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
+                    ),
+                    const SizedBox(height: 12),
+                    if (friends == null && !_loadError)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator(color: theme.primary)),
+                      )
+                    else if (friends == null && _loadError)
+                      EmptyState(
+                        icon: Icons.error_outline_rounded,
+                        message: 'Impossible de charger tes amis, réessaie.',
+                        actionLabel: 'Réessayer',
+                        onAction: _load,
+                      )
+                    else if (friends!.isEmpty)
+                      // Voir demande utilisateur : "si la liste est vide on
+                      // met un message pour le dire".
+                      EmptyState(
+                        icon: Icons.people_outline_rounded,
+                        message: "Aucun ami de jeu pour l'instant. Ajoute-en un avec son code pour commencer à jouer ensemble.",
+                        actionLabel: 'Ajouter un ami',
+                        onAction: _openAddFriend,
+                      )
+                    else
+                      ...friends.map(
+                        (friend) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Material(
+                            color: theme.surface.withValues(alpha: theme.isDark ? 0.5 : 0.75),
+                            borderRadius: BorderRadius.circular(18),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: _challenging ? null : () => _challengeFriend(friend),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: theme.primary.withValues(alpha: 0.16),
+                                      backgroundImage: (friend.avatar != null && friend.avatar!.isNotEmpty)
+                                          ? CachedNetworkImageProvider(friend.avatar!)
+                                          : null,
+                                      child: (friend.avatar == null || friend.avatar!.isEmpty)
+                                          ? Text(
+                                              friend.prenom.isNotEmpty ? friend.prenom[0].toUpperCase() : '?',
+                                              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.primary, fontSize: 16),
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Text(
+                                        friend.fullName,
+                                        style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
+                                      ),
+                                    ),
+                                    // Défier en Bluetooth, sans internet (voir demande utilisateur) — un
+                                    // bouton à part : le tap sur toute la ligne reste le défi à distance.
+                                    IconButton(
+                                      icon: Icon(Icons.bluetooth_rounded, color: theme.primary, size: 20),
+                                      tooltip: 'Défier en Bluetooth (sans internet)',
+                                      onPressed: _challenging ? null : () => _challengeFriendNearby(friend),
+                                    ),
+                                    Icon(Icons.sports_esports_rounded, color: theme.textOnBackgroundMuted, size: 20),
+                                  ],
                                 ),
-                              )
-                            : Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Text(
-                                    code,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 6,
-                                      color: theme.textOnBackground,
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: 12,
-                                    child: GestureDetector(
-                                      onTap: () => _copyCode(code),
-                                      child: Icon(Icons.copy_rounded, size: 20, color: theme.textOnBackgroundMuted),
-                                    ),
-                                  ),
-                                ],
                               ),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: code == null ? null : () => _shareCode(code),
-                        icon: const Icon(Icons.ios_share_rounded, size: 18),
-                        label: const Text('Partager mon code'),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 28),
-              Row(
-                children: [
-                  Expanded(child: Divider(color: theme.textOnBackgroundMuted.withValues(alpha: 0.4))),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('OU', style: GoogleFonts.nunito(color: theme.textOnBackgroundMuted)),
-                  ),
-                  Expanded(child: Divider(color: theme.textOnBackgroundMuted.withValues(alpha: 0.4))),
-                ],
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'Jeu :',
-                style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 10),
-              Builder(
-                builder: (context) {
-                  final games = _challengeableGames;
-                  if (games == null) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5))),
-                    );
-                  }
-                  final localeCode = LocaleScope.of(context).current.code;
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final game in games)
-                        ChoiceChip(
-                          label: Text(game.nameFor(localeCode)),
-                          selected: _selectedGame?.id == game.id,
-                          onSelected: (_) => setState(() => _selectedGame = game),
-                          labelStyle: GoogleFonts.nunito(
-                            fontWeight: FontWeight.w600,
-                            color: _selectedGame?.id == game.id ? Colors.white : theme.textOnBackground,
+                            ),
                           ),
-                          selectedColor: theme.primary,
-                          backgroundColor: theme.surface,
-                          side: BorderSide.none,
                         ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 28),
-              Text(
-                "Entre le code ami d'un·e ami·e pour le/la défier :",
-                style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _codeController,
-                textAlign: TextAlign.center,
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 6,
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 4),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: 'XXXXXX',
-                  filled: true,
-                  fillColor: theme.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _challenging ? null : _challenge,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: _challenging
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                      )
-                    : Text(_selectedGame != null ? 'Défier au ${_selectedGame!.nameFor(LocaleScope.of(context).current.code)}' : 'Défier'),
-              ),
+              if (_challenging)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  child: Center(child: CircularProgressIndicator(color: theme.primary)),
+                ),
             ],
           ),
         ),

@@ -10,7 +10,7 @@ import '../../widgets/empty_state.dart';
 import 'game_service.dart';
 
 /// Voir demande utilisateur : "on peut voir la liste des personnes qu'on a
-/// bloqué et débloquer si on veut" — accessible depuis FriendsListScreen.
+/// bloqué et débloquer si on veut" — accessible depuis FriendChallengeScreen.
 /// Jamais l'inverse (qui m'a bloqué·e) — FriendController::blocked() ne
 /// renvoie que MES blocages.
 class BlockedUsersScreen extends StatefulWidget {
