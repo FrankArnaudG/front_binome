@@ -86,9 +86,11 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
 
   /// Écoute la présence du binôme sur le canal de sa Box (déjà utilisé ailleurs
   /// dans l'app, voir RealtimeClient.subscribeToBox) pour savoir s'il est en
-  /// ligne. Rien pour une invitation hors-Box (défi à un ami de jeu) : pas de
-  /// canal de présence commun, l'état reste inconnu et aucun message n'est
-  /// affiché.
+  /// ligne. Pour une invitation hors-Box (défi à un ami de jeu), pas de canal
+  /// de présence commun — voir diagnostic utilisateur (phase 3) : repli sur
+  /// `last_seen_at` (voir _loadFriendInvitee), même donnée que lastSeenLabel
+  /// utilisée ailleurs dans l'app, moins précis qu'un vrai canal temps réel
+  /// mais suffisant pour prévenir "pas vu depuis un moment".
   void _watchPartnerPresence() {
     if (widget.invite.isFriendInvite) return;
     final box = BoxService.instance.currentBox;
@@ -119,6 +121,11 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
     } catch (_) {
       // best effort, on retente au prochain tick.
     }
+    // Voir diagnostic utilisateur (phase 3) : `_partnerOnline` d'un ami est
+    // une photo prise au chargement de l'écran (pas un canal temps réel,
+    // contrairement au binôme) — rafraîchie sur le même tick que le poll de
+    // statut ci-dessus pour rester à peu près à jour pendant l'attente.
+    if (!_resolved && widget.invite.isFriendInvite) _loadFriendInvitee();
   }
 
   void _onJoinFailed(({String inviteId, String message}) failure) {
@@ -170,13 +177,19 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
   String? _friendInviteeName;
   String? _friendInviteeAvatar;
 
+  // Fenêtre de 3 minutes — même seuil que StatsController::ONLINE_WINDOW_MINUTES
+  // côté admin, pour une définition cohérente de "en ligne" dans toute l'app.
+  static const _onlineWindow = Duration(minutes: 3);
+
   Future<void> _loadFriendInvitee() async {
     try {
       final profile = await GameService.instance.fetchPublicProfile(widget.invite.inviteeId);
       if (!mounted) return;
+      final lastSeenAt = profile.lastSeenAt;
       setState(() {
         _friendInviteeName = profile.prenom;
         _friendInviteeAvatar = profile.avatar;
+        _partnerOnline = lastSeenAt != null && DateTime.now().difference(lastSeenAt.toLocal()) < _onlineWindow;
       });
     } catch (_) {
       // Best-effort — repli sur le nom générique déjà géré dans build().
@@ -327,7 +340,7 @@ class _GameInviteWaitingScreenState extends State<GameInviteWaitingScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            "Ton binôme n'est pas en ligne.",
+                                            widget.invite.isFriendInvite ? "$name n'est pas en ligne." : "Ton binôme n'est pas en ligne.",
                                             style: GoogleFonts.nunito(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w800,
