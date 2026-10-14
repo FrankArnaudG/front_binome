@@ -1,21 +1,8 @@
 import '../../models/game.dart';
-import 'memory_game/memory_emoji_pool.dart';
 
 /// Partagé entre AddFriendScreen (défi via code) et FriendChallengeScreen
 /// (défi direct depuis la liste "Mes amis de jeu") — voir demande
 /// utilisateur : les deux proposent le même choix des 7 jeux temps réel.
-
-/// Nombre de paires par défaut pour un défi d'ami au Jeu de Mémoire (voir
-/// demande utilisateur : pas de sélecteur de difficulté séparé ici — cette
-/// valeur reprend la difficulté "moyenne" déjà proposée dans
-/// MemoryGameDifficultyScreen).
-const kFriendChallengePairCount = 8;
-
-/// Nombre de cases par défaut pour un défi d'ami à la Chasse aux Chiffres
-/// (voir NumberHuntEngine.levels — seul jeu, avec le Jeu de Mémoire, dont le
-/// payload de départ est OBLIGATOIRE côté backend, voir
-/// GameInviteController::create) — valeur "moyenne" du palier existant.
-const kFriendChallengeCellCount = 100;
 
 /// Les 7 jeux temps réel éligibles au défi d'ami (voir
 /// GameInviteController::FRIEND_SESSION_TYPES côté backend) — dans l'ordre
@@ -30,20 +17,11 @@ const kFriendChallengeableSessionTypes = [
   'battleship',
 ];
 
-/// `null` pour les jeux dont la session démarre sans configuration de
-/// départ (Morpion, Bataille, Jeu de Carte Classique, Bataille Navale et
-/// Le Jeu des Carrés acceptent tous un payload nul ou absent côté backend)
-/// — seuls le Jeu de Mémoire et la Chasse aux Chiffres exigent un payload
-/// (voir GameInviteController::create).
-Map<String, dynamic>? friendChallengePayloadFor(Game game) {
-  if (game.isMemoryGame) {
-    return {'pair_count': kFriendChallengePairCount, 'board': generateShuffledMemoryBoard(kFriendChallengePairCount)};
-  }
-  if (game.isNumberHunt) {
-    return {'cell_count': kFriendChallengeCellCount};
-  }
-  return null;
-}
+/// Voir diagnostic utilisateur (alignement binôme/défi d'ami, phase 2) :
+/// seul le Morpion n'a aucun concept de difficulté — les 6 autres doivent
+/// désormais proposer le même choix qu'avec le binôme (voir
+/// FriendDifficultyScreen), au lieu d'une valeur fixe envoyée sans le dire.
+bool gameHasDifficultyChoice(Game game) => !game.isTicTacToe;
 
 /// Les 7 jeux éligibles, triés dans l'ordre de [kFriendChallengeableSessionTypes].
 List<Game> friendChallengeableGames(List<Game> allGames) {

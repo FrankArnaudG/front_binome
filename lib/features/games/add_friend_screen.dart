@@ -7,6 +7,7 @@ import '../../models/app_user.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import 'friend_challenge_support.dart';
+import 'friend_difficulty_screen.dart';
 import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
 import 'widgets/game_picker_sheet.dart';
@@ -72,12 +73,29 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
       // — "fonctionnalité la plus utilisée" doit aussi compter ces parties.
       UsageService.instance.logFeature('game', detail: game.sessionType);
 
+      // Voir diagnostic utilisateur (phase 2) : choix de la difficulté avant
+      // d'envoyer le défi, pour les 6 jeux qui ont ce concept (tous sauf
+      // Morpion) — comme avec le binôme, au lieu d'une valeur fixe imposée.
+      if (gameHasDifficultyChoice(game)) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => FriendDifficultyScreen(
+              game: game,
+              user: widget.user,
+              opponentLabel: 'ton ami',
+              friendCode: code,
+            ),
+          ),
+        );
+        return;
+      }
+
       // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
       // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici.
       final invite = await GameService.instance.createGameInvite(
         game.id,
         sessionType: game.sessionType,
-        payload: friendChallengePayloadFor(game),
         friendCode: code,
       );
       if (!mounted) return;
