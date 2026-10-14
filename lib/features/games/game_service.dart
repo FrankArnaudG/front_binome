@@ -898,10 +898,21 @@ class GameService {
   // propre Box) — jamais une demande d'amitié explicite, elle se crée
   // automatiquement quand une invitation hors-Box est acceptée.
 
+  /// Dernier code ami connu (voir LocalCache), sans appel réseau — voir
+  /// demande utilisateur : "a chaque fois que j'ouvre ici ça charge" (écran
+  /// "Défier un ami"). Le code ami est généré une seule fois à la création
+  /// du compte et ne change jamais ensuite (voir FriendCodeGenerator côté
+  /// backend) : aucune raison de le re-télécharger à chaque ouverture.
+  Future<String?> cachedFriendCode() {
+    return LocalCache.instance.readJson<String>('cache_friend_code');
+  }
+
   /// Mon propre code, à partager pour être défié·e.
   Future<String> fetchMyFriendCode() async {
     final data = await ApiClient.instance.get('/friends/code') as Map<String, dynamic>;
-    return data['friend_code'] as String;
+    final code = data['friend_code'] as String;
+    await LocalCache.instance.writeJson('cache_friend_code', code);
+    return code;
   }
 
   Future<List<PublicProfile>> fetchFriends() async {

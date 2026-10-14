@@ -32,24 +32,55 @@ class FriendChallengeScreen extends StatefulWidget {
 
 class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
   final _codeController = TextEditingController();
-  late Future<String> _myCodeFuture;
-  late Future<List<Game>> _gamesFuture;
+  // Voir demande utilisateur : "à chaque fois que j'ouvre ici ça charge" —
+  // le code ami ne change jamais une fois généré, et le catalogue de jeux
+  // change rarement : on affiche d'abord le dernier état connu (voir
+  // LocalCache côté GameService), avant même la réponse réseau, comme
+  // GameDiscussionsScreen._loadCachedThenRefresh pour le même catalogue.
+  String? _myCode;
+  List<Game>? _challengeableGames;
   Game? _selectedGame;
   bool _challenging = false;
 
   @override
   void initState() {
     super.initState();
-    _myCodeFuture = GameService.instance.fetchMyFriendCode();
-    _gamesFuture = GameService.instance.fetchGames().then((games) {
-      final challengeable = friendChallengeableGames(games);
+    _loadMyCode();
+    _loadGames();
+  }
+
+  Future<void> _loadMyCode() async {
+    final cached = await GameService.instance.cachedFriendCode();
+    if (cached != null && mounted) setState(() => _myCode = cached);
+    try {
+      final code = await GameService.instance.fetchMyFriendCode();
+      if (mounted) setState(() => _myCode = code);
+    } catch (_) {
+      // Best effort — garde le code déjà en cache affiché, sinon pas bloquant.
+    }
+  }
+
+  void _applyGames(List<Game> games) {
+    final challengeable = friendChallengeableGames(games);
+    setState(() {
+      _challengeableGames = challengeable;
       // Le Jeu de Mémoire reste sélectionné par défaut — comportement
       // historique de cet écran, avant l'ajout du sélecteur.
-      if (challengeable.isNotEmpty && mounted) {
-        setState(() => _selectedGame ??= challengeable.firstWhere((g) => g.isMemoryGame, orElse: () => challengeable.first));
-      }
-      return challengeable;
+      _selectedGame ??= challengeable.isNotEmpty
+          ? challengeable.firstWhere((g) => g.isMemoryGame, orElse: () => challengeable.first)
+          : null;
     });
+  }
+
+  Future<void> _loadGames() async {
+    final cached = await GameService.instance.cachedGames();
+    if (cached != null && mounted) _applyGames(cached);
+    try {
+      final games = await GameService.instance.fetchGames();
+      if (mounted) _applyGames(games);
+    } catch (_) {
+      // Best effort — garde le catalogue déjà en cache affiché, sinon pas bloquant.
+    }
   }
 
   @override
@@ -149,10 +180,9 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                 style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
               ),
               const SizedBox(height: 10),
-              FutureBuilder<String>(
-                future: _myCodeFuture,
-                builder: (context, snapshot) {
-                  final code = snapshot.data;
+              Builder(
+                builder: (context) {
+                  final code = _myCode;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -217,10 +247,9 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                 style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
               ),
               const SizedBox(height: 10),
-              FutureBuilder<List<Game>>(
-                future: _gamesFuture,
-                builder: (context, snapshot) {
-                  final games = snapshot.data;
+              Builder(
+                builder: (context) {
+                  final games = _challengeableGames;
                   if (games == null) {
                     return const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8),
