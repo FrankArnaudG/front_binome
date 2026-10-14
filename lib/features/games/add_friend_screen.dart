@@ -108,7 +108,7 @@ class _AddFriendScreenState extends State<AddFriendScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  "Entre le code ami d'un·e ami·e pour le/la défier à un jeu — il/elle rejoindra ta liste d'amis dès que le défi sera accepté.",
+                  "Entre le code ami d'un·e ami·e pour le/la défier à un jeu. Il/elle rejoindra ta liste d'amis dès que le défi sera accepté.",
                   style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted),
                 ),
                 const SizedBox(height: 24),
