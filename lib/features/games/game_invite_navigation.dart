@@ -2,15 +2,19 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api_client.dart';
 import '../../core/token_storage.dart';
 import '../../models/app_user.dart';
+import '../../models/game.dart';
 import '../../models/game_invite.dart';
 import '../box/box_scope.dart';
 import 'dot_squares/dot_squares_board_screen.dart';
 import 'dot_squares/dot_squares_difficulty_screen.dart';
 import 'dot_squares/dot_squares_mode_screen.dart';
 import 'dot_squares/dot_squares_transport_remote.dart';
+import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
+import 'memory_game/memory_emoji_pool.dart';
 import 'memory_game/memory_game_board_screen.dart';
 import 'memory_game/memory_game_difficulty_screen.dart';
 import 'memory_game/memory_game_mode_screen.dart';
@@ -93,10 +97,12 @@ Future<void> openGameSessionFromInvite(
 
   // Voir demande utilisateur : seul celui qui a lancé la partie voit "Rejouer" (= nouvelle
   // invitation, même difficulté) ; l'autre joueur ne voit que "Quitter", qui lui ouvre le choix de
-  // la difficulté. Un défi d'ami hors-Box n'a pas de binôme à ré-inviter : pas de "Rejouer" et
-  // "Quitter" referme simplement le jeu.
+  // la difficulté (uniquement côté binôme — voir canBackToChoice). Voir diagnostic utilisateur
+  // (alignement binôme/défi d'ami, phase 1) : "Rejouer" est maintenant aussi disponible pour un défi
+  // d'ami — l'ami est désormais une vraie relation persistante (voir FriendChallengeScreen), rien
+  // n'empêche plus de le re-défier directement via _rematchFriend ci-dessous.
   final isLauncher = resolved.inviterId == me.id;
-  final canRematch = isLauncher && !resolved.isFriendInvite;
+  final canRematch = isLauncher;
   final canBackToChoice = !isLauncher && !resolved.isFriendInvite;
   Future<void> Function(BuildContext)? quitTo(Widget Function() choice) => canBackToChoice
       ? (ctx) async {
@@ -120,7 +126,15 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startMemoryGameAndPush(ctx, game: game, user: me, mode: MemoryGameMode.remote, pairCount: session.pairCount, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(
+                    ctx,
+                    game: game,
+                    user: me,
+                    friendUserId: opponentId,
+                    payload: {'pair_count': session.pairCount, 'board': generateShuffledMemoryBoard(session.pairCount)},
+                  )
+                : startMemoryGameAndPush(ctx, game: game, user: me, mode: MemoryGameMode.remote, pairCount: session.pairCount, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => MemoryGameDifficultyScreen(game: game, user: me, mode: MemoryGameMode.remote)),
       );
@@ -138,7 +152,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startTicTacToeAndPush(ctx, game: game, user: me, mode: TicTacToeMode.remote, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: null)
+                : startTicTacToeAndPush(ctx, game: game, user: me, mode: TicTacToeMode.remote, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => TicTacToeModeScreen(game: game, user: me)),
       );
@@ -156,7 +172,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startDotSquaresAndPush(ctx, game: game, user: me, mode: DotSquaresMode.remote, cols: session.gridCols, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: {'cols': session.gridCols})
+                : startDotSquaresAndPush(ctx, game: game, user: me, mode: DotSquaresMode.remote, cols: session.gridCols, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => DotSquaresDifficultyScreen(game: game, user: me, mode: DotSquaresMode.remote)),
       );
@@ -174,7 +192,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startNumberHuntAndPush(ctx, game: game, user: me, mode: NumberHuntMode.remote, cellCount: session.cellCount, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: {'cell_count': session.cellCount})
+                : startNumberHuntAndPush(ctx, game: game, user: me, mode: NumberHuntMode.remote, cellCount: session.cellCount, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => NumberHuntDifficultyScreen(game: game, user: me, mode: NumberHuntMode.remote)),
       );
@@ -200,7 +220,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startWarCardAndPush(ctx, game: game, user: me, mode: WarCardMode.remote, deckSize: session.deckSize, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: {'deck_size': session.deckSize})
+                : startWarCardAndPush(ctx, game: game, user: me, mode: WarCardMode.remote, deckSize: session.deckSize, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => WarCardDifficultyScreen(game: game, user: me, mode: WarCardMode.remote)),
       );
@@ -221,7 +243,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startSuitBattleAndPush(ctx, game: game, user: me, deckSize: session.deckSize, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: {'deck_size': session.deckSize})
+                : startSuitBattleAndPush(ctx, game: game, user: me, deckSize: session.deckSize, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => SuitBattleDifficultyScreen(game: game, user: me)),
       );
@@ -239,7 +263,9 @@ Future<void> openGameSessionFromInvite(
         playerAvatars: playerAvatars,
         isLauncher: isLauncher,
         onRematch: canRematch
-            ? (ctx) => startBattleshipAndPush(ctx, game: game, user: me, mode: BattleshipMode.remote, gridSize: session.gridSize, replaceCurrent: true)
+            ? (ctx) => resolved.isFriendInvite
+                ? _rematchFriend(ctx, game: game, user: me, friendUserId: opponentId, payload: {'grid_size': session.gridSize})
+                : startBattleshipAndPush(ctx, game: game, user: me, mode: BattleshipMode.remote, gridSize: session.gridSize, replaceCurrent: true)
             : null,
         onQuit: quitTo(() => BattleshipDifficultyScreen(game: game, user: me, mode: BattleshipMode.remote)),
       );
@@ -251,6 +277,40 @@ Future<void> openGameSessionFromInvite(
     Navigator.of(context).pushReplacement(route);
   } else {
     Navigator.of(context).push(route);
+  }
+}
+
+/// Relance un défi IDENTIQUE (même réglages, voir [payload]) contre le même
+/// ami — pendant du onRematch binôme (voir startXxxAndPush dans chaque
+/// *_mode_screen.dart), mais vers [friendUserId] plutôt que vers le/la
+/// partenaire de la Box, qui n'existe pas forcément ici (voir diagnostic
+/// utilisateur : "Rejouer" désactivé jusqu'ici pour tout défi d'ami).
+Future<void> _rematchFriend(
+  BuildContext context, {
+  required Game game,
+  required AppUser user,
+  required String friendUserId,
+  required Map<String, dynamic>? payload,
+}) async {
+  try {
+    final invite = await GameService.instance.createGameInvite(
+      game.id,
+      sessionType: game.sessionType,
+      payload: payload,
+      friendUserId: friendUserId,
+    );
+    if (!context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => GameInviteWaitingScreen(invite: invite, user: user)),
+    );
+  } on ApiException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Une erreur est survenue, réessaie.')));
+    }
   }
 }
 

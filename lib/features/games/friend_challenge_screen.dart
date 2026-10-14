@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/api_client.dart';
+import '../../core/usage_service.dart';
 import '../../models/app_user.dart';
 import '../../models/public_profile.dart';
 import '../../theme/theme_scope.dart';
@@ -125,6 +126,11 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
       theme: theme,
     );
     if (game == null || !mounted) return;
+
+    // Voir diagnostic utilisateur : jamais loggé jusqu'ici pour un défi
+    // d'ami, contrairement au flux binôme (voir GamesMenuScreen._playGame)
+    // — "fonctionnalité la plus utilisée" doit aussi compter ces parties.
+    UsageService.instance.logFeature('game', detail: game.sessionType);
 
     // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
     // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici.
