@@ -53,45 +53,62 @@ class _GamePickerSheet extends StatelessWidget {
                 'Défier $opponentLabel à :',
                 style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: theme.textOnBackground),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
               Flexible(
-                child: GridView.builder(
+                child: ListView.separated(
                   shrinkWrap: true,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.05,
-                  ),
                   itemCount: games.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final game = games[index];
+                    final description = game.descriptionFor(localeCode);
                     return Material(
                       color: theme.background,
                       borderRadius: BorderRadius.circular(18),
-                      clipBehavior: Clip.antiAlias,
                       child: InkWell(
+                        borderRadius: BorderRadius.circular(18),
                         onTap: () => Navigator.of(context).pop(game),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                width: double.infinity,
-                                color: theme.primary.withValues(alpha: 0.12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: theme.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                                 child: gameIcon(game, theme.primary),
                               ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                              child: Text(
-                                game.nameFor(localeCode),
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 13, color: theme.textOnBackground),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      game.nameFor(localeCode),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
+                                    ),
+                                    if (description != null) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        description,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                              Icon(Icons.chevron_right_rounded, color: theme.textOnBackgroundMuted),
+                            ],
+                          ),
                         ),
                       ),
                     );
