@@ -18,7 +18,6 @@ import 'friend_difficulty_screen.dart';
 import 'friends_cache.dart';
 import 'game_invite_waiting_screen.dart';
 import 'game_service.dart';
-import 'memory_game/memory_game_nearby_connect_screen.dart';
 import 'my_friend_code_screen.dart';
 import 'widgets/game_picker_sheet.dart';
 
@@ -90,28 +89,6 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const MyFriendCodeScreen()),
     );
-  }
-
-  /// Défier CET ami précis en Bluetooth (voir demande utilisateur) — Jeu de Mémoire uniquement pour
-  /// l'instant (voir MemoryGameNearbyConnectScreen.targetFriend), les 6 autres jeux suivront une fois
-  /// validé sur de vrais téléphones.
-  Future<void> _challengeFriendNearby(PublicProfile friend) async {
-    if (_challenging) return;
-    setState(() => _challenging = true);
-    try {
-      final games = await GameService.instance.fetchGames();
-      final memoryGame = games.where((g) => g.isMemoryGame).firstOrNull;
-      if (memoryGame == null || !mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MemoryGameNearbyConnectScreen(game: memoryGame, user: widget.user, targetFriend: friend),
-        ),
-      );
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } finally {
-      if (mounted) setState(() => _challenging = false);
-    }
   }
 
   Future<void> _challengeFriend(PublicProfile friend) async {
@@ -283,13 +260,6 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
                                         friend.fullName,
                                         style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 15, color: theme.textOnBackground),
                                       ),
-                                    ),
-                                    // Défier en Bluetooth, sans internet (voir demande utilisateur) — un
-                                    // bouton à part : le tap sur toute la ligne reste le défi à distance.
-                                    IconButton(
-                                      icon: Icon(Icons.bluetooth_rounded, color: theme.primary, size: 20),
-                                      tooltip: 'Défier en Bluetooth (sans internet)',
-                                      onPressed: _challenging ? null : () => _challengeFriendNearby(friend),
                                     ),
                                     Icon(Icons.sports_esports_rounded, color: theme.textOnBackgroundMuted, size: 20),
                                   ],
