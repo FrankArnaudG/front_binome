@@ -543,6 +543,14 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
   String? get _friendSessionType =>
       (widget.transport is RemoteNumberHuntTransport && _commentsBoxId == null) ? 'number_hunt' : null;
 
+  // Voir memory_game_board_screen.dart (même pattern, voir demande
+  // utilisateur : "jai lancer le defi mai je ne voi pa de facturation").
+  String? get _walletGuardBoxId {
+    if (_commentsBoxId != null) return _commentsBoxId;
+    if (_friendSessionType == null) return null;
+    return BoxScope.of(context).currentBox?.id;
+  }
+
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
   String get _partnerUserId =>
@@ -863,7 +871,7 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
         ),
         _buildGuideVoiceDemo(),
         GameWalletGuard(
-          boxId: commentsBoxId,
+          boxId: _walletGuardBoxId,
           sessionType: 'number_hunt',
           sessionId: _sessionId,
         ),

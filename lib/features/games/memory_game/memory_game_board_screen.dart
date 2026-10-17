@@ -15,6 +15,7 @@ import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import 'package:showcaseview/showcaseview.dart';
 
+import '../../box/box_scope.dart';
 import '../nearby/nearby_comms.dart';
 import '../widgets/always_on_top_layer.dart';
 import '../widgets/coin_billing_ring.dart';
@@ -658,6 +659,22 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
   String? get _friendSessionType =>
       (widget.transport is RemoteMemoryGameTransport && _commentsBoxId == null) ? 'memory_game' : null;
 
+  // Voir demande utilisateur : "jai lancer le defi mai je ne voi pa de
+  // facturation" — BillGameSessions débite et diffuse (GameWalletTicked/
+  // Low/Depleted) sur la Box PROPRE du lanceur (voir ce fichier côté
+  // back), jamais sur un canal de session hors-Box qui n'existe pas pour
+  // ce type d'évènement. GameWalletGuard doit donc s'abonner à NOTRE
+  // propre Box dès qu'on est en partie d'ami, pas à `_commentsBoxId`
+  // (toujours null hors-Box) — sans savoir ici qui des deux est le
+  // lanceur réel, ni le payeur ni l'invité ne perdent rien à écouter leur
+  // propre canal : seul celui qui est réellement débité y verra jamais un
+  // évènement (voir BillGameSessions::applyBilling).
+  String? get _walletGuardBoxId {
+    if (_commentsBoxId != null) return _commentsBoxId;
+    if (_friendSessionType == null) return null;
+    return BoxScope.of(context).currentBox?.id;
+  }
+
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
   String get _partnerUserId =>
@@ -1221,7 +1238,7 @@ class _MemoryGameBoardScreenState extends State<MemoryGameBoardScreen> {
         // dessous par erreur.
         _buildGuideVoiceDemo(theme),
         GameWalletGuard(
-          boxId: commentsBoxId,
+          boxId: _walletGuardBoxId,
           sessionType: 'memory_game',
           sessionId: _sessionId,
         ),

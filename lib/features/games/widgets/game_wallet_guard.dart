@@ -23,10 +23,15 @@ import '../../shop/wallet_balance_notifier.dart';
 /// informatif ponctuel au moment de l'épuisement, avec un raccourci vers la
 /// boutique.
 ///
-/// N'a d'effet QUE si [boxId] est fourni (mode à distance dans une Box) —
-/// une partie en pass-and-play ou entre amis hors couple n'a pas de
-/// portefeuille partagé à surveiller (voir demande utilisateur : "le
-/// couple"), passer `null` alors désactive silencieusement ce widget.
+/// N'a d'effet QUE si [boxId] est fourni. Pour une partie à distance avec le
+/// binôme, c'est la Box de la session ; pour un défi d'ami hors-Box (voir
+/// demande utilisateur, phase 4 : "jai lancer le defi mai je ne voi pa de
+/// facturation"), le serveur débite et diffuse sur la Box PROPRE du lanceur
+/// (voir BillGameSessions), jamais sur un canal de session — les écrans
+/// appelants doivent donc passer la Box de l'utilisateur courant dans ce
+/// cas (voir `_walletGuardBoxId` dans chaque XxxBoardScreen). Seul le
+/// pass-and-play (un seul appareil) n'a vraiment aucun portefeuille à
+/// surveiller, `null` y désactive silencieusement ce widget.
 class GameWalletGuard extends StatefulWidget {
   final String? boxId;
   final String sessionType;

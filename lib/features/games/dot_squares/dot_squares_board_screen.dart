@@ -15,6 +15,7 @@ import '../../../models/game.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
+import '../../box/box_scope.dart';
 import '../game_guide_storage.dart';
 import '../game_service.dart';
 import '../nearby/nearby_comms.dart';
@@ -662,6 +663,14 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
   String? get _friendSessionType =>
       (widget.transport is RemoteDotSquaresTransport && _commentsBoxId == null) ? 'dot_squares' : null;
 
+  // Voir memory_game_board_screen.dart (même pattern, voir demande
+  // utilisateur : "jai lancer le defi mai je ne voi pa de facturation").
+  String? get _walletGuardBoxId {
+    if (_commentsBoxId != null) return _commentsBoxId;
+    if (_friendSessionType == null) return null;
+    return BoxScope.of(context).currentBox?.id;
+  }
+
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
   String get _partnerUserId =>
@@ -1050,7 +1059,7 @@ class _DotSquaresBoardScreenState extends State<DotSquaresBoardScreen> {
         ),
         _buildGuideVoiceDemo(),
         GameWalletGuard(
-          boxId: commentsBoxId,
+          boxId: _walletGuardBoxId,
           sessionType: 'dot_squares',
           sessionId: _sessionId,
         ),
