@@ -93,45 +93,51 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> {
 
   Future<void> _challengeFriend(PublicProfile friend) async {
     final theme = ThemeScope.paletteOf(context);
-    final games = await GameService.instance.fetchGames();
-    final challengeable = friendChallengeableGames(games);
-    if (!mounted || challengeable.isEmpty) return;
-
-    final game = await showGamePickerSheet(
-      context: context,
-      opponentLabel: friend.fullName,
-      games: challengeable,
-      theme: theme,
-    );
-    if (game == null || !mounted) return;
-
-    // Voir diagnostic utilisateur : jamais loggé jusqu'ici pour un défi
-    // d'ami, contrairement au flux binôme (voir GamesMenuScreen._playGame)
-    // — "fonctionnalité la plus utilisée" doit aussi compter ces parties.
-    UsageService.instance.logFeature('game', detail: game.sessionType);
-
-    // Voir diagnostic utilisateur (phase 2) : choix de la difficulté avant
-    // d'envoyer le défi, pour les 6 jeux qui ont ce concept (tous sauf
-    // Morpion) — comme avec le binôme, au lieu d'une valeur fixe imposée.
-    if (gameHasDifficultyChoice(game)) {
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => FriendDifficultyScreen(
-            game: game,
-            user: widget.user,
-            opponentLabel: friend.fullName,
-            friendUserId: friend.id,
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
-    // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici.
+    // Voir demande utilisateur : "en cliquant sur le nom, mette un loader et
+    // sassurer que lon ne puisse plu cliquer" — avant ce correctif, le
+    // loader/verrou (_challenging) n'apparaissait qu'au moment d'envoyer le
+    // défi, pas dès le tap : le premier appel réseau (fetchGames) et le
+    // choix du jeu/niveau pouvaient donc être déclenchés en double. Posé
+    // dès l'entrée, retiré dans le `finally` qui couvre toute la méthode.
     setState(() => _challenging = true);
     try {
+      final games = await GameService.instance.fetchGames();
+      final challengeable = friendChallengeableGames(games);
+      if (!mounted || challengeable.isEmpty) return;
+
+      final game = await showGamePickerSheet(
+        context: context,
+        opponentLabel: friend.fullName,
+        games: challengeable,
+        theme: theme,
+      );
+      if (game == null || !mounted) return;
+
+      // Voir diagnostic utilisateur : jamais loggé jusqu'ici pour un défi
+      // d'ami, contrairement au flux binôme (voir GamesMenuScreen._playGame)
+      // — "fonctionnalité la plus utilisée" doit aussi compter ces parties.
+      UsageService.instance.logFeature('game', detail: game.sessionType);
+
+      // Voir diagnostic utilisateur (phase 2) : choix de la difficulté avant
+      // d'envoyer le défi, pour les 6 jeux qui ont ce concept (tous sauf
+      // Morpion) — comme avec le binôme, au lieu d'une valeur fixe imposée.
+      if (gameHasDifficultyChoice(game)) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => FriendDifficultyScreen(
+              game: game,
+              user: widget.user,
+              opponentLabel: friend.fullName,
+              friendUserId: friend.id,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Facturé au temps réellement joué une fois la partie acceptée (voir BillGameSessions côté
+      // serveur), comme dans la Box — pas de coût connu à l'avance à annoncer ici.
       final invite = await GameService.instance.createGameInvite(
         game.id,
         sessionType: game.sessionType,
