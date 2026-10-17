@@ -9,7 +9,6 @@ import '../nearby/nearby_permissions.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
-import '../../../models/public_profile.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
 import '../../box/box_scope.dart';
@@ -26,16 +25,14 @@ const _kNearbyServiceId = 'app.binome.memory_game';
 /// la difficulté (l'invité attend simplement — le plateau lui arrive dans
 /// le message `init`).
 ///
-/// [targetFriend] : non-null pour un défi à UN AMI PRÉCIS (voir demande utilisateur), au lieu du
-/// binôme habituel — dans les deux cas, seule une connexion dont l'identité annoncée correspond
-/// exactement à la personne recherchée est acceptée (voir NearbyIdentity), jamais le premier appareil
-/// trouvé : sans ça, un binôme ET un ami tous deux à portée en même temps pouvaient se mélanger.
+/// Seule une connexion dont l'identité annoncée correspond exactement au
+/// binôme attendu est acceptée (voir NearbyIdentity), jamais le premier
+/// appareil trouvé.
 class MemoryGameNearbyConnectScreen extends StatefulWidget {
   final Game game;
   final AppUser user;
-  final PublicProfile? targetFriend;
 
-  const MemoryGameNearbyConnectScreen({super.key, required this.game, required this.user, this.targetFriend});
+  const MemoryGameNearbyConnectScreen({super.key, required this.game, required this.user});
 
   @override
   State<MemoryGameNearbyConnectScreen> createState() => _MemoryGameNearbyConnectScreenState();
@@ -59,14 +56,10 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
     return problem == null;
   }
 
-  /// Identifiant de la SEULE personne avec qui cette recherche doit aboutir — le binôme (résolu via
-  /// BoxScope, comme avant) ou l'ami précis choisi avant d'ouvrir cet écran (voir [widget.targetFriend]
-  /// et demande utilisateur : "aussi si je veux jouer avec mon binôme les amis autour sont ignorés").
-  /// `null` seulement si le mode binôme est demandé sans binôme connu (Box sans partenaire) — l'écran
-  /// affiche alors l'erreur générique existante plutôt que de chercher n'importe qui.
+  /// Identifiant de la SEULE personne avec qui cette recherche doit aboutir — le binôme, résolu via
+  /// BoxScope. `null` seulement si la Box n'a pas encore de partenaire — l'écran affiche alors l'erreur
+  /// générique existante plutôt que de chercher n'importe qui.
   String? _expectedUserId() {
-    final friend = widget.targetFriend;
-    if (friend != null) return friend.id;
     final box = BoxScope.of(context).currentBox;
     return box?.partnerOf(widget.user.id)?.id;
   }
@@ -221,12 +214,11 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
   }
 
   void _openBoard(NearbyMemoryGameTransport transport) {
-    final friend = widget.targetFriend;
     // Voir demande utilisateur : "rendre l'option bluetooth gratuite partout comme l'option un
-    // telephone" — que ce soit avec le binôme ou avec un ami, plus aucun suivi/déclaration de forfait
-    // journalier (voir NearbyBillingTracker/FriendChallengeNearbyBillingTracker, plus jamais appelés).
-    final partnerName = friend?.prenom ?? BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.prenom;
-    final partnerAvatar = friend?.avatar ?? BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.avatar;
+    // telephone" — plus aucun suivi/déclaration de forfait journalier (voir NearbyBillingTracker,
+    // plus jamais appelé).
+    final partnerName = BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.prenom;
+    final partnerAvatar = BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.avatar;
     final myRole = _isHost ? kNearbyHostRole : kNearbyGuestRole;
     final partnerRole = _isHost ? kNearbyGuestRole : kNearbyHostRole;
 
@@ -246,10 +238,8 @@ class _MemoryGameNearbyConnectScreenState extends State<MemoryGameNearbyConnectS
     );
 
     // Résultat enregistré côté serveur UNIQUEMENT pour le binôme (voir MemoryGameController::
-    // recordResult, qui exige une Box avec partenaire) — un défi d'ami en Bluetooth n'a pas encore ce
-    // mécanisme côté serveur ; la partie se joue normalement, seules les statistiques ne sont pas
-    // encore conservées pour ce cas précis.
-    if (_isHost && friend == null) {
+    // recordResult, qui exige une Box avec partenaire).
+    if (_isHost) {
       final partnerId = BoxScope.of(context).currentBox?.partnerOf(widget.user.id)?.id;
       unawaited(_postResultWhenFinished(transport, partnerId));
     }
