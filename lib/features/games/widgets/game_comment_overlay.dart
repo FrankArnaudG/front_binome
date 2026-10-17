@@ -28,6 +28,12 @@ import '../nearby/nearby_comms.dart';
 /// les deux joueurs regardent déjà le même écran).
 class GameCommentOverlay extends StatefulWidget {
   final String? boxId;
+  // Troisième transport, à côté de [boxId]/[nearbyComms] : une partie
+  // d'ami hors-Box (voir demande utilisateur, phase 4 : généraliser le
+  // chat en direct aux défis d'ami) — canal privé `{type}-session.{id}`
+  // déjà abonné par le transport de jeu (voir RemoteMemoryGameTransport).
+  final String? sessionType;
+  final String? sessionId;
   final bool enabled;
   final NearbyComms? nearbyComms;
   final String myName;
@@ -40,6 +46,8 @@ class GameCommentOverlay extends StatefulWidget {
   const GameCommentOverlay({
     super.key,
     this.boxId,
+    this.sessionType,
+    this.sessionId,
     required this.enabled,
     this.nearbyComms,
     this.myName = '',
@@ -81,7 +89,17 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
       _nearbySubscription = nearbyComms.messages.listen(_onNearbyMessage);
     } else if (widget.boxId != null) {
       RealtimeClient.instance.subscribeToBox(widget.boxId!, onEvent: _onRealtimeEvent);
+    } else if (_friendChannelName != null) {
+      RealtimeClient.instance.subscribePrivate(_friendChannelName!, onEvent: _onRealtimeEvent);
     }
+  }
+
+  // Voir doc de classe : canal privé d'une partie d'ami hors-Box, null si
+  // ni [sessionType]/[sessionId] ne sont fournis (mode binôme/présentiel).
+  String? get _friendChannelName {
+    final type = widget.sessionType;
+    final id = widget.sessionId;
+    return (type != null && id != null) ? '${type.replaceAll('_', '-')}-session.$id' : null;
   }
 
   @override
@@ -91,6 +109,8 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
         _nearbySubscription?.cancel();
       } else if (widget.boxId != null) {
         RealtimeClient.instance.unsubscribeFromBox(widget.boxId!, onEvent: _onRealtimeEvent);
+      } else if (_friendChannelName != null) {
+        RealtimeClient.instance.unsubscribePrivate(_friendChannelName!, onEvent: _onRealtimeEvent);
       }
     }
     for (final timer in _expiryTimers.values) {
@@ -169,7 +189,7 @@ class _GameCommentOverlayState extends State<GameCommentOverlay> {
       _appendComment(widget.myName, text);
     } else {
       try {
-        await GameService.instance.sendGameComment(text);
+        await GameService.instance.sendGameComment(text, sessionType: widget.sessionType, sessionId: widget.sessionId);
       } catch (_) {
         // Éphémère et non critique : un envoi raté n'affecte pas la partie,
         // on se contente de ne pas relancer l'utilisateur avec une erreur.

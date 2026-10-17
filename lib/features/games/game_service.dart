@@ -1367,25 +1367,45 @@ class GameService {
 
   /// Réaction en direct pendant une partie à deux téléphones (voir
   /// GameCommentSent côté back) — éphémère, jamais persistée, diffusée sur
-  /// le canal de la Box déjà écouté par le jeu en cours.
-  Future<void> sendGameComment(String text) {
-    return ApiClient.instance.post('/game-comments', body: {'text': text});
+  /// le canal de la Box déjà écouté par le jeu en cours, ou (si
+  /// `sessionType`/`sessionId` fournis) le canal privé d'une partie d'ami
+  /// hors-Box (voir demande utilisateur, phase 4 : généraliser le chat en
+  /// direct aux défis d'ami — voir GameCommentController::authorizeComment).
+  Future<void> sendGameComment(String text, {String? sessionType, String? sessionId}) {
+    return ApiClient.instance.post('/game-comments', body: {
+      'text': text,
+      if (sessionType != null) 'session_type': sessionType,
+      if (sessionId != null) 'session_id': sessionId,
+    });
   }
 
   /// STUN public + (si configuré côté back) identifiants TURN éphémères —
   /// voir VoiceCallController::iceServers. Appelé une fois au tout début
   /// d'un appel voix (voir VoiceCallService), jamais mis en cache : les
-  /// identifiants TURN expirent.
-  Future<List<Map<String, dynamic>>> fetchIceServers() async {
-    final data = await ApiClient.instance.get('/voice-calls/ice-servers') as Map<String, dynamic>;
+  /// identifiants TURN expirent. `sessionType`/`sessionId` : voir
+  /// sendGameComment ci-dessus (même généralisation défi d'ami).
+  Future<List<Map<String, dynamic>>> fetchIceServers({String? sessionType, String? sessionId}) async {
+    final query = <String, String>{
+      if (sessionType != null) 'session_type': sessionType,
+      if (sessionId != null) 'session_id': sessionId,
+    };
+    final path = query.isEmpty ? '/voice-calls/ice-servers' : '/voice-calls/ice-servers?${Uri(queryParameters: query).query}';
+    final data = await ApiClient.instance.get(path) as Map<String, dynamic>;
     final servers = data['ice_servers'] as List;
     return servers.cast<Map<String, dynamic>>();
   }
 
   /// Un message de négociation WebRTC (voir VoiceSignal côté back) —
   /// `type` parmi voice_ready/offer/answer/ice_candidate/voice_hangup.
-  Future<void> sendVoiceSignal(String type, Map<String, dynamic> payload) {
-    return ApiClient.instance.post('/voice-calls/signal', body: {'type': type, 'payload': payload});
+  /// `sessionType`/`sessionId` : voir sendGameComment ci-dessus (même
+  /// généralisation défi d'ami).
+  Future<void> sendVoiceSignal(String type, Map<String, dynamic> payload, {String? sessionType, String? sessionId}) {
+    return ApiClient.instance.post('/voice-calls/signal', body: {
+      'type': type,
+      'payload': payload,
+      if (sessionType != null) 'session_type': sessionType,
+      if (sessionId != null) 'session_id': sessionId,
+    });
   }
 }
 

@@ -23,7 +23,12 @@ import '../voice_call_service.dart';
 /// par défaut. L'activer invite le binôme (petit "i" à côté de SON bouton
 /// caméra, voir [_cameraInviteFrom]) à activer la sienne.
 class VoiceCallOverlay extends StatefulWidget {
-  final String boxId;
+  // Voir VoiceCallService : [boxId] pour le binôme, sinon [sessionType]+
+  // [sessionId] pour une partie d'ami hors-Box (voir demande utilisateur,
+  // phase 4 : généraliser la voix aux défis d'ami).
+  final String? boxId;
+  final String? sessionType;
+  final String? sessionId;
   final String myUserId;
   final String partnerUserId;
   final bool enabled;
@@ -55,7 +60,9 @@ class VoiceCallOverlay extends StatefulWidget {
 
   const VoiceCallOverlay({
     super.key,
-    required this.boxId,
+    this.boxId,
+    this.sessionType,
+    this.sessionId,
     required this.myUserId,
     required this.partnerUserId,
     required this.enabled,
@@ -120,6 +127,8 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   void _createService() {
     final service = VoiceCallService(
       boxId: widget.boxId,
+      sessionType: widget.sessionType,
+      sessionId: widget.sessionId,
       myUserId: widget.myUserId,
       partnerUserId: widget.partnerUserId,
     );

@@ -539,6 +539,10 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
     return transport is RemoteNumberHuntTransport ? transport.sessionId : '';
   }
 
+  // Voir memory_game_board_screen.dart (même pattern, phase 4).
+  String? get _friendSessionType =>
+      (widget.transport is RemoteNumberHuntTransport && _commentsBoxId == null) ? 'number_hunt' : null;
+
   /// Bouton "Terminer la partie" du popup de solde épuisé (voir
   /// GameWalletGuard) — même geste qu'un abandon volontaire.
   String get _partnerUserId =>
@@ -812,6 +816,13 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
         ),
         if (commentsBoxId != null)
           GameCommentOverlay(boxId: commentsBoxId, enabled: true, guideKey: _chatGuideKey)
+        else if (_friendSessionType != null)
+          GameCommentOverlay(
+            sessionType: _friendSessionType,
+            sessionId: _sessionId,
+            enabled: true,
+            guideKey: _chatGuideKey,
+          )
         else if (widget.nearbyComms != null)
           GameCommentOverlay(
             nearbyComms: widget.nearbyComms,
@@ -835,9 +846,20 @@ class _NumberHuntBoardScreenState extends State<NumberHuntBoardScreen> {
                   forceEnded: _state.isPaused,
                   onMicActiveChanged: _onMicActiveChanged,
                 )
-              : widget.nearbyComms != null
-                  ? NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused)
-                  : const SizedBox.shrink(),
+              : _friendSessionType != null
+                  ? VoiceCallOverlay(
+                      sessionType: _friendSessionType,
+                      sessionId: _sessionId,
+                      myUserId: widget.user.id,
+                      partnerUserId: _partnerUserId,
+                      enabled: true,
+                      paused: _state.isPaused,
+                      forceEnded: _state.isPaused,
+                      onMicActiveChanged: _onMicActiveChanged,
+                    )
+                  : widget.nearbyComms != null
+                      ? NearbyVoiceOverlay(comms: widget.nearbyComms, enabled: true, paused: _state.isPaused)
+                      : const SizedBox.shrink(),
         ),
         _buildGuideVoiceDemo(),
         GameWalletGuard(

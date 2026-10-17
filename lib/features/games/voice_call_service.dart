@@ -40,9 +40,18 @@ class CameraInvite {
 }
 
 class VoiceCallService {
-  final String boxId;
+  // L'un des deux est fourni (voir demande utilisateur, phase 4 :
+  // généraliser la voix aux défis d'ami hors-Box) : [boxId] pour le binôme,
+  // sinon [sessionType]+[sessionId] pour une partie d'ami, qui réutilise le
+  // canal privé `{type}-session.{id}` déjà abonné par le transport de jeu
+  // (voir RemoteMemoryGameTransport pour le même branchement).
+  final String? boxId;
+  final String? sessionType;
+  final String? sessionId;
   final String myUserId;
   final String partnerUserId;
+
+  String get _friendChannelName => '${sessionType!.replaceAll('_', '-')}-session.$sessionId';
 
   RTCPeerConnection? _pc;
   MediaStream? _localStream;
@@ -104,14 +113,31 @@ class VoiceCallService {
 
   bool get isEnabled => _iAmReady;
 
-  VoiceCallService({required this.boxId, required this.myUserId, required this.partnerUserId}) {
-    RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeEvent);
+  VoiceCallService({this.boxId, this.sessionType, this.sessionId, required this.myUserId, required this.partnerUserId}) {
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.subscribeToBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.subscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
+  }
+
+  /// Centralise le `sessionType`/`sessionId` sur chaque signal sortant (voir
+  /// doc de classe) — tous les appels à GameService.sendVoiceSignal passent
+  /// par ici plutôt que de le répéter à chaque site d'appel.
+  Future<void> _signal(String type, Map<String, dynamic> payload) {
+    return GameService.instance.sendVoiceSignal(type, payload, sessionType: sessionType, sessionId: sessionId);
   }
 
   Future<void> dispose() async {
     _reconnectTimer?.cancel();
     _watchdog?.cancel();
-    RealtimeClient.instance.unsubscribeFromBox(boxId, onEvent: _onRealtimeEvent);
+    final box = boxId;
+    if (box != null) {
+      RealtimeClient.instance.unsubscribeFromBox(box, onEvent: _onRealtimeEvent);
+    } else {
+      RealtimeClient.instance.unsubscribePrivate(_friendChannelName, onEvent: _onRealtimeEvent);
+    }
     final wasEnabled = _iAmReady;
     _iAmReady = false;
     await _teardown();
@@ -120,7 +146,7 @@ class VoiceCallService {
       await remoteRenderer.dispose();
     }
     if (wasEnabled) {
-      unawaited(GameService.instance.sendVoiceSignal('voice_hangup', const {}));
+      unawaited(_signal('voice_hangup', const {}));
     }
   }
 
@@ -142,7 +168,7 @@ class VoiceCallService {
     // début de la négociation (jusqu'à 5 s perdues sur le trajet critique, voir demande utilisateur).
     unawaited(_iceServers().then((_) {}, onError: (_) {}));
     debugPrint('VoiceCall: enable() — envoi voice_ready (partnerReady=$_partnerReady)');
-    await GameService.instance.sendVoiceSignal('voice_ready', const {});
+    await _signal('voice_ready', const {});
     if (_partnerReady) await _maybeStartNegotiation();
   }
 
@@ -150,7 +176,7 @@ class VoiceCallService {
     _reconnectTimer?.cancel();
     if (!_iAmReady) return;
     _iAmReady = false;
-    await GameService.instance.sendVoiceSignal('voice_hangup', const {});
+    await _signal('voice_hangup', const {});
     await _teardown();
   }
 
@@ -169,7 +195,7 @@ class VoiceCallService {
   /// caméra, voir VoiceCallOverlay) — `cancel` annule l'invitation (on vient
   /// de couper la nôtre).
   Future<void> sendCameraInvite({required String name, bool cancel = false}) =>
-      GameService.instance.sendVoiceSignal('camera_invite', {'name': name, 'cancel': cancel});
+      _signal('camera_invite', {'name': name, 'cancel': cancel});
 
   /// Active/coupe la caméra — uniquement possible une fois l'appel
   /// CONNECTÉ (voir [VoiceCallStatus.connected]), pour ne pas complexifier
@@ -234,7 +260,7 @@ class VoiceCallService {
       final offer = await _pc!.createOffer({});
       await _pc!.setLocalDescription(offer);
       debugPrint('VoiceCall: renégociation — offre créée, envoi...');
-      await GameService.instance.sendVoiceSignal('offer', {'sdp': _encodeSdp(offer.sdp), 'type': offer.type});
+      await _signal('offer', {'sdp': _encodeSdp(offer.sdp), 'type': offer.type});
     } catch (e, st) {
       debugPrint('VoiceCall: ÉCHEC renégociation — $e\n$st');
     }
@@ -268,7 +294,7 @@ class VoiceCallService {
         // jamais reçu NOTRE voice_ready, on lui répond (une seule fois, le
         // drapeau `reply` évite tout ping-pong).
         if (!wasReady && !isReply) {
-          unawaited(GameService.instance.sendVoiceSignal('voice_ready', const {'reply': true}));
+          unawaited(_signal('voice_ready', const {'reply': true}));
         }
         // voice_ready "frais" alors qu'on le croyait déjà là : il a relancé
         // sa connexion (reconnexion/retour dans l'app) — notre côté est
@@ -315,7 +341,7 @@ class VoiceCallService {
         final offer = await _pc!.createOffer({});
         await _pc!.setLocalDescription(offer);
         debugPrint('VoiceCall: offre créée, sdp.length=${offer.sdp?.length} type=${offer.type} — envoi...');
-        await GameService.instance.sendVoiceSignal('offer', {'sdp': _encodeSdp(offer.sdp), 'type': offer.type});
+        await _signal('offer', {'sdp': _encodeSdp(offer.sdp), 'type': offer.type});
       }
     } catch (e, st) {
       debugPrint('VoiceCall: ÉCHEC négociation — $e\n$st');
@@ -348,7 +374,7 @@ class VoiceCallService {
     final fresh = _iceFuture != null && fetchedAt != null && DateTime.now().difference(fetchedAt) < const Duration(minutes: 10);
     if (!fresh) {
       _iceFetchedAt = DateTime.now();
-      _iceFuture = GameService.instance.fetchIceServers();
+      _iceFuture = GameService.instance.fetchIceServers(sessionType: sessionType, sessionId: sessionId);
     }
     final future = _iceFuture!;
     return future.catchError((Object e) {
@@ -383,7 +409,7 @@ class VoiceCallService {
       // apparaissent, et quand, indique si le relais est joignable depuis ce téléphone.
       final kind = RegExp(r' typ (\w+)').firstMatch(candidate.candidate!)?.group(1) ?? '?';
       debugPrint('VoiceCall: candidat local $kind (${_since()})');
-      unawaited(GameService.instance.sendVoiceSignal('ice_candidate', {
+      unawaited(_signal('ice_candidate', {
         'candidate': candidate.candidate,
         'sdpMid': candidate.sdpMid,
         'sdpMLineIndex': candidate.sdpMLineIndex,
@@ -455,7 +481,7 @@ class VoiceCallService {
       if (!_iAmReady) return;
       _setStatus(VoiceCallStatus.connecting);
       try {
-        await GameService.instance.sendVoiceSignal('voice_ready', const {});
+        await _signal('voice_ready', const {});
       } catch (_) {
         // Réseau absent : la prochaine tentative repassera par ici.
       }
@@ -511,7 +537,7 @@ class VoiceCallService {
       final answer = await _pc!.createAnswer({});
       await _pc!.setLocalDescription(answer);
       debugPrint('VoiceCall: réponse créée, envoi...');
-      await GameService.instance.sendVoiceSignal('answer', {'sdp': _encodeSdp(answer.sdp), 'type': answer.type});
+      await _signal('answer', {'sdp': _encodeSdp(answer.sdp), 'type': answer.type});
     } catch (e, st) {
       debugPrint('VoiceCall: ÉCHEC traitement offre — $e\n$st');
       _setStatus(VoiceCallStatus.connecting);
