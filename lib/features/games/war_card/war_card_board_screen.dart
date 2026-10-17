@@ -201,7 +201,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
-    if (_commentsBoxId != null) _loadEconomyRate();
+    if (_isRemoteSession) _loadEconomyRate();
   }
 
   /// Le guide "Comment jouer" n'existe que dans le mode "Présentiel, un seul téléphone" (voir demande
@@ -506,7 +506,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
       // Voir demande utilisateur : "ça doit être instantané" — rafraîchit
       // le solde dès que la partie est vraiment terminée plutôt que
       // d'attendre le retour au tableau de bord.
-      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
+      if (_isRemoteSession) unawaited(WalletBalanceNotifier.instance.refresh());
       // Le tableau de score s'affiche maintenant systématiquement, y
       // compris après un abandon (voir demande utilisateur : "faire pareil
       // si on abandonne, on a le score en bas pour tous les jeux, il faut
@@ -557,7 +557,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
     });
     if (_state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
-      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
+      if (_isRemoteSession) unawaited(WalletBalanceNotifier.instance.refresh());
       // Voir demande utilisateur : scoreboard systématique, même après un
       // abandon (voir même correctif plus haut dans _onState).
       WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
@@ -623,7 +623,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
 
     if (_state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
-      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
+      if (_isRemoteSession) unawaited(WalletBalanceNotifier.instance.refresh());
       // Voir demande utilisateur : scoreboard systématique, même après un
       // abandon (voir même correctif plus haut dans _onState).
       WidgetsBinding.instance.addPostFrameCallback((_) => _showScoreboard());
@@ -852,6 +852,11 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
   String? get _friendSessionType =>
       (widget.transport is RemoteWarCardTransport && _commentsBoxId == null) ? 'war_card' : null;
 
+  // Voir demande utilisateur : "pareil je ne voi pa mon decompte de piece
+  // comme dan le jeu distance avec mon binome" — voir dot_squares_board_
+  // screen.dart (même correctif).
+  bool get _isRemoteSession => widget.transport is RemoteWarCardTransport;
+
   // Voir memory_game_board_screen.dart (même pattern, voir demande
   // utilisateur : "jai lancer le defi mai je ne voi pa de facturation").
   String? get _walletGuardBoxId {
@@ -1005,7 +1010,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                         Showcase(
                           key: _coinsGuideKey,
                           title: 'Temps et Tokens',
-                          description: commentsBoxId != null && widget.isLauncher
+                          description: _isRemoteSession && widget.isLauncher
                               ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
                               : 'Le temps écoulé depuis le début de la partie.',
                           targetBorderRadius: BorderRadius.circular(8),
@@ -1014,7 +1019,7 @@ class _WarCardBoardScreenState extends State<WarCardBoardScreen> {
                               Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                               const SizedBox(width: 4),
                               Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                              if (commentsBoxId != null && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
+                              if (_isRemoteSession && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
                                 const SizedBox(width: 8),
                                 CoinBillingRing(theme: theme, progress: _coinProgress()),
                                 if (_coinsConsumed() != null) ...[

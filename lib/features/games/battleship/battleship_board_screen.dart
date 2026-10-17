@@ -148,7 +148,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppRouter.showGlobalNavBar.value = false;
     });
-    if (_commentsBoxId != null) _loadEconomyRate();
+    if (_isRemoteSession) _loadEconomyRate();
   }
 
   /// Le guide "Comment jouer" n'existe que dans le mode "Présentiel, un seul téléphone" (voir demande
@@ -361,7 +361,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
     if (state.finished && !_scoreboardShown) {
       _scoreboardShown = true;
       // Voir demande utilisateur : "ça doit être instantané".
-      if (_commentsBoxId != null) unawaited(WalletBalanceNotifier.instance.refresh());
+      if (_isRemoteSession) unawaited(WalletBalanceNotifier.instance.refresh());
       // Scoreboard systématique, même après un abandon (voir demande
       // utilisateur : "si on abandonne, on a le score en bas pour tous les
       // jeux, il faut proposer de quitter et pour rejouer c'est pour celui
@@ -484,6 +484,11 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
   // Voir memory_game_board_screen.dart (même pattern, phase 4).
   String? get _friendSessionType =>
       (widget.transport is RemoteBattleshipTransport && _commentsBoxId == null) ? 'battleship' : null;
+
+  // Voir demande utilisateur : "pareil je ne voi pa mon decompte de piece
+  // comme dan le jeu distance avec mon binome" — voir dot_squares_board_
+  // screen.dart (même correctif).
+  bool get _isRemoteSession => widget.transport is RemoteBattleshipTransport;
 
   // Voir memory_game_board_screen.dart (même pattern, voir demande
   // utilisateur : "jai lancer le defi mai je ne voi pa de facturation").
@@ -660,7 +665,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                         Showcase(
                           key: _coinsGuideKey,
                           title: 'Temps et Tokens',
-                          description: commentsBoxId != null && widget.isLauncher
+                          description: _isRemoteSession && widget.isLauncher
                               ? 'Le chrono et le nombre de Tokens déjà consommés par cette partie à distance.'
                               : 'Le temps écoulé depuis le début de la partie.',
                           targetBorderRadius: BorderRadius.circular(8),
@@ -669,7 +674,7 @@ class _BattleshipBoardScreenState extends State<BattleshipBoardScreen> {
                               Icon(Icons.timer_outlined, size: 16, color: theme.textOnBackgroundMuted),
                               const SizedBox(width: 4),
                               Text(_elapsed(), style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackgroundMuted)),
-                              if (commentsBoxId != null && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
+                              if (_isRemoteSession && widget.isLauncher && !SubscriptionStatusNotifier.instance.isActive) ...[
                                 const SizedBox(width: 8),
                                 CoinBillingRing(theme: theme, progress: _coinProgress()),
                                 if (_coinsConsumed() != null) ...[
