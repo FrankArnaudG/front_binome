@@ -280,19 +280,21 @@ String _formatDate(DateTime date) {
 }
 
 /// Voir demande utilisateur, module de promotions : affichage avant
-/// paiement — `null` si aucune promotion éligible pour ce plan.
+/// paiement — `null` si aucune promotion éligible pour ce plan. Le nom de
+/// la promotion reste à usage interne (admin) : jamais affiché ici (voir
+/// demande utilisateur : "ne pa afficher le nom").
 String? _promotionLabel(PlanPromotion? promotion) {
   if (promotion == null) return null;
   if (promotion.isExtraDays) {
     final days = promotion.advantageValue == promotion.advantageValue.roundToDouble()
         ? promotion.advantageValue.toInt().toString()
         : promotion.advantageValue.toString();
-    return '🎁 $days jour(s) offert(s) — ${promotion.name}';
+    return '🎁 $days jour(s) offert(s)';
   }
   final percent = promotion.advantageValue == promotion.advantageValue.roundToDouble()
       ? promotion.advantageValue.toInt().toString()
       : promotion.advantageValue.toString();
-  return '🎁 -$percent % — ${promotion.name}';
+  return '🎁 -$percent %';
 }
 
 String _formatPrice(SubscriptionPlan plan, String Function(String, [Map<String, String>?]) t) {
