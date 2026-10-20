@@ -18,6 +18,11 @@ class PaymentConfirmSheet extends StatefulWidget {
   // ajoute le montant en euro ou dans la devise demandée") — `null` quand
   // cette devise est déjà XOF (l'équivalence serait redondante).
   final String? approxAmountLabel;
+  // Voir demande utilisateur, module de promotions : "l'avantage doit
+  // apparaître à l'utilisateur avant qu'il paie" — ex. "+14 jours offerts"
+  // ou "-10% de réduction". `null` = aucune promotion éligible (ShopScreen
+  // ne passe jamais ce champ, seul SubscriptionScreen l'utilise).
+  final String? promotionLabel;
   final Future<void> Function() onConfirm;
 
   const PaymentConfirmSheet({
@@ -26,6 +31,7 @@ class PaymentConfirmSheet extends StatefulWidget {
     required this.subtitle,
     required this.xofAmountLabel,
     this.approxAmountLabel,
+    this.promotionLabel,
     required this.onConfirm,
   });
 
@@ -68,6 +74,28 @@ class _PaymentConfirmSheetState extends State<PaymentConfirmSheet> {
               widget.subtitle,
               style: GoogleFonts.nunito(fontSize: 14, color: theme.textOnBackgroundMuted),
             ),
+            if (widget.promotionLabel != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: theme.secondary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.redeem_rounded, size: 20, color: theme.secondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.promotionLabel!,
+                        style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(14),

@@ -135,6 +135,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         approxAmountLabel: plan.priceCurrency == 'XOF'
             ? null
             : '${plan.priceAmountXof.toStringAsFixed(2)} ${currencySymbol(plan.priceCurrency)}',
+        promotionLabel: _promotionLabel(plan.promotion),
         onConfirm: () => _payViaYengaPay(plan),
       ),
     );
@@ -276,6 +277,22 @@ String _formatDate(DateTime date) {
   final day = date.day.toString().padLeft(2, '0');
   final month = date.month.toString().padLeft(2, '0');
   return '$day/$month/${date.year}';
+}
+
+/// Voir demande utilisateur, module de promotions : affichage avant
+/// paiement — `null` si aucune promotion éligible pour ce plan.
+String? _promotionLabel(PlanPromotion? promotion) {
+  if (promotion == null) return null;
+  if (promotion.isExtraDays) {
+    final days = promotion.advantageValue == promotion.advantageValue.roundToDouble()
+        ? promotion.advantageValue.toInt().toString()
+        : promotion.advantageValue.toString();
+    return '🎁 $days jour(s) offert(s) — ${promotion.name}';
+  }
+  final percent = promotion.advantageValue == promotion.advantageValue.roundToDouble()
+      ? promotion.advantageValue.toInt().toString()
+      : promotion.advantageValue.toString();
+  return '🎁 -$percent % — ${promotion.name}';
 }
 
 String _formatPrice(SubscriptionPlan plan, String Function(String, [Map<String, String>?]) t) {
@@ -422,6 +439,13 @@ class _PlanTile extends StatelessWidget {
                       const SizedBox(height: 6),
                       StatusChip(
                         label: t('subscription_savings_badge', {'percent': '$savingsPercent'}),
+                        color: theme.secondary,
+                      ),
+                    ],
+                    if (plan.promotion != null) ...[
+                      const SizedBox(height: 6),
+                      StatusChip(
+                        label: _promotionLabel(plan.promotion)!,
                         color: theme.secondary,
                       ),
                     ],

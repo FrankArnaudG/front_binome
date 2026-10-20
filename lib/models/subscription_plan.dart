@@ -13,6 +13,12 @@ class SubscriptionPlan {
   // l'équivalent") — distinct de [priceAmountXof] (malgré son nom, ce champ
   // est déjà converti dans [priceCurrency]) quand celle-ci n'est pas XOF.
   final double priceAmountXofNative;
+  // Avantage éligible pour CET utilisateur sur CE plan, à l'instant de
+  // l'appel (voir demande utilisateur, module de promotions : "l'avantage
+  // doit apparaître à l'utilisateur avant qu'il paie") — simple aperçu,
+  // re-résolu (et figé) pour de vrai côté serveur à la création de la
+  // commande (voir SubscriptionService.createOrder).
+  final PlanPromotion? promotion;
 
   const SubscriptionPlan({
     required this.id,
@@ -23,6 +29,7 @@ class SubscriptionPlan {
     required this.priceAmountXof,
     required this.priceCurrency,
     required this.priceAmountXofNative,
+    this.promotion,
   });
 
   bool get isCouple => scope == 'couple';
@@ -44,5 +51,23 @@ class SubscriptionPlan {
         priceAmountXofNative: json['price_amount_xof_native'] != null
             ? double.parse(json['price_amount_xof_native'].toString())
             : double.parse(json['price_amount_xof'].toString()),
+        promotion: json['promotion'] != null ? PlanPromotion.fromJson(json['promotion'] as Map<String, dynamic>) : null,
+      );
+}
+
+/// Voir SubscriptionPlan.promotion.
+class PlanPromotion {
+  final String name;
+  final String advantageType; // extra_days | percent_discount
+  final double advantageValue;
+
+  const PlanPromotion({required this.name, required this.advantageType, required this.advantageValue});
+
+  bool get isExtraDays => advantageType == 'extra_days';
+
+  factory PlanPromotion.fromJson(Map<String, dynamic> json) => PlanPromotion(
+        name: json['name'] as String,
+        advantageType: json['advantage_type'] as String,
+        advantageValue: double.parse(json['advantage_value'].toString()),
       );
 }

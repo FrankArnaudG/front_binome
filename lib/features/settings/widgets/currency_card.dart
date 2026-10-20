@@ -23,7 +23,7 @@ String _currencyDisplayLabel(BuildContext context, String? currencyCode, List<Cu
 }
 
 /// Devise d'affichage de la Boutique — modifiable à tout moment,
-/// contrairement au code promo de parrainage. Chaque commande garde de
+/// contrairement au numéro d'affiliation de parrainage. Chaque commande garde de
 /// toute façon sa propre devise figée à l'achat, donc changer cette
 /// préférence n'affecte jamais l'historique, seulement les prochains achats
 /// (voir ProfileController::setPreferredCurrency côté backend).
