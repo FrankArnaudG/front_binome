@@ -246,11 +246,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               }
               final soloPlans = plans.where((p) => !p.isCouple).toList();
               final couplePlans = plans.where((p) => p.isCouple).toList();
+              // Voir demande utilisateur : "la je ne sai pa pourquoi je
+              // gagne 14jour" — même promotion sur tous les plans en
+              // pratique, un seul bandeau explicatif suffit (pas un par
+              // tuile).
+              final plansWithPromotion = plans.where((p) => p.promotion != null);
+              final promotionReason = plansWithPromotion.isEmpty ? null : plansWithPromotion.first.promotion!.reason;
 
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
                   _StatusBanner(theme: theme, t: t),
+                  if (promotionReason != null) ...[
+                    const SizedBox(height: 10),
+                    _PromotionReasonBanner(theme: theme, reason: promotionReason),
+                  ],
                   const SizedBox(height: 20),
                   if (soloPlans.isNotEmpty) ...[
                     _ScopeHeader(title: t('subscription_scope_solo'), theme: theme),
@@ -327,6 +337,40 @@ class _ScopeHeader extends StatelessWidget {
           Text(subtitle!, style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted)),
         ],
       ],
+    );
+  }
+}
+
+/// Voir demande utilisateur : "la je ne sai pa pourquoi je gagne 14jour" —
+/// explique l'éligibilité au bonus visible sur les tuiles, sans jamais
+/// montrer le nom interne de la promotion (voir PlanPromotion.reason,
+/// calculé côté serveur à partir de sa portée).
+class _PromotionReasonBanner extends StatelessWidget {
+  final ThemePalette theme;
+  final String reason;
+
+  const _PromotionReasonBanner({required this.theme, required this.reason});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.secondary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.redeem_rounded, color: theme.secondary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              reason,
+              style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w600, color: theme.textOnBackground),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

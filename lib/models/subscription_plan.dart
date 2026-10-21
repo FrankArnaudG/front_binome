@@ -60,8 +60,17 @@ class PlanPromotion {
   final String name;
   final String advantageType; // extra_days | percent_discount
   final double advantageValue;
+  // Voir demande utilisateur : "la je ne sai pa pourquoi je gagne 14jour"
+  // — explique l'éligibilité sans jamais montrer [name] (usage interne
+  // admin uniquement, voir PromotionService::explanationFor côté back).
+  final String reason;
 
-  const PlanPromotion({required this.name, required this.advantageType, required this.advantageValue});
+  const PlanPromotion({
+    required this.name,
+    required this.advantageType,
+    required this.advantageValue,
+    required this.reason,
+  });
 
   bool get isExtraDays => advantageType == 'extra_days';
 
@@ -69,5 +78,6 @@ class PlanPromotion {
         name: json['name'] as String,
         advantageType: json['advantage_type'] as String,
         advantageValue: double.parse(json['advantage_value'].toString()),
+        reason: json['reason'] as String,
       );
 }
