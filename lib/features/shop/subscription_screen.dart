@@ -40,7 +40,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void initState() {
     super.initState();
     _loadInitial();
-    PreferredCurrencyNotifier.instance.addListener(_onCurrencyChanged);
+    PreferredCurrencyNotifier.instance.addListener(_onRefreshTriggered);
+    // Voir demande utilisateur : "des que jai pri labonnement je sui revenu
+    // ici san actualiser les ofre ne ce sont pa mi a jour automatiquement" —
+    // PaymentReturnWatcher.onResumed() rafraîchit déjà ce notifier après un
+    // paiement confirmé (bannière "Abonné·e jusqu'au..." à jour toute
+    // seule), mais jamais la liste des plans (donc les promos par plan,
+    // ex. "premier abonnement" qui ne doit plus s'afficher une fois
+    // réellement abonné) — on réécoute ici pour relancer _refresh() au
+    // même instant.
+    SubscriptionStatusNotifier.instance.addListener(_onRefreshTriggered);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _ensureCurrencySelected(),
     );
@@ -48,7 +57,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   @override
   void dispose() {
-    PreferredCurrencyNotifier.instance.removeListener(_onCurrencyChanged);
+    PreferredCurrencyNotifier.instance.removeListener(_onRefreshTriggered);
+    SubscriptionStatusNotifier.instance.removeListener(_onRefreshTriggered);
     super.dispose();
   }
 
@@ -77,7 +87,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
-  void _onCurrencyChanged() {
+  void _onRefreshTriggered() {
     if (!mounted) return;
     _refresh();
   }
