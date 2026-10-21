@@ -309,7 +309,9 @@ String? _promotionLabel(PlanPromotion? promotion) {
     final days = promotion.advantageValue == promotion.advantageValue.roundToDouble()
         ? promotion.advantageValue.toInt().toString()
         : promotion.advantageValue.toString();
-    return '🎁 $days jour(s) offert(s)';
+    // Voir demande utilisateur : "généreux" entre "jour(s)" et "offert(s)",
+    // uniquement pour les promos de renouvellement.
+    return promotion.isRenewalOnly ? '🎁 $days jour(s) généreux offert(s)' : '🎁 $days jour(s) offert(s)';
   }
   final percent = promotion.advantageValue == promotion.advantageValue.roundToDouble()
       ? promotion.advantageValue.toInt().toString()

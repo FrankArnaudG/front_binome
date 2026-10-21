@@ -64,20 +64,26 @@ class PlanPromotion {
   // — explique l'éligibilité sans jamais montrer [name] (usage interne
   // admin uniquement, voir PromotionService::explanationFor côté back).
   final String reason;
+  // any | first | renewal — voir demande utilisateur : "généreux" entre
+  // "jour(s)" et "offert(s)" sur le badge, uniquement pour 'renewal'.
+  final String stageScope;
 
   const PlanPromotion({
     required this.name,
     required this.advantageType,
     required this.advantageValue,
     required this.reason,
+    required this.stageScope,
   });
 
   bool get isExtraDays => advantageType == 'extra_days';
+  bool get isRenewalOnly => stageScope == 'renewal';
 
   factory PlanPromotion.fromJson(Map<String, dynamic> json) => PlanPromotion(
         name: json['name'] as String,
         advantageType: json['advantage_type'] as String,
         advantageValue: double.parse(json['advantage_value'].toString()),
         reason: json['reason'] as String,
+        stageScope: json['stage_scope'] as String,
       );
 }
