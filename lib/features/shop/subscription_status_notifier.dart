@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../core/local_cache.dart';
+import '../../core/realtime_client.dart';
 import '../../models/subscription.dart';
 import 'subscription_service.dart';
 
@@ -24,6 +27,8 @@ class SubscriptionStatusNotifier extends ChangeNotifier {
 
   static const _cacheKey = 'cache_subscription_expires_at';
 
+  String? _myUserId;
+
   Subscription? _subscription;
   Subscription? get subscription => _subscription;
 
@@ -46,6 +51,23 @@ class SubscriptionStatusNotifier extends ChangeNotifier {
     // façon avant de s'afficher).
     _subscription = Subscription(id: '', startedAt: expiresAt, expiresAt: expiresAt);
     notifyListeners();
+  }
+
+  /// Voir demande utilisateur : "es ce connecter au reverbe pour le temp
+  /// reel?" — à appeler une fois l'utilisateur connu (voir AppRouter.
+  /// routeAfterAuth, même principe que GameInviteNotifier.init), pour une
+  /// mise à jour instantanée (paiement confirmé OU ajustement admin,
+  /// voir SubscriptionUpdated côté back) sans attendre la réouverture de
+  /// l'écran Abonnement.
+  void init(String myUserId) {
+    if (_myUserId == myUserId) return;
+    _myUserId = myUserId;
+    RealtimeClient.instance.subscribePrivate('App.Models.User.$myUserId', onEvent: _onEvent);
+  }
+
+  void _onEvent(RealtimeEvent event) {
+    if (event.event != 'SubscriptionUpdated') return;
+    unawaited(refresh());
   }
 
   Future<void> refresh() async {

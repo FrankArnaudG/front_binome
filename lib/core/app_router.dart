@@ -11,6 +11,7 @@ import '../features/home/main_tab_screen.dart';
 import '../features/home/tab_navigation_controller.dart';
 import '../models/app_user.dart';
 import '../models/box.dart';
+import '../features/shop/subscription_status_notifier.dart';
 import '../widgets/notification_opt_in_prompt.dart';
 import 'delivery_ack_service.dart';
 import 'doodle_notifier.dart';
@@ -62,6 +63,10 @@ class AppRouter {
     // pouvoir apparaître "peu importe où" dans l'app, pas seulement depuis
     // un écran de jeu particulier.
     GameInviteNotifier.instance.init(user.id);
+    // Voir demande utilisateur : "es ce connecter au reverbe pour le temp
+    // reel?" — abonnement mis à jour instantanément (paiement confirmé OU
+    // ajustement admin), sans attendre la réouverture de l'écran.
+    SubscriptionStatusNotifier.instance.init(user.id);
     // Doodle envoyé au binôme (voir demande utilisateur) — même besoin
     // d'écoute app-wide dès la connexion, voir DoodleOverlay (monté dans
     // AppShell) qui pousse l'écran plein écran dès qu'un doodle arrive.
