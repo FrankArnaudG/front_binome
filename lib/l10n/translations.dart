@@ -33,7 +33,6 @@ const Map<String, Map<String, String>> kTranslations = {
     'action_shop': 'Boutique',
     'action_games': 'Jeux',
     'action_vault': 'Jardin secret',
-    'action_event_pages': 'Page événement',
     'action_sounds': 'Sons',
     'action_doodle': 'Mots & dessins',
     'action_distance': 'Notre distance',

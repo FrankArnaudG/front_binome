@@ -19,7 +19,6 @@ import '../../box/distance_screen.dart';
 import '../../content/content_service.dart';
 import '../../content/widgets/heartbeat_compose_sheet.dart';
 import '../../doodle/doodle_history_screen.dart';
-import '../../event_pages/event_pages_list_screen.dart';
 import '../../content/gifts_screen.dart';
 import '../../games/games_menu_screen.dart';
 import '../../shop/monetization_hub_screen.dart';
@@ -348,13 +347,6 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
         (t) => t.textOnBackgroundMuted,
         (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const PhotoVaultScreen())),
         'vault',
-      ),
-      DarkActionItem(
-        tr('action_event_pages'),
-        Icons.favorite_rounded,
-        (t) => t.primary,
-        (ctx) => Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => const EventPagesListScreen())),
-        'event_pages',
       ),
       DarkActionItem(
         tr('action_sounds'),
