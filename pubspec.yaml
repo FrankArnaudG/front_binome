@@ -149,6 +149,19 @@ flutter:
     - assets/categories_poeme_slide/
     - assets/heartbeat_categories/
     - assets/google_fonts/
+    - assets/invitations/heritage_royal/
+    - assets/invitations/icons/traditionnel/
+    - assets/invitations/icons/musulman/
+    - assets/invitations/icons/chretien/
+    - assets/invitations/icons/civil/
+    - assets/invitations/icons/reception/
+    - assets/invitations/icons/photographie/
+    - assets/invitations/icons/romantique/
+    - assets/invitations/icons/logistique/
+    - assets/invitations/icons/preparatifs/
+    - assets/invitations/icons/famille/
+    - assets/invitations/icons/animations/
+    - assets/invitations/icons/universelles/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

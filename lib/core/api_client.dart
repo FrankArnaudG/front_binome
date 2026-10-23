@@ -35,17 +35,55 @@ class ApiClient {
   /// Upload multipart (ex. photo du Jardin secret) — les autres méthodes ne
   /// gèrent que du JSON, un envoi de fichier a besoin de son propre chemin
   /// (`multipart/form-data`, pas de `jsonEncode` possible sur un [File]).
-  Future<dynamic> postMultipart(String path, {required String fieldName, required File file}) async {
+  /// [fields] : champs texte additionnels envoyés avec le fichier (ex.
+  /// `block_key`/`caption` pour une photo d'invitation, voir
+  /// InvitationMediaController) — absent pour les appelants existants
+  /// (Jardin secret, etc.) qui n'en ont jamais eu besoin.
+  Future<dynamic> postMultipart(
+    String path, {
+    required String fieldName,
+    required File file,
+    Map<String, String>? fields,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
     final token = await TokenStorage.instance.readToken();
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
 
     final request = http.MultipartRequest('POST', uri)
       ..headers['Accept'] = 'application/json'
       ..files.add(await http.MultipartFile.fromPath(fieldName, file.path));
+    if (fields != null) request.fields.addAll(fields);
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
 
     try {
-      final streamed = await request.send().timeout(const Duration(seconds: 30));
+      final http.StreamedResponse streamed;
+      if (onSendProgress == null) {
+        streamed = await request.send().timeout(const Duration(seconds: 30));
+      } else {
+        // http.MultipartRequest n'expose pas de progression native — on
+        // finalise nous-mêmes le corps (fixe aussi `content-type` avec le
+        // boundary) et on compte les octets au fil de l'eau avant de les
+        // relayer dans un StreamedRequest, pour un vrai pourcentage d'envoi
+        // (voir demande utilisateur : "un loadeur ou progresse de
+        // chargement qui mache en pourcentage").
+        final body = request.finalize();
+        final total = request.contentLength;
+        final relay = http.StreamedRequest('POST', uri)
+          ..headers.addAll(request.headers)
+          ..contentLength = total;
+        var sent = 0;
+        body.listen(
+          (chunk) {
+            sent += chunk.length;
+            onSendProgress(sent, total);
+            relay.sink.add(chunk);
+          },
+          onDone: () => relay.sink.close(),
+          onError: relay.sink.addError,
+          cancelOnError: true,
+        );
+        streamed = await http.Client().send(relay).timeout(const Duration(seconds: 30));
+      }
       final response = await http.Response.fromStream(streamed);
       return _decode(response);
     } on ApiException {
@@ -166,30 +204,13 @@ class ApiClient {
   /// reste bloqué sur un loader indéfiniment, sans le moindre message
   /// (voir demande utilisateur : "ça tourne (le loader) depuis sans rien
   /// d'autre" après un souci réseau côté serveur local).
+  // Un seul message, partout dans l'app, quelle que soit la cause technique
+  // exacte (timeout, DNS, connexion refusée...) — voir demande utilisateur :
+  // "au lieu de parler du serveur... pareil partout dans l'app". Remplace
+  // l'ancienne distinction DNS/timeout/refus (elle-même issue d'une demande
+  // antérieure), désormais explicitement annulée par l'utilisateur.
   ApiException _networkErrorToApiException(Object error) {
-    if (error is TimeoutException) {
-      return ApiException('Le serveur met trop de temps à répondre. Réessaie dans un instant.', 0);
-    }
-    if (error is SocketException) {
-      // Voir demande utilisateur : "précise le problème de connexion
-      // internet si c'est bien ça" — une résolution DNS impossible (ex.
-      // "Failed host lookup", constaté en réel) signifie que l'appareil
-      // n'a AUCUN accès réseau, Wi-Fi/données activées ou non, à
-      // distinguer d'un serveur simplement injoignable (connexion
-      // refusée) alors que l'appareil, lui, est bien en ligne.
-      final detail = error.osError?.message.toLowerCase() ?? error.message.toLowerCase();
-      final isDnsFailure = detail.contains('failed host lookup') ||
-          detail.contains('no address associated') ||
-          detail.contains('network is unreachable');
-      if (isDnsFailure) {
-        return ApiException('Pas de connexion internet. Vérifie ton Wi-Fi ou tes données mobiles.', 0);
-      }
-      return ApiException('Impossible de joindre le serveur. Vérifie ta connexion.', 0);
-    }
-    if (error is http.ClientException) {
-      return ApiException('Impossible de joindre le serveur. Vérifie ta connexion.', 0);
-    }
-    return ApiException('Une erreur réseau est survenue.', 0);
+    return ApiException('Pas de connexion internet. Vérifie ton Wi-Fi ou tes données mobiles.', 0);
   }
 
   dynamic _decode(http.Response response) {

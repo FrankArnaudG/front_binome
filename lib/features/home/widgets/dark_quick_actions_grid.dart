@@ -24,6 +24,7 @@ import '../../games/games_menu_screen.dart';
 import '../../shop/monetization_hub_screen.dart';
 import '../../shop/subscription_status_notifier.dart';
 import '../../shop/wallet_balance_notifier.dart';
+import '../../invitations/invitation_catalogue_screen.dart';
 import '../../roman_photo/roman_photo_library_screen.dart';
 import '../../sounds/shared_sounds_screen.dart';
 import '../../vault/photo_vault_screen.dart';
@@ -363,6 +364,18 @@ class _DarkQuickActionsGridState extends State<DarkQuickActionsGrid> {
           MaterialPageRoute(builder: (_) => const RomanPhotoLibraryScreen()),
         ),
         'roman_photo',
+      ),
+      // "Invitations numériques" (voir cahier des charges) — consigne
+      // explicite : l'entrée se trouve dans Duo/Action rapide, jamais dans
+      // un autre onglet.
+      DarkActionItem(
+        'Invitations',
+        Icons.mail_rounded,
+        (t) => t.primaryDeep,
+        (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute(builder: (_) => const InvitationCatalogueScreen()),
+        ),
+        'invitations',
       ),
       // Doodle envoyé au binôme (voir demande utilisateur) — s'affiche en
       // plein écran chez l'autre (voir DoodleViewScreen/DoodleOverlay).
