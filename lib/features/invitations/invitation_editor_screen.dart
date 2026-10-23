@@ -11,6 +11,7 @@ import '../../core/api_client.dart';
 import '../../theme/theme_scope.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/primary_button.dart';
+import '../shop/payment_confirm_sheet.dart';
 import 'invitation_catalogue_screen.dart' show openExternalLink;
 import 'invitation_service.dart';
 import 'models/invitation_models.dart';
@@ -29,11 +30,18 @@ class InvitationEditorScreen extends StatefulWidget {
   State<InvitationEditorScreen> createState() => _InvitationEditorScreenState();
 }
 
-class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
+class _InvitationEditorScreenState extends State<InvitationEditorScreen> with WidgetsBindingObserver {
   bool _loading = true;
   bool _saving = false;
   Object? _error;
   Invitation? _invitation;
+  // Voir demande utilisateur : le paiement YengaPay se termine dans le
+  // navigateur externe (même principe que PaymentReturnWatcher côté
+  // Boutique/Abonnement, mais propre à CETTE invitation) — posé juste
+  // avant d'ouvrir le navigateur, lu au retour au premier plan pour
+  // vérifier si le webhook a déjà confirmé la publication.
+  DateTime? _publishPaymentArmedAt;
+  bool _checkingPublishPayment = false;
 
   final _partnerOneCtrl = TextEditingController();
   final _partnerTwoCtrl = TextEditingController();
@@ -75,11 +83,18 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkPublishPaymentOnResume();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _partnerOneCtrl.dispose();
     _partnerTwoCtrl.dispose();
     _cityCtrl.dispose();
@@ -240,9 +255,32 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     }
   }
 
+  /// Voir demande utilisateur : la PREMIÈRE publication exige le paiement
+  /// unique (6800 FCFA) — une fois payée (`publishedFeePaidAt` non nul,
+  /// voir Invitation), republier après modification reste gratuit et
+  /// instantané comme avant. "Mettre à jour" (invitation déjà publiée)
+  /// passe toujours par cette seconde voie.
   Future<void> _publish() async {
     await _save();
     if (!mounted) return;
+    final invitation = _invitation;
+    if (invitation != null && invitation.publishedFeePaidAt != null) {
+      await _publishFree();
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => PaymentConfirmSheet(
+        title: 'Publier l\'invitation',
+        subtitle: 'Paiement unique pour activer le lien public — modifications et republications ensuite gratuites.',
+        xofAmountLabel: '6 800 FCFA',
+        onConfirm: _startPublishPayment,
+      ),
+    );
+  }
+
+  Future<void> _publishFree() async {
     try {
       final (invitation, publicUrl) = await InvitationService.instance.publish(widget.invitationId);
       if (!mounted) return;
@@ -251,6 +289,72 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _startPublishPayment() async {
+    try {
+      final data = await InvitationService.instance.createPublishOrder(widget.invitationId);
+      if (!mounted) return;
+      // Déjà payée entre-temps (ex. double appel) : republiée directement,
+      // aucune page de paiement à ouvrir.
+      if (data['requires_payment'] == false) {
+        final invitation = Invitation.fromJson((data['invitation'] as Map).cast<String, dynamic>());
+        setState(() => _invitation = invitation);
+        await _showPublishedSheet(data['public_url'] as String);
+        return;
+      }
+      final paymentUrl = data['payment_url'] as String?;
+      if (paymentUrl == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Paiement indisponible pour le moment, réessaie plus tard.')),
+        );
+        return;
+      }
+      _publishPaymentArmedAt = DateTime.now();
+      await openExternalLink(paymentUrl);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  /// Le paiement se termine hors de l'app (voir
+  /// core/payment_return_watcher.dart, même principe) — on relit
+  /// l'invitation à quelques secondes d'intervalle au retour au premier
+  /// plan, et on affiche la feuille "publiée" dès que le webhook YengaPay
+  /// a confirmé (jamais avant preuve réelle).
+  Future<void> _checkPublishPaymentOnResume() async {
+    final armedAt = _publishPaymentArmedAt;
+    if (armedAt == null || _checkingPublishPayment) return;
+    if (DateTime.now().difference(armedAt) > const Duration(minutes: 30)) {
+      _publishPaymentArmedAt = null;
+      return;
+    }
+
+    _checkingPublishPayment = true;
+    try {
+      for (final delay in const [Duration.zero, Duration(seconds: 3), Duration(seconds: 8), Duration(seconds: 15)]) {
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
+        if (!mounted) return;
+        final invitation = await InvitationService.instance.fetchInvitation(widget.invitationId);
+        if (invitation.publishedFeePaidAt != null) {
+          _publishPaymentArmedAt = null;
+          if (!mounted) return;
+          setState(() => _invitation = invitation);
+          if (invitation.slug != null) {
+            await _showPublishedSheet(InvitationService.instance.publicUrlFor(invitation.slug!));
+          }
+          return;
+        }
+      }
+      // Rien de nouveau après ~26 s : le webhook peut encore arriver, un
+      // prochain _load() le reprendra normalement.
+    } catch (_) {
+      // Best effort — une erreur réseau ici ne doit rien casser, le
+      // paiement reste "armé" pour un prochain retour au premier plan.
+    } finally {
+      _checkingPublishPayment = false;
     }
   }
 
@@ -460,7 +564,9 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: PrimaryButton(
-                    label: invitation.isPublished ? 'Mettre à jour' : 'Publier',
+                    label: invitation.isPublished
+                        ? 'Mettre à jour'
+                        : (invitation.publishedFeePaidAt != null ? 'Publier' : 'Publier (6 800 FCFA)'),
                     loading: _saving,
                     onPressed: invitation.isPublished ? _save : _publish,
                   ),

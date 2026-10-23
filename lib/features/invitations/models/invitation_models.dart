@@ -175,6 +175,10 @@ class Invitation {
   final List<String> visibleBlocks;
   final List<InvitationCeremony> ceremonies;
   final List<InvitationMedia> media;
+  // Voir demande utilisateur : paiement unique (6800 FCFA) requis pour la
+  // PREMIÈRE publication — non-null dès qu'il est confirmé, jamais remis à
+  // zéro ensuite (modifications/republications ensuite gratuites).
+  final String? publishedFeePaidAt;
 
   const Invitation({
     required this.id,
@@ -182,6 +186,7 @@ class Invitation {
     required this.status,
     this.template,
     required this.theme,
+    this.publishedFeePaidAt,
     required this.coverSettings,
     this.partnerOneName,
     this.partnerTwoName,
@@ -226,5 +231,6 @@ class Invitation {
                 .toList() ??
             const [],
         media: (json['media'] as List?)?.map((e) => InvitationMedia.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
+        publishedFeePaidAt: json['published_fee_paid_at'] as String?,
       );
 }

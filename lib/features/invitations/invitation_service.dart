@@ -128,6 +128,15 @@ class InvitationService {
     return (Invitation.fromJson((data['invitation'] as Map).cast<String, dynamic>()), data['public_url'] as String);
   }
 
+  /// Voir demande utilisateur : paiement unique (6800 FCFA) requis pour la
+  /// PREMIÈRE publication — `requires_payment: false` si déjà payée
+  /// (republication gratuite, invitation/public_url déjà prêts), sinon
+  /// `true` avec `payment_url` (checkout YengaPay) à ouvrir dans le
+  /// navigateur externe (voir InvitationPublishOrderController::store).
+  Future<Map<String, dynamic>> createPublishOrder(String invitationId) async {
+    return await ApiClient.instance.post('/invitations/$invitationId/publish-order') as Map<String, dynamic>;
+  }
+
   /// Reconstruit l'URL publique d'une invitation DÉJÀ publiée (slug connu),
   /// même hôte que l'API (voir ApiConfig.baseUrl) sans son suffixe `/api` —
   /// évite un aller-retour réseau juste pour réafficher un lien déjà généré.
