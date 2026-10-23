@@ -142,12 +142,19 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     _dressPriceCtrl.text = invitation.dressCode['price'] as String? ?? '';
     final contactsRaw = invitation.dressCode['contacts'];
     _dressContacts = contactsRaw is List
-        ? contactsRaw.whereType<Map>().map((c) => {
-              // Compatibilité avec l'ancien format `type` (une seule
-              // valeur) — voir _DressContactsEditorState.initState.
-              if (c['types'] is List) 'types': c['types'] else 'type': (c['type'] as String?) ?? 'appel',
-              'number': (c['number'] as String?) ?? '',
-            }).toList()
+        ? contactsRaw.whereType<Map>().map((c) {
+            // Toujours normaliser vers `types` ici, même si l'utilisateur
+            // ne touche jamais l'onglet "Tenue" avant d'enregistrer —
+            // sinon un contact encore au format `type` (ancienne forme,
+            // avant ce champ) repart tel quel et le serveur le rejette
+            // (voir demande utilisateur : erreur de prévisualisation
+            // "types field is required").
+            final rawTypes = c['types'];
+            final types = rawTypes is List && rawTypes.isNotEmpty
+                ? rawTypes.whereType<String>().toList()
+                : [(c['type'] as String?) ?? 'appel'];
+            return {'types': types, 'number': (c['number'] as String?) ?? ''};
+          }).toList()
         : [];
 
     final deadlineRaw = invitation.rsvpSettings['deadline'] as String?;
