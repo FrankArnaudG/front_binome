@@ -1109,6 +1109,7 @@ class _PendingUpload {
 
 class _GalleryGridState extends State<_GalleryGrid> {
   final List<_PendingUpload> _pending = [];
+  final Set<String> _deletingIds = {};
 
   Future<void> _add() async {
     final max = widget.maxItems;
@@ -1161,12 +1162,36 @@ class _GalleryGridState extends State<_GalleryGrid> {
     setState(() => _pending.remove(pending));
   }
 
+  // Voir demande utilisateur : "ajoujte un petit option pour confirmer si
+  // je veu suprimer ou pa" — confirmation avant toute suppression, puis
+  // vignette assombrie + spinner le temps de l'appel (même traitement que
+  // pour l'ajout), croix désactivée pendant ce délai pour éviter un
+  // double-tap (voir le bug "No query results" déjà corrigé côté serveur).
+  Future<void> _confirmAndRemove(InvitationMedia media) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer cette photo ?'),
+        content: const Text('Cette action est définitive.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Supprimer')),
+        ],
+      ),
+    );
+    if (confirm == true) await _remove(media);
+  }
+
   Future<void> _remove(InvitationMedia media) async {
+    if (_deletingIds.contains(media.id)) return;
+    setState(() => _deletingIds.add(media.id));
     try {
       await InvitationService.instance.deleteMedia(widget.invitationId, media.id);
       widget.onChanged();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _deletingIds.remove(media.id));
     }
   }
 
@@ -1263,17 +1288,27 @@ class _GalleryGridState extends State<_GalleryGrid> {
           );
         }
         final item = widget.items[index];
+        final deleting = _deletingIds.contains(item.id);
         return Stack(
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: AspectRatio(aspectRatio: 1, child: CachedNetworkImage(imageUrl: item.url, fit: BoxFit.cover)),
             ),
+            if (deleting)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(12)),
+                  child: const Center(
+                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
+                  ),
+                ),
+              ),
             Positioned(
               top: 2,
               right: 2,
               child: InkWell(
-                onTap: () => _remove(item),
+                onTap: deleting ? null : () => _confirmAndRemove(item),
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
