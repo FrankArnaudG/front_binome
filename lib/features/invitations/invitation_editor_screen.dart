@@ -1080,6 +1080,14 @@ const Map<String, Map<String, String>> _bundledCoverPresets = {
   'heritage_royal': {
     'frame': 'assets/invitations/heritage_royal/frame.webp',
     'frame_alt': 'assets/invitations/heritage_royal/frame_alt.webp',
+    // 5 couvertures supplémentaires (voir demande utilisateur) — même
+    // thème/anneau doré/fond de sections qu'Héritage Royal, seule l'image
+    // de couverture change.
+    'royale_africaine': 'assets/invitations/heritage_royal/royale_africaine.webp',
+    'elegance_moderne': 'assets/invitations/heritage_royal/elegance_moderne.webp',
+    'wax_couleurs': 'assets/invitations/heritage_royal/wax_couleurs.webp',
+    'sahel_traditions': 'assets/invitations/heritage_royal/sahel_traditions.webp',
+    'romance_africaine': 'assets/invitations/heritage_royal/romance_africaine.webp',
   },
 };
 
