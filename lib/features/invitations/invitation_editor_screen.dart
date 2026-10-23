@@ -54,6 +54,10 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
   final _dressDescriptionCtrl = TextEditingController();
   final _dressColorsCtrl = TextEditingController();
   final _dressInstructionsCtrl = TextEditingController();
+  // Prix indicatif du pagne (texte libre, ex. "6000f sans broderie et
+  // 7500f avec broderie") — voir demande utilisateur, jamais un paiement
+  // géré par l'app.
+  final _dressPriceCtrl = TextEditingController();
   // Voir demande utilisateur : jusqu'à 3 contacts (appel ou WhatsApp),
   // entièrement optionnel — liste simple, pas de TextEditingController ici
   // (gérés localement par _DressContactsEditor).
@@ -85,6 +89,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     _dressDescriptionCtrl.dispose();
     _dressColorsCtrl.dispose();
     _dressInstructionsCtrl.dispose();
+    _dressPriceCtrl.dispose();
     _rsvpMaxCompanionsCtrl.dispose();
     super.dispose();
   }
@@ -134,6 +139,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     final colorsRaw = invitation.dressCode['colors'];
     _dressColorsCtrl.text = colorsRaw is List ? colorsRaw.join(', ') : '';
     _dressInstructionsCtrl.text = invitation.dressCode['instructions'] as String? ?? '';
+    _dressPriceCtrl.text = invitation.dressCode['price'] as String? ?? '';
     final contactsRaw = invitation.dressCode['contacts'];
     _dressContacts = contactsRaw is List
         ? contactsRaw.whereType<Map>().map((c) => {
@@ -182,6 +188,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
           'description': _dressDescriptionCtrl.text.trim(),
           'colors': colors,
           'instructions': _dressInstructionsCtrl.text.trim(),
+          'price': _dressPriceCtrl.text.trim(),
           'contacts': contacts,
         },
         'rsvp_settings': {
@@ -408,6 +415,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
               descriptionCtrl: _dressDescriptionCtrl,
               colorsCtrl: _dressColorsCtrl,
               instructionsCtrl: _dressInstructionsCtrl,
+              priceCtrl: _dressPriceCtrl,
               contacts: _dressContacts,
               onContactsChanged: (updated) => _dressContacts = updated,
               onMediaChanged: _load,
@@ -833,6 +841,7 @@ class _DressCodeTab extends StatelessWidget {
   final TextEditingController descriptionCtrl;
   final TextEditingController colorsCtrl;
   final TextEditingController instructionsCtrl;
+  final TextEditingController priceCtrl;
   final List<Map<String, dynamic>> contacts;
   final ValueChanged<List<Map<String, dynamic>>> onContactsChanged;
   final VoidCallback onMediaChanged;
@@ -844,6 +853,7 @@ class _DressCodeTab extends StatelessWidget {
     required this.descriptionCtrl,
     required this.colorsCtrl,
     required this.instructionsCtrl,
+    required this.priceCtrl,
     required this.contacts,
     required this.onContactsChanged,
     required this.onMediaChanged,
@@ -859,6 +869,7 @@ class _DressCodeTab extends StatelessWidget {
         _SectionField(label: 'Description', controller: descriptionCtrl, theme: theme, maxLines: 3),
         _SectionField(label: 'Couleurs (3 maximum, codes hex séparés par une virgule, ex. #681D32, #C5A05A)', controller: colorsCtrl, theme: theme),
         _SectionField(label: 'Instructions', controller: instructionsCtrl, theme: theme, maxLines: 2),
+        _SectionField(label: 'Prix du pagne (optionnel, ex. "6000f sans broderie, 7500f avec")', controller: priceCtrl, theme: theme),
         const SizedBox(height: 16),
         Text('Photos (3 maximum, compressées automatiquement)', style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted)),
         const SizedBox(height: 6),
