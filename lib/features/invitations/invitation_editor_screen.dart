@@ -57,7 +57,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
   // Voir demande utilisateur : jusqu'à 3 contacts (appel ou WhatsApp),
   // entièrement optionnel — liste simple, pas de TextEditingController ici
   // (gérés localement par _DressContactsEditor).
-  List<Map<String, String>> _dressContacts = [];
+  List<Map<String, dynamic>> _dressContacts = [];
 
   DateTime? _rsvpDeadline;
   final _rsvpMaxCompanionsCtrl = TextEditingController(text: '2');
@@ -137,7 +137,9 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     final contactsRaw = invitation.dressCode['contacts'];
     _dressContacts = contactsRaw is List
         ? contactsRaw.whereType<Map>().map((c) => {
-              'type': (c['type'] as String?) ?? 'appel',
+              // Compatibilité avec l'ancien format `type` (une seule
+              // valeur) — voir _DressContactsEditorState.initState.
+              if (c['types'] is List) 'types': c['types'] else 'type': (c['type'] as String?) ?? 'appel',
               'number': (c['number'] as String?) ?? '',
             }).toList()
         : [];
@@ -831,8 +833,8 @@ class _DressCodeTab extends StatelessWidget {
   final TextEditingController descriptionCtrl;
   final TextEditingController colorsCtrl;
   final TextEditingController instructionsCtrl;
-  final List<Map<String, String>> contacts;
-  final ValueChanged<List<Map<String, String>>> onContactsChanged;
+  final List<Map<String, dynamic>> contacts;
+  final ValueChanged<List<Map<String, dynamic>>> onContactsChanged;
   final VoidCallback onMediaChanged;
 
   const _DressCodeTab({
@@ -1332,8 +1334,8 @@ class _GalleryGridState extends State<_GalleryGrid> {
 /// modification, jamais reconstruite depuis `widget.contacts` après coup.
 class _DressContactsEditor extends StatefulWidget {
   final dynamic theme;
-  final List<Map<String, String>> contacts;
-  final ValueChanged<List<Map<String, String>>> onChanged;
+  final List<Map<String, dynamic>> contacts;
+  final ValueChanged<List<Map<String, dynamic>>> onChanged;
 
   const _DressContactsEditor({required this.theme, required this.contacts, required this.onChanged});
 
@@ -1342,9 +1344,12 @@ class _DressContactsEditor extends StatefulWidget {
 }
 
 class _ContactRow {
-  String type;
+  // Voir demande utilisateur : "pour un meme numero on peu activer appel
+  // ou whatapp" — un même numéro peut être les deux à la fois, donc un
+  // ensemble plutôt qu'une seule valeur exclusive.
+  Set<String> types;
   final TextEditingController controller;
-  _ContactRow({required this.type, required this.controller});
+  _ContactRow({required this.types, required this.controller});
 }
 
 class _DressContactsEditorState extends State<_DressContactsEditor> {
@@ -1353,9 +1358,15 @@ class _DressContactsEditorState extends State<_DressContactsEditor> {
   @override
   void initState() {
     super.initState();
-    _rows = widget.contacts
-        .map((c) => _ContactRow(type: c['type'] ?? 'appel', controller: TextEditingController(text: c['number'] ?? '')))
-        .toList();
+    _rows = widget.contacts.map((c) {
+      // Compatibilité avec les contacts déjà enregistrés sous l'ancien
+      // format `type` (une seule valeur) avant ce changement.
+      final rawTypes = c['types'];
+      final types = rawTypes is List && rawTypes.isNotEmpty
+          ? rawTypes.whereType<String>().toSet()
+          : <String>{(c['type'] as String?) ?? 'appel'};
+      return _ContactRow(types: types, controller: TextEditingController(text: c['number'] ?? ''));
+    }).toList();
   }
 
   @override
@@ -1367,12 +1378,12 @@ class _DressContactsEditorState extends State<_DressContactsEditor> {
   }
 
   void _emit() {
-    widget.onChanged(_rows.map((r) => {'type': r.type, 'number': r.controller.text.trim()}).toList());
+    widget.onChanged(_rows.map((r) => {'types': r.types.toList(), 'number': r.controller.text.trim()}).toList());
   }
 
   void _add() {
     if (_rows.length >= 3) return;
-    setState(() => _rows.add(_ContactRow(type: 'appel', controller: TextEditingController())));
+    setState(() => _rows.add(_ContactRow(types: {'appel'}, controller: TextEditingController())));
     _emit();
   }
 
@@ -1384,9 +1395,12 @@ class _DressContactsEditorState extends State<_DressContactsEditor> {
     _emit();
   }
 
-  void _setType(int index, String type) {
-    if (_rows[index].type == type) return;
-    setState(() => _rows[index].type = type);
+  void _toggleType(int index, String type) {
+    final types = _rows[index].types;
+    // Toujours garder au moins un mode actif — désélectionner le dernier
+    // n'a pas de sens (le contact deviendrait injoignable).
+    if (types.contains(type) && types.length == 1) return;
+    setState(() => types.contains(type) ? types.remove(type) : types.add(type));
     _emit();
   }
 
@@ -1404,8 +1418,8 @@ class _DressContactsEditorState extends State<_DressContactsEditor> {
                 ToggleButtons(
                   borderRadius: BorderRadius.circular(8),
                   constraints: const BoxConstraints(minHeight: 40, minWidth: 40),
-                  isSelected: [_rows[i].type == 'appel', _rows[i].type == 'whatsapp'],
-                  onPressed: (idx) => _setType(i, idx == 0 ? 'appel' : 'whatsapp'),
+                  isSelected: [_rows[i].types.contains('appel'), _rows[i].types.contains('whatsapp')],
+                  onPressed: (idx) => _toggleType(i, idx == 0 ? 'appel' : 'whatsapp'),
                   children: const [
                     Icon(Icons.call_rounded, size: 18),
                     FaIcon(FontAwesomeIcons.whatsapp, size: 18, color: Color(0xFF25D366)),
