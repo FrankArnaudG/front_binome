@@ -63,6 +63,12 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
   // (gérés localement par _DressContactsEditor).
   List<Map<String, dynamic>> _dressContacts = [];
 
+  // Message de gratitude affiché avant le RSVP — choisi parmi 10
+  // propositions (voir _gratitudePresets), personnalisable ensuite comme
+  // un champ libre (voir demande utilisateur).
+  final _gratitudeTitleCtrl = TextEditingController();
+  final _gratitudeMessageCtrl = TextEditingController();
+
   DateTime? _rsvpDeadline;
   final _rsvpMaxCompanionsCtrl = TextEditingController(text: '2');
 
@@ -90,6 +96,8 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     _dressColorsCtrl.dispose();
     _dressInstructionsCtrl.dispose();
     _dressPriceCtrl.dispose();
+    _gratitudeTitleCtrl.dispose();
+    _gratitudeMessageCtrl.dispose();
     _rsvpMaxCompanionsCtrl.dispose();
     super.dispose();
   }
@@ -140,6 +148,8 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
     _dressColorsCtrl.text = colorsRaw is List ? colorsRaw.join(', ') : '';
     _dressInstructionsCtrl.text = invitation.dressCode['instructions'] as String? ?? '';
     _dressPriceCtrl.text = invitation.dressCode['price'] as String? ?? '';
+    _gratitudeTitleCtrl.text = invitation.gratitude['title'] as String? ?? '';
+    _gratitudeMessageCtrl.text = invitation.gratitude['message'] as String? ?? '';
     final contactsRaw = invitation.dressCode['contacts'];
     _dressContacts = contactsRaw is List
         ? contactsRaw.whereType<Map>().map((c) {
@@ -197,6 +207,10 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
           'instructions': _dressInstructionsCtrl.text.trim(),
           'price': _dressPriceCtrl.text.trim(),
           'contacts': contacts,
+        },
+        'gratitude': {
+          'title': _gratitudeTitleCtrl.text.trim(),
+          'message': _gratitudeMessageCtrl.text.trim(),
         },
         'rsvp_settings': {
           'deadline': _rsvpDeadline != null ? _isoDate(_rsvpDeadline!) : null,
@@ -392,6 +406,8 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
               rsvpDeadline: _rsvpDeadline,
               onPickRsvpDeadline: (d) => setState(() => _rsvpDeadline = d),
               rsvpMaxCompanionsCtrl: _rsvpMaxCompanionsCtrl,
+              gratitudeTitleCtrl: _gratitudeTitleCtrl,
+              gratitudeMessageCtrl: _gratitudeMessageCtrl,
               onMediaChanged: _load,
             ),
             _FamiliesTab(
@@ -501,6 +517,8 @@ class _InfosTab extends StatelessWidget {
   final DateTime? rsvpDeadline;
   final void Function(DateTime) onPickRsvpDeadline;
   final TextEditingController rsvpMaxCompanionsCtrl;
+  final TextEditingController gratitudeTitleCtrl;
+  final TextEditingController gratitudeMessageCtrl;
   final VoidCallback onMediaChanged;
 
   const _InfosTab({
@@ -515,6 +533,8 @@ class _InfosTab extends StatelessWidget {
     required this.rsvpDeadline,
     required this.onPickRsvpDeadline,
     required this.rsvpMaxCompanionsCtrl,
+    required this.gratitudeTitleCtrl,
+    required this.gratitudeMessageCtrl,
     required this.onMediaChanged,
   });
 
@@ -531,13 +551,106 @@ class _InfosTab extends StatelessWidget {
         const SizedBox(height: 14),
         _SectionField(label: 'Ville', controller: cityCtrl, theme: theme),
         _SectionField(label: "Texte d'introduction", controller: introCtrl, theme: theme, maxLines: 2),
+        const SizedBox(height: 16),
+        Text('Message de gratitude (avant le RSVP)', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 10),
+        _GratitudePresetPicker(theme: theme, titleCtrl: gratitudeTitleCtrl, messageCtrl: gratitudeMessageCtrl),
+        const SizedBox(height: 10),
+        _SectionField(label: 'Titre', controller: gratitudeTitleCtrl, theme: theme),
+        _SectionField(label: 'Message', controller: gratitudeMessageCtrl, theme: theme, maxLines: 3),
+        const SizedBox(height: 16),
         Text('Confirmation de présence (RSVP)', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 10),
         _DatePickerField(label: 'Date limite de réponse', value: rsvpDeadline, theme: theme, onChanged: onPickRsvpDeadline),
         const SizedBox(height: 14),
         _SectionField(label: "Nombre d'accompagnants maximum", controller: rsvpMaxCompanionsCtrl, theme: theme),
       ],
+    );
+  }
+}
+
+/// 10 propositions de message de gratitude (voir demande utilisateur,
+/// texte fourni tel quel) — choisir une entrée pré-remplit titre/message,
+/// qui restent ensuite librement modifiables ("possibilité de
+/// personnaliser") comme tout autre champ texte.
+const List<Map<String, String>> _gratitudePresets = [
+  {
+    'title': 'Avec toute notre gratitude',
+    'message': "Votre présence à nos côtés en ce jour si spécial est le plus beau des cadeaux. Merci d'illuminer cette journée avec nous.",
+  },
+  {
+    'title': 'Votre présence, notre bonheur',
+    'message': 'Notre bonheur sera encore plus grand si vous êtes à nos côtés pour célébrer notre amour. Merci de confirmer votre présence.',
+  },
+  {
+    'title': 'Un oui pour notre grand jour ?',
+    'message': "Nous avons dit oui à l'amour ! À votre tour de nous dire si vous serez présents pour partager cette merveilleuse journée avec nous.",
+  },
+  {
+    'title': "Ensemble pour célébrer l'amour",
+    'message': "Les plus beaux souvenirs se créent avec ceux que l'on aime. Nous serions ravis de vous compter parmi nous pour cette célébration.",
+  },
+  {
+    'title': 'Une place spéciale vous attend',
+    'message': 'Parce que vous occupez une place particulière dans nos cœurs, nous espérons vous avoir à nos côtés pour ce grand jour.',
+  },
+  {
+    'title': 'Votre présence compte énormément',
+    'message': "Famille, amis et êtres chers, vous faites partie de notre histoire. Venez écrire avec nous l'une de ses plus belles pages.",
+  },
+  {
+    'title': 'Partageons cette joie',
+    'message': "Une journée d'amour, de joie et de merveilleux souvenirs nous attend. Dites-nous si nous aurons le plaisir de la vivre avec vous.",
+  },
+  {
+    'title': 'Nous avons hâte de vous retrouver',
+    'message': 'Le grand jour approche et nous nous réjouissons déjà de partager ces instants précieux avec vous. Merci de confirmer votre venue.',
+  },
+  {
+    'title': 'Soyez témoins de notre amour',
+    'message': "Deux cœurs s'unissent pour la vie. Votre présence rendra cette promesse encore plus belle et cette journée inoubliable.",
+  },
+  {
+    'title': 'Célébrons notre union',
+    'message': 'C\'est avec joie et reconnaissance que nous vous invitons à partager notre bonheur. Nous vous prions de bien vouloir confirmer votre présence.',
+  },
+];
+
+class _GratitudePresetPicker extends StatefulWidget {
+  final dynamic theme;
+  final TextEditingController titleCtrl;
+  final TextEditingController messageCtrl;
+
+  const _GratitudePresetPicker({required this.theme, required this.titleCtrl, required this.messageCtrl});
+
+  @override
+  State<_GratitudePresetPicker> createState() => _GratitudePresetPickerState();
+}
+
+class _GratitudePresetPickerState extends State<_GratitudePresetPicker> {
+  @override
+  Widget build(BuildContext context) {
+    // La sélection courante n'est pas forcément un des 10 (déjà
+    // personnalisée, ou vide) — le dropdown reste alors sans valeur
+    // affichée plutôt que de forcer un choix arbitraire.
+    final currentIndex = _gratitudePresets.indexWhere(
+      (p) => p['title'] == widget.titleCtrl.text && p['message'] == widget.messageCtrl.text,
+    );
+    return _DropdownField<int>(
+      theme: widget.theme,
+      label: 'Choisir une proposition',
+      value: currentIndex >= 0 ? currentIndex : null,
+      items: [
+        for (var i = 0; i < _gratitudePresets.length; i++)
+          DropdownMenuItem(value: i, child: Text(_gratitudePresets[i]['title']!, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: (i) {
+        if (i == null) return;
+        setState(() {
+          widget.titleCtrl.text = _gratitudePresets[i]['title']!;
+          widget.messageCtrl.text = _gratitudePresets[i]['message']!;
+        });
+      },
     );
   }
 }

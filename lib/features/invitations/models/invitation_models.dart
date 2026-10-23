@@ -170,6 +170,7 @@ class Invitation {
   final Map<String, dynamic> story;
   final Map<String, dynamic> countdown;
   final Map<String, dynamic> dressCode;
+  final Map<String, dynamic> gratitude;
   final Map<String, dynamic> rsvpSettings;
   final List<String> visibleBlocks;
   final List<InvitationCeremony> ceremonies;
@@ -191,6 +192,7 @@ class Invitation {
     required this.story,
     required this.countdown,
     required this.dressCode,
+    required this.gratitude,
     required this.rsvpSettings,
     required this.visibleBlocks,
     required this.ceremonies,
@@ -216,6 +218,7 @@ class Invitation {
         story: (json['story'] as Map?)?.cast<String, dynamic>() ?? const {},
         countdown: (json['countdown'] as Map?)?.cast<String, dynamic>() ?? const {},
         dressCode: (json['dress_code'] as Map?)?.cast<String, dynamic>() ?? const {},
+        gratitude: (json['gratitude'] as Map?)?.cast<String, dynamic>() ?? const {},
         rsvpSettings: (json['rsvp_settings'] as Map?)?.cast<String, dynamic>() ?? const {},
         visibleBlocks: (json['visible_blocks'] as List?)?.cast<String>() ?? const [],
         ceremonies: (json['ceremonies'] as List?)
