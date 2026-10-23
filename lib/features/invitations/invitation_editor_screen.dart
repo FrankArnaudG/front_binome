@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1407,7 +1408,7 @@ class _DressContactsEditorState extends State<_DressContactsEditor> {
                   onPressed: (idx) => _setType(i, idx == 0 ? 'appel' : 'whatsapp'),
                   children: const [
                     Icon(Icons.call_rounded, size: 18),
-                    Icon(Icons.chat_rounded, size: 18),
+                    FaIcon(FontAwesomeIcons.whatsapp, size: 18, color: Color(0xFF25D366)),
                   ],
                 ),
                 const SizedBox(width: 10),
