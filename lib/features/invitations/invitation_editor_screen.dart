@@ -405,7 +405,6 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> {
               onPickDate: (d) => setState(() => _eventDate = d),
               rsvpDeadline: _rsvpDeadline,
               onPickRsvpDeadline: (d) => setState(() => _rsvpDeadline = d),
-              rsvpMaxCompanionsCtrl: _rsvpMaxCompanionsCtrl,
               gratitudeTitleCtrl: _gratitudeTitleCtrl,
               gratitudeMessageCtrl: _gratitudeMessageCtrl,
               onMediaChanged: _load,
@@ -516,7 +515,6 @@ class _InfosTab extends StatelessWidget {
   final void Function(DateTime) onPickDate;
   final DateTime? rsvpDeadline;
   final void Function(DateTime) onPickRsvpDeadline;
-  final TextEditingController rsvpMaxCompanionsCtrl;
   final TextEditingController gratitudeTitleCtrl;
   final TextEditingController gratitudeMessageCtrl;
   final VoidCallback onMediaChanged;
@@ -532,7 +530,6 @@ class _InfosTab extends StatelessWidget {
     required this.onPickDate,
     required this.rsvpDeadline,
     required this.onPickRsvpDeadline,
-    required this.rsvpMaxCompanionsCtrl,
     required this.gratitudeTitleCtrl,
     required this.gratitudeMessageCtrl,
     required this.onMediaChanged,
@@ -562,8 +559,6 @@ class _InfosTab extends StatelessWidget {
         Text('Confirmation de présence (RSVP)', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 10),
         _DatePickerField(label: 'Date limite de réponse', value: rsvpDeadline, theme: theme, onChanged: onPickRsvpDeadline),
-        const SizedBox(height: 14),
-        _SectionField(label: "Nombre d'accompagnants maximum", controller: rsvpMaxCompanionsCtrl, theme: theme),
       ],
     );
   }
