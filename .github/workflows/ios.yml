@@ -1,0 +1,51 @@
+name: iOS build & TestFlight
+
+# Déclenché à la main (bouton "Run workflow") ou sur un tag ios-v* — pas à
+# chaque push, les runners macOS consomment des minutes bien plus vite que
+# Linux (voir doc GitHub : macOS = 10x le coût en minutes).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ios-v*"
+
+jobs:
+  build-and-deploy:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install --repo-update
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Build (sans signature — fastlane/gym signe ensuite)
+        run: flutter build ios --release --no-codesign
+
+      - name: Fastlane — signer et publier sur TestFlight
+        working-directory: ios
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: bundle exec fastlane beta

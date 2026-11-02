@@ -1,0 +1,10 @@
+# fastlane match — gère les certificats/profils de provisionnement dans un
+# dépôt Git PRIVÉ séparé (jamais ce repo-ci), chiffré par MATCH_PASSWORD.
+# Voir https://docs.fastlane.tools/actions/match/ — à créer une fois
+# manuellement (voir instructions données par Claude), ensuite entièrement
+# automatique en CI.
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+type("appstore")
+app_identifier(["com.binome.app"])
+readonly(true)

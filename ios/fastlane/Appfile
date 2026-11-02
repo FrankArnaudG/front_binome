@@ -1,0 +1,5 @@
+app_identifier("com.binome.app")
+# Team ID Apple Developer (Membership → Team ID, format XXXXXXXXXX) — ne
+# jamais commiter la vraie valeur, lue depuis le secret GitHub TEAM_ID en
+# CI (voir .github/workflows/ios.yml).
+team_id(ENV["TEAM_ID"])
