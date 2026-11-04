@@ -25,6 +25,12 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
+      - name: Désactiver Swift Package Manager (on reste 100% CocoaPods)
+        # Le SDK Firebase récupéré via SPM contient du Swift incompatible
+        # avec le compilateur du runner (erreurs sur `sending`, etc.) —
+        # le Podfile gère déjà toutes les pods, SPM n'est pas nécessaire.
+        run: flutter config --no-enable-swift-package-manager
+
       - name: Install CocoaPods
         working-directory: ios
         run: pod install --repo-update
