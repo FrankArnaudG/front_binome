@@ -21,11 +21,10 @@ jobs:
     # iOS 26+ requis par certains plugins (ex. device_info_plus). macos-15
     # embarque Xcode 26.x.
     runs-on: macos-15
-    # 45min était trop court : la phase "Run Script" (compilation Dart
-    # release côté Xcode) est restée bloquée 43min sur un premier run à
-    # froid, sans erreur — probablement juste la compilation/obfuscation
-    # Dart + le traitement dSYM Crashlytics, lents au premier essai.
-    timeout-minutes: 75
+    # GitHub plafonne tout job hébergé à 360min (6h) — impossible d'aller
+    # au-delà, donc on prend ce maximum plutôt qu'un timeout "indéfini"
+    # (qui n'existe pas côté GitHub Actions).
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v4
