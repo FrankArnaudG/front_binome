@@ -5,6 +5,11 @@ name: iOS build & TestFlight
 # Linux (voir doc GitHub : macOS = 10x le coût en minutes).
 on:
   workflow_dispatch:
+    inputs:
+      fix_certs:
+        description: "Régénérer le certificat/profil match (ponctuel — ex. certificat corrompu)"
+        type: boolean
+        default: false
   push:
     tags:
       - "ios-v*"
@@ -75,4 +80,6 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_READONLY: ${{ inputs.fix_certs && 'false' || 'true' }}
+          MATCH_FORCE: ${{ inputs.fix_certs && 'true' || 'false' }}
         run: bundle exec fastlane beta

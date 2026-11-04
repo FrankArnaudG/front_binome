@@ -11,11 +11,17 @@ platform :ios do
       in_house: false,
     )
 
-    # readonly: true (voir Matchfile) — la CI ne crée/modifie jamais les
-    # certificats, elle les récupère seulement. Les générer/renouveler se
-    # fait à la main en local (ou ponctuellement en CI avec readonly:false,
-    # voir instructions).
-    match(type: "appstore", api_key: api_key)
+    # readonly: true par défaut (voir Matchfile) — la CI ne crée/modifie
+    # jamais les certificats, elle les récupère seulement. Pour régénérer
+    # ponctuellement (ex. certificat corrompu, renouvellement), déclencher
+    # le workflow avec l'input `fix_certs: true`, qui positionne
+    # MATCH_READONLY=false et MATCH_FORCE=true pour cette seule run.
+    match(
+      type: "appstore",
+      api_key: api_key,
+      readonly: ENV["MATCH_READONLY"] != "false",
+      force: ENV["MATCH_FORCE"] == "true",
+    )
 
     # `flutter build ios` (voir workflow CI) a déjà généré
     # ios/Runner.xcworkspace avec les pods installés — gym se charge
