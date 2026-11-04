@@ -30,6 +30,16 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
+      - name: Corriger la version de ScreenProtectorKit (bug de compilation en 1.5.1)
+        # Le plugin screen_protector fige ScreenProtectorKit en dur à 1.5.1,
+        # une version dont la migration vers un framework binaire est cassée
+        # (voir prongbang/ScreenProtectorKit#1.5.1 → corrigé en 1.5.2).
+        # On patche le podspec mis en cache par pub pour pointer vers 1.5.2.
+        run: |
+          PODSPEC=$(find "$HOME/.pub-cache/hosted/pub.dev" -maxdepth 1 -name "screen_protector-*" -type d | head -1)/ios/screen_protector.podspec
+          sed -i '' "s/'ScreenProtectorKit', '1.5.1'/'ScreenProtectorKit', '1.5.2'/" "$PODSPEC"
+          grep "ScreenProtectorKit" "$PODSPEC"
+
       - name: Désactiver Swift Package Manager (on reste 100% CocoaPods)
         # Le SDK Firebase récupéré via SPM contient du Swift incompatible
         # avec le compilateur du runner (erreurs sur `sending`, etc.) —
