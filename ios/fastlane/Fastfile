@@ -23,19 +23,26 @@ platform :ios do
       force: ENV["MATCH_FORCE"] == "true",
     )
 
-    # match configure le profil de provisioning mais pas le Development
-    # Team du projet Xcode lui-même — sans ça, xcodebuild archive échoue
-    # avec "Signing for 'Runner' requires a development team".
-    update_project_team(
-      path: "Runner.xcodeproj",
-      teamid: ENV["TEAM_ID"],
-    )
-
     # match nomme le profil dynamiquement (ex. "match AppStore
     # com.binome.app 1793801892" — un suffixe peut être ajouté en cas de
     # régénération/collision), jamais en dur : on relit le nom exact via
     # la variable d'environnement que match vient de positionner.
     profile_name = ENV["sigh_com.binome.app_appstore_profile-name"]
+
+    # Configure la signature manuelle (Team, certificat, profil) UNIQUEMENT
+    # sur la target 'Runner' de Runner.xcodeproj. Important : ne pas passer
+    # ça en xcargs global à build_app, ça s'appliquerait à TOUT le build
+    # (y compris Pods.xcodeproj) et ferait échouer les pods tiers qui
+    # n'acceptent pas de profil de provisioning (ex. ScreenProtectorKit,
+    # flutter_pcm_sound, flutter_secure_storage).
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Runner.xcodeproj",
+      team_id: ENV["TEAM_ID"],
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name,
+      targets: ["Runner"],
+    )
 
     # `flutter build ios` (voir workflow CI) a déjà généré
     # ios/Runner.xcworkspace avec les pods installés — gym se charge
@@ -49,10 +56,6 @@ platform :ios do
           "com.binome.app" => profile_name,
         },
       },
-      # Le template Flutter configure la signature en "Automatic" par
-      # défaut — sans ça, xcodebuild ignore le profil fourni par match et
-      # cherche à générer/trouver un profil lui-même (échoue en CI).
-      xcargs: "CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM=#{ENV['TEAM_ID']}",
     )
 
     upload_to_testflight(
