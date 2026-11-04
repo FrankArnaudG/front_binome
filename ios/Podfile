@@ -31,6 +31,12 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
+  # ScreenProtectorKit 1.5.2 (fix pour le bug de compilation de la 1.5.1,
+  # voir CI : screen_protector.podspec est patché pour exiger "= 1.5.2")
+  # n'est pas publiée sur le registre public CocoaPods trunk — seulement
+  # taguée sur GitHub. On la récupère directement depuis le tag.
+  pod 'ScreenProtectorKit', :git => 'https://github.com/prongbang/ScreenProtectorKit.git', :tag => '1.5.2'
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
