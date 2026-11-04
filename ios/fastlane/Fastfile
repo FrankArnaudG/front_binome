@@ -23,6 +23,14 @@ platform :ios do
       force: ENV["MATCH_FORCE"] == "true",
     )
 
+    # match configure le profil de provisioning mais pas le Development
+    # Team du projet Xcode lui-même — sans ça, xcodebuild archive échoue
+    # avec "Signing for 'Runner' requires a development team".
+    update_project_team(
+      path: "Runner.xcodeproj",
+      teamid: ENV["TEAM_ID"],
+    )
+
     # `flutter build ios` (voir workflow CI) a déjà généré
     # ios/Runner.xcworkspace avec les pods installés — gym se charge
     # uniquement de l'archive + l'export signé.
