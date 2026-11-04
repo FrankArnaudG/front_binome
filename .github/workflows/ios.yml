@@ -60,10 +60,12 @@ jobs:
           bundler-cache: true
           working-directory: ios
 
-      - name: Build (sans signature — fastlane/gym signe ensuite)
-        run: flutter build ios --release --no-codesign
-
-      - name: Fastlane — signer et publier sur TestFlight
+      - name: Fastlane — build, signer et publier sur TestFlight
+        # Pas de `flutter build ios --no-codesign` séparé : même sans
+        # signature, Flutter exige un Development Team sélectionné pour un
+        # build device release. fastlane/gym (ci-dessous) fait tout le
+        # cycle (compilation + archive + signature via match) en une
+        # passe, une fois le certificat/profil installés.
         working-directory: ios
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
