@@ -40,5 +40,12 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Certains pods tiers (ex. ScreenProtectorKit, via le plugin
+    # screen_protector) ne compilent plus avec le mode Swift 6 par défaut
+    # d'Xcode récent — on force Swift 5 pour tous les pods.
+    target.build_configurations.each do |config|
+      config.build_settings['SWIFT_VERSION'] = '5.0'
+    end
   end
 end
