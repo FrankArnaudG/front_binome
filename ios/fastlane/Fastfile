@@ -31,6 +31,12 @@ platform :ios do
       teamid: ENV["TEAM_ID"],
     )
 
+    # match nomme le profil dynamiquement (ex. "match AppStore
+    # com.binome.app 1793801892" — un suffixe peut être ajouté en cas de
+    # régénération/collision), jamais en dur : on relit le nom exact via
+    # la variable d'environnement que match vient de positionner.
+    profile_name = ENV["sigh_com.binome.app_appstore_profile-name"]
+
     # `flutter build ios` (voir workflow CI) a déjà généré
     # ios/Runner.xcworkspace avec les pods installés — gym se charge
     # uniquement de l'archive + l'export signé.
@@ -40,13 +46,13 @@ platform :ios do
       export_method: "app-store",
       export_options: {
         provisioningProfiles: {
-          "com.binome.app" => "match AppStore com.binome.app",
+          "com.binome.app" => profile_name,
         },
       },
       # Le template Flutter configure la signature en "Automatic" par
       # défaut — sans ça, xcodebuild ignore le profil fourni par match et
       # cherche à générer/trouver un profil lui-même (échoue en CI).
-      xcargs: "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='match AppStore com.binome.app' DEVELOPMENT_TEAM=#{ENV['TEAM_ID']}",
+      xcargs: "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM=#{ENV['TEAM_ID']}",
     )
 
     upload_to_testflight(
