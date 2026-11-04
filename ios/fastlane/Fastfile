@@ -43,6 +43,10 @@ platform :ios do
           "com.binome.app" => "match AppStore com.binome.app",
         },
       },
+      # Le template Flutter configure la signature en "Automatic" par
+      # défaut — sans ça, xcodebuild ignore le profil fourni par match et
+      # cherche à générer/trouver un profil lui-même (échoue en CI).
+      xcargs: "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='match AppStore com.binome.app' DEVELOPMENT_TEAM=#{ENV['TEAM_ID']}",
     )
 
     upload_to_testflight(
