@@ -56,6 +56,13 @@ platform :ios do
           "com.binome.app" => profile_name,
         },
       },
+      # xcpretty (formateur par défaut de gym) masque toute la sortie
+      # brute d'une phase "Run Script" tant qu'elle n'est pas terminée —
+      # deux runs se sont retrouvés bloqués en silence total sur cette
+      # étape jusqu'au timeout, sans qu'on puisse savoir si c'est juste
+      # lent (gros build Firebase/WebRTC à froid) ou vraiment figé.
+      # Sortie brute en direct pour diagnostiquer.
+      xcodebuild_formatter: "",
     )
 
     upload_to_testflight(
