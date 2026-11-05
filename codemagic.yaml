@@ -13,6 +13,11 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.binome.app
     scripts:
+      - name: Récupérer/générer le certificat et le profil via l'API App Store Connect
+        script: |
+          app-store-connect fetch-signing-files com.binome.app \
+            --type IOS_APP_STORE \
+            --create
       - name: Set up code signing settings on Xcode project
         script: |
           xcode-project use-profiles
