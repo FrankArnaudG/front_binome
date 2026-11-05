@@ -75,14 +75,14 @@ jobs:
         # cycle (compilation + archive + signature via match) en une
         # passe, une fois le certificat/profil installés.
         #
-        # timeout-minutes volontairement court ici (vs 360 pour le job) :
-        # deux runs précédents sont restés bloqués en silence sur la phase
-        # "Run Script" (compilation Dart) jusqu'au timeout, sans qu'on
-        # puisse voir la sortie brute en cours de route (GitHub refuse les
-        # logs d'un job encore en cours). Un échec rapide ici donne accès
-        # à la vraie sortie xcodebuild (xcodebuild_formatter: "" dans le
-        # Fastfile) pour diagnostiquer au lieu d'attendre des heures.
-        timeout-minutes: 25
+        # Diagnostic résolu : la phase "Run Script" (xcode_backend.sh,
+        # compilation Dart) reste silencieuse jusqu'à sa fin — XCBuild/
+        # SWBBuildService bufferise toute la sortie d'une phase de script
+        # et ne l'affiche qu'une fois terminée, indépendamment de
+        # xcodebuild_formatter. Ce n'est donc pas un blocage : juste un
+        # premier build à froid (Firebase + flutter_webrtc + AOT Dart)
+        # réellement long. On laisse le temps nécessaire (cap du job :
+        # 360min) plutôt qu'un timeout court sur cette seule étape.
         working-directory: ios
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
