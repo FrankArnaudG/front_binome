@@ -35,7 +35,11 @@ workflows:
         script: |
           cd ios
           bundle install
-          bundle exec fastlane ios sign
+          # TEMPORAIRE : le certificat stocké dans binome-ios-certs a été
+          # révoqué pendant le dépannage de la signature auto Codemagic —
+          # on force une régénération complète pour ce run. À retirer une
+          # fois le build réussi (repasser en lecture seule par défaut).
+          MATCH_READONLY=false MATCH_FORCE=true bundle exec fastlane ios sign
       - name: Flutter build ipa
         script: |
           flutter build ipa --release \
