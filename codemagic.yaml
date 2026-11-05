@@ -18,6 +18,15 @@ workflows:
       - name: Désactiver Swift Package Manager (on reste 100% CocoaPods)
         script: |
           flutter config --no-enable-swift-package-manager
+      - name: Corriger la version de ScreenProtectorKit (bug de compilation en 1.5.1)
+        # Même correctif que sur GitHub Actions : le plugin screen_protector
+        # fige ScreenProtectorKit en dur à 1.5.1 (version buggée), le
+        # Podfile pointe vers notre podspec local corrigé (1.5.2) mais
+        # CocoaPods refuse tant que cette exigence 1.5.1 n'est pas patchée.
+        script: |
+          PODSPEC=$(find "$HOME/.pub-cache/hosted/pub.dev" -maxdepth 1 -name "screen_protector-*" -type d | head -1)/ios/screen_protector.podspec
+          sed -i '' "s/'ScreenProtectorKit', '1.5.1'/'ScreenProtectorKit', '1.5.2'/" "$PODSPEC"
+          grep "ScreenProtectorKit" "$PODSPEC"
       - name: Fastlane — récupérer certificat/profil via match et configurer la signature
         # Réutilise exactement la même recette fastlane match que GitHub
         # Actions (certs stockés chiffrés dans binome-ios-certs) — l'outil
