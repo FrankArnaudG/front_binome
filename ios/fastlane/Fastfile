@@ -82,11 +82,15 @@ platform :ios do
       in_house: false,
     )
 
+    # Chemin absolu obligatoire : upload_to_testflight a refusé le chemin
+    # relatif renvoyé par Dir.glob ("Error setting value ... for option
+    # 'ipa'") malgré un fichier bien présent à cet endroit.
+    ipa_path = File.expand_path(Dir.glob("../../build/ios/ipa/*.ipa").first)
+    UI.user_error!("Aucun .ipa trouvé dans build/ios/ipa/") unless ipa_path && File.exist?(ipa_path)
+
     upload_to_testflight(
       api_key: api_key,
-      # flutter build ipa écrit dans <racine du repo>/build/ios/ipa/, pas
-      # dans ios/build/... — depuis ios/fastlane/, il faut remonter de 2.
-      ipa: Dir.glob("../../build/ios/ipa/*.ipa").first,
+      ipa: ipa_path,
       skip_waiting_for_build_processing: true,
     )
   end
