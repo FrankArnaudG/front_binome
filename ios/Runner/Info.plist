@@ -48,7 +48,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>La caméra sert à la photo dans le Jardin secret et à la vidéo optionnelle pendant un appel — jamais enregistrée ni envoyée ailleurs qu'à votre binôme.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Votre position sert uniquement quand vous appuyez sur "Partager ma position" pour calculer la distance avec votre binôme — jamais suivie en continu ni en arrière-plan.</string>
+	<string>Votre position sert uniquement si vous activez "Partager ma position" pour calculer la distance avec votre binôme — mise à jour en continu tant que l'app est ouverte et l'option activée, mais jamais en arrière-plan ni sans action explicite de votre part.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>L'accès à vos photos sert uniquement à choisir une image pour les usages que vous lancez vous-même dans l'app (Jardin secret et avatar, visibles de votre binôme uniquement ; photo de couverture d'un faire-part, visible des invités que vous choisissez) — jamais utilisée à d'autres fins.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
