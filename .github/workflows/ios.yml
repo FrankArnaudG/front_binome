@@ -74,6 +74,15 @@ jobs:
         # build device release. fastlane/gym (ci-dessous) fait tout le
         # cycle (compilation + archive + signature via match) en une
         # passe, une fois le certificat/profil installés.
+        #
+        # timeout-minutes volontairement court ici (vs 360 pour le job) :
+        # deux runs précédents sont restés bloqués en silence sur la phase
+        # "Run Script" (compilation Dart) jusqu'au timeout, sans qu'on
+        # puisse voir la sortie brute en cours de route (GitHub refuse les
+        # logs d'un job encore en cours). Un échec rapide ici donne accès
+        # à la vraie sortie xcodebuild (xcodebuild_formatter: "" dans le
+        # Fastfile) pour diagnostiquer au lieu d'attendre des heures.
+        timeout-minutes: 25
         working-directory: ios
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
