@@ -39,7 +39,10 @@ dependencies:
   # Icône WhatsApp fidèle (Material n'inclut aucun logo de marque) pour le
   # sélecteur appel/WhatsApp des contacts "Tenue" (voir demande
   # utilisateur : "le logo whatapp ne lui resemble pa").
-  font_awesome_flutter: ^10.7.0
+  # ^11 requis : la 10.x sous-classe IconData, devenu `final` dans les
+  # SDK Flutter récents (échec de compilation "can't be extended
+  # outside of its library because it's a final class").
+  font_awesome_flutter: ^11.0.0
 
   google_sign_in: ^6.2.2
   flutter_secure_storage: ^9.2.2
@@ -152,6 +155,7 @@ flutter:
     - assets/envi/
     - assets/categories_poeme_slide/
     - assets/heartbeat_categories/
+    - assets/chat_themes/
     - assets/google_fonts/
     - assets/invitations/heritage_royal/
     - assets/invitations/icons/traditionnel/
