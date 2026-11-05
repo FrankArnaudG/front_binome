@@ -68,21 +68,7 @@ jobs:
           bundler-cache: true
           working-directory: ios
 
-      - name: Fastlane — build, signer et publier sur TestFlight
-        # Pas de `flutter build ios --no-codesign` séparé : même sans
-        # signature, Flutter exige un Development Team sélectionné pour un
-        # build device release. fastlane/gym (ci-dessous) fait tout le
-        # cycle (compilation + archive + signature via match) en une
-        # passe, une fois le certificat/profil installés.
-        #
-        # Diagnostic résolu : la phase "Run Script" (xcode_backend.sh,
-        # compilation Dart) reste silencieuse jusqu'à sa fin — XCBuild/
-        # SWBBuildService bufferise toute la sortie d'une phase de script
-        # et ne l'affiche qu'une fois terminée, indépendamment de
-        # xcodebuild_formatter. Ce n'est donc pas un blocage : juste un
-        # premier build à froid (Firebase + flutter_webrtc + AOT Dart)
-        # réellement long. On laisse le temps nécessaire (cap du job :
-        # 360min) plutôt qu'un timeout court sur cette seule étape.
+      - name: Fastlane — récupérer certificat/profil et configurer la signature
         working-directory: ios
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
@@ -94,4 +80,22 @@ jobs:
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           MATCH_READONLY: ${{ inputs.fix_certs && 'false' || 'true' }}
           MATCH_FORCE: ${{ inputs.fix_certs && 'true' || 'false' }}
-        run: bundle exec fastlane beta
+        run: bundle exec fastlane ios sign
+
+      - name: flutter build ipa
+        # On ne passe plus par fastlane/gym pour compiler : un run est
+        # resté bloqué 6h sans la moindre ligne de sortie sur la phase
+        # "Run Script" (xcode_backend.sh) que gym enveloppe dans son
+        # propre process, masquant tout. `flutter build ipa --verbose`
+        # affiche la progression Dart/Xcode en direct dans les logs —
+        # premier vrai moyen de voir où ça bloque si ça se reproduit.
+        timeout-minutes: 60
+        run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist --verbose
+
+      - name: Fastlane — publier sur TestFlight
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: bundle exec fastlane ios publish

@@ -1,8 +1,8 @@
 default_platform(:ios)
 
 platform :ios do
-  desc "Build l'app (via flutter build ios), signe avec match, publie sur TestFlight"
-  lane :beta do
+  desc "Récupère le certificat/profil match et configure la signature manuelle du projet"
+  lane :sign do
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
       issuer_id: ENV["ASC_ISSUER_ID"],
@@ -44,29 +44,49 @@ platform :ios do
       targets: ["Runner"],
     )
 
-    # `flutter build ios` (voir workflow CI) a déjà généré
-    # ios/Runner.xcworkspace avec les pods installés — gym se charge
-    # uniquement de l'archive + l'export signé.
-    build_app(
-      workspace: "Runner.xcworkspace",
-      scheme: "Runner",
-      export_method: "app-store",
-      export_options: {
-        provisioningProfiles: {
-          "com.binome.app" => profile_name,
-        },
-      },
-      # xcpretty (formateur par défaut de gym) masque toute la sortie
-      # brute d'une phase "Run Script" tant qu'elle n'est pas terminée —
-      # deux runs se sont retrouvés bloqués en silence total sur cette
-      # étape jusqu'au timeout, sans qu'on puisse savoir si c'est juste
-      # lent (gros build Firebase/WebRTC à froid) ou vraiment figé.
-      # Sortie brute en direct pour diagnostiquer.
-      xcodebuild_formatter: "",
+    # Écrit l'ExportOptions.plist que `flutter build ipa` utilisera (étape
+    # CI séparée — voir .github/workflows/ios.yml). On ne passe plus par
+    # fastlane/gym pour compiler : gym enveloppe xcodebuild dans son
+    # propre process et sa sortie masque toute la phase "Run Script"
+    # (compilation Dart) jusqu'à sa fin. `flutter build ipa` --verbose
+    # affiche sa progression en direct, ce qui manquait totalement pour
+    # diagnostiquer un run resté bloqué 6h sans la moindre sortie.
+    File.write("../ExportOptions.plist", <<~PLIST)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+        <key>method</key>
+        <string>app-store</string>
+        <key>teamID</key>
+        <string>#{ENV['TEAM_ID']}</string>
+        <key>signingStyle</key>
+        <string>manual</string>
+        <key>provisioningProfiles</key>
+        <dict>
+          <key>com.binome.app</key>
+          <string>#{profile_name}</string>
+        </dict>
+      </dict>
+      </plist>
+    PLIST
+  end
+
+  desc "Publie l'IPA déjà compilé (par `flutter build ipa`) sur TestFlight"
+  lane :publish do
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_content: ENV["ASC_KEY_CONTENT"],
+      is_key_content_base64: true,
+      in_house: false,
     )
 
     upload_to_testflight(
       api_key: api_key,
+      # flutter build ipa écrit dans <racine du repo>/build/ios/ipa/, pas
+      # dans ios/build/... — depuis ios/fastlane/, il faut remonter de 2.
+      ipa: Dir.glob("../../build/ios/ipa/*.ipa").first,
       skip_waiting_for_build_processing: true,
     )
   end
