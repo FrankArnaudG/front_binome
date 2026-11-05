@@ -50,9 +50,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Votre position sert uniquement quand vous appuyez sur "Partager ma position" pour calculer la distance avec votre binôme — jamais suivie en continu ni en arrière-plan.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>L'accès à vos photos sert uniquement à choisir une image à partager avec votre binôme (ex. Jardin secret, avatar) — jamais utilisée à d'autres fins.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>L'enregistrement dans vos photos sert uniquement à sauvegarder une image que vous avez vous-même choisi de conserver depuis l'application.</string>
+	<string>L'accès à vos photos sert uniquement à choisir une image pour les usages que vous lancez vous-même dans l'app (Jardin secret et avatar, visibles de votre binôme uniquement ; photo de couverture d'un faire-part, visible des invités que vous choisissez) — jamais utilisée à d'autres fins.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>
