@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -169,7 +170,7 @@ class PushNotificationService {
     final initialMessage = await messaging.getInitialMessage();
     if (initialMessage != null) _handleTap(initialMessage);
 
-    await _registerToken();
+    unawaited(_registerToken());
     messaging.onTokenRefresh.listen((_) => _registerToken());
   }
 
@@ -273,9 +274,25 @@ class PushNotificationService {
     }
   }
 
+  /// Sur iOS, `FirebaseMessaging.getToken()` peut rester bloqué indéfiniment
+  /// tant que le jeton APNs natif n'est pas encore remonté par l'OS (bug
+  /// connu de firebase_messaging, surtout juste après l'acceptation de la
+  /// permission) — on attend explicitement ce jeton APNs, avec un nombre
+  /// borné de tentatives, pour ne jamais bloquer `init()` (et donc le
+  /// dialogue d'activation) à l'infini.
+  Future<void> _waitForApnsToken() async {
+    if (!Platform.isIOS) return;
+    for (var i = 0; i < 10; i++) {
+      final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+      if (apnsToken != null) return;
+      await Future.delayed(const Duration(seconds: 1));
+    }
+  }
+
   Future<void> _registerToken() async {
     try {
-      final token = await FirebaseMessaging.instance.getToken();
+      await _waitForApnsToken();
+      final token = await FirebaseMessaging.instance.getToken().timeout(const Duration(seconds: 15));
       if (token == null) return;
       await ApiClient.instance.post('/auth/device-tokens', body: {'token': token, 'platform': Platform.isIOS ? 'ios' : 'android'});
     } catch (e) {

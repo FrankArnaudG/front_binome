@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -37,10 +39,13 @@ class _NotificationOptInDialogState extends State<_NotificationOptInDialog> {
 
   Future<void> _activate() async {
     setState(() => _requesting = true);
-    // C'est cet appel qui déclenche la vraie demande système (une seule
-    // fois par installation, ensuite silencieuse) — voir
-    // PushNotificationService.init.
-    await PushNotificationService.instance.init();
+    // Déclenche la vraie demande système (une seule fois par installation,
+    // ensuite silencieuse) — voir PushNotificationService.init. Sur iOS, la
+    // suite de `init()` (récupération du jeton FCM) peut prendre plusieurs
+    // secondes en tâche de fond (attente du jeton APNs natif, voir
+    // PushNotificationService._waitForApnsToken) : on ne bloque donc le
+    // dialogue que le temps du dialogue système lui-même, pas au-delà.
+    unawaited(PushNotificationService.instance.init());
     if (mounted) Navigator.of(context).pop();
   }
 
