@@ -29,26 +29,29 @@ class AuthService {
   // backend ; le plugin web n'accepte pas ce paramètre (assertion : "not
   // supported on Web") et attend `clientId` à la place — le même client ID
   // OAuth web y produit déjà un idToken exploitable tel quel.
+  // Sur iOS, `clientId` doit être le client iOS (déclaré aussi dans
+  // Info.plist sous GIDClientID) — sans lui, GoogleSignIn.signIn() lève une
+  // exception qui, si elle n'est pas rattrapée, fait crasher l'app iOS.
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: const ['email'],
     serverClientId: kIsWeb ? null : ApiConfig.googleWebClientId,
-    clientId: kIsWeb ? ApiConfig.googleWebClientId : null,
+    clientId: kIsWeb ? ApiConfig.googleWebClientId : (Platform.isIOS ? ApiConfig.googleIosClientId : null),
   );
 
   /// [promoCode] n'a d'effet que pour un tout nouveau compte (voir
   /// AuthenticationController::loginWithGoogle) — sans effet, ignoré
   /// silencieusement, pour un compte déjà existant qui se reconnecte.
   Future<AppUser?> signInWithGoogle({String? promoCode}) async {
-    final account = await _googleSignIn.signIn();
-    if (account == null) return null; // annulé par l'utilisateur
-
-    final googleAuth = await account.authentication;
-    final idToken = googleAuth.idToken;
-    if (idToken == null) {
-      throw AuthException("Impossible de récupérer le jeton d'identité Google.");
-    }
-
     try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) return null; // annulé par l'utilisateur
+
+      final googleAuth = await account.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null) {
+        throw AuthException("Impossible de récupérer le jeton d'identité Google.");
+      }
+
       final data = await ApiClient.instance.post('/auth/login/google', body: {
         'id_token': idToken,
         if (promoCode != null && promoCode.trim().isNotEmpty) 'promo_code': promoCode.trim(),
@@ -60,6 +63,10 @@ class AuthService {
       return AppUser.fromJson(userJson);
     } on ApiException catch (e) {
       throw AuthException(e.message);
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException('Connexion Google impossible : $e');
     }
   }
 

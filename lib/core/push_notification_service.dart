@@ -42,8 +42,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 /// Enregistrement du jeton FCM auprès du backend + navigation au tap sur une
-/// notification. Ne s'active que sur Android pour l'instant (iOS reporté,
-/// voir DefaultFirebaseOptions) — `init()` est un no-op silencieux ailleurs.
+/// notification. Android et iOS (voir DefaultFirebaseOptions) — `init()` est
+/// un no-op silencieux ailleurs (web).
 class PushNotificationService {
   PushNotificationService._();
   static final PushNotificationService instance = PushNotificationService._();
@@ -51,7 +51,7 @@ class PushNotificationService {
   final _localNotifications = FlutterLocalNotificationsPlugin();
   bool _tzReady = false;
 
-  bool get _supported => !kIsWeb && Platform.isAndroid;
+  bool get _supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// `null` si non applicable (web/iOS) — sinon le statut réel, notamment
   /// [AuthorizationStatus.notDetermined] qui signale que l'utilisateur n'a
@@ -72,7 +72,14 @@ class PushNotificationService {
   Future<void> createAndroidChannel() async {
     if (!_supported) return;
     await _localNotifications.initialize(
-      const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        // iOS : pas de demande d'autorisation ici (voir [init], qui passe par
+        // FirebaseMessaging.requestPermission — seul chemin déclenchant le
+        // vrai dialogue système iOS) — ce plugin ne sert sur iOS qu'à afficher
+        // les rappels LOCAUX (rituel du soir/matin), pas les push distants.
+        iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
+      ),
     );
     await _localNotifications
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
@@ -125,6 +132,7 @@ class PushNotificationService {
           importance: Importance.max,
           priority: Priority.high,
         ),
+        iOS: const DarwinNotificationDetails(),
       ),
       // "inexact" plutôt que "exact" : un rappel quotidien n'a pas besoin
       // d'une précision à la seconde, et l'exact nécessite une permission
@@ -269,7 +277,7 @@ class PushNotificationService {
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
-      await ApiClient.instance.post('/auth/device-tokens', body: {'token': token, 'platform': 'android'});
+      await ApiClient.instance.post('/auth/device-tokens', body: {'token': token, 'platform': Platform.isIOS ? 'ios' : 'android'});
     } catch (e) {
       debugPrint('Enregistrement du jeton push ignoré (échec non bloquant) : $e');
     }

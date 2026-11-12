@@ -11,6 +11,7 @@ import 'core/api_config.dart';
 import 'core/app_update_checker.dart';
 import 'core/pin_storage.dart';
 import 'core/ritual_reminder_service.dart';
+import 'core/token_storage.dart';
 import 'features/box/box_scope.dart';
 import 'features/home/app_shell.dart';
 import 'features/lock/app_lock_screen.dart';
@@ -25,11 +26,15 @@ import 'l10n/locale_controller.dart';
 import 'l10n/locale_scope.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'theme/chat_theme_controller.dart';
 import 'theme/theme_controller.dart';
 import 'theme/theme_scope.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Le Keychain iOS survit à une désinstallation (contrairement à Android) —
+  // doit tourner avant toute lecture de session (voir TokenStorage.clearIfReinstalled).
+  await TokenStorage.instance.clearIfReinstalled();
   // Une version publiée ne doit jamais partir sur localhost ni en HTTP.
   ApiConfig.assertSafeForRelease();
   // Sans ça, Android réserve une bande opaque blanche pour la barre de
@@ -179,6 +184,7 @@ class _AppGateState extends State<_AppGate> {
     super.initState();
     _checkLock();
     ThemeController.instance.load();
+    ChatThemeController.instance.load();
     LocaleController.instance.load();
     // Après le premier frame seulement : AppRouter.navigatorKey n'a pas
     // encore d'overlay attaché tant que MaterialApp n'a pas fini de

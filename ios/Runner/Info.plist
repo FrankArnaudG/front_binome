@@ -53,5 +53,20 @@
 	<string>L'accès à vos photos sert uniquement à choisir une image pour les usages que vous lancez vous-même dans l'app (Jardin secret et avatar, visibles de votre binôme uniquement ; photo de couverture d'un faire-part, visible des invités que vous choisissez) — jamais utilisée à d'autres fins.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GIDClientID</key>
+	<string>1061033674265-osh8m1ghs0tpq1654tdn3j2ea462loim.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1061033674265-osh8m1ghs0tpq1654tdn3j2ea462loim</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

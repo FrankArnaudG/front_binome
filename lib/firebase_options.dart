@@ -3,8 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Options Firebase générées à la main (projet `binome-9fd27`) plutôt que via
-/// `flutterfire configure` — Android uniquement pour l'instant, iOS reporté
-/// tant que l'inscription Apple Developer Program n'est pas active.
+/// `flutterfire configure` — valeurs iOS reprises du GoogleService-Info.plist
+/// téléchargé depuis la console Firebase (app iOS com.binome.app déjà créée).
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -13,9 +13,11 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
+      case TargetPlatform.iOS:
+        return ios;
       default:
         throw UnsupportedError(
-          'DefaultFirebaseOptions n\'est configuré que pour Android (iOS à venir) — plateforme actuelle : ${Platform.operatingSystem}.',
+          'DefaultFirebaseOptions n\'est configuré que pour Android/iOS — plateforme actuelle : ${Platform.operatingSystem}.',
         );
     }
   }
@@ -26,5 +28,14 @@ class DefaultFirebaseOptions {
     messagingSenderId: '306017765426',
     projectId: 'binome-9fd27',
     storageBucket: 'binome-9fd27.firebasestorage.app',
+  );
+
+  static const ios = FirebaseOptions(
+    apiKey: 'AIzaSyBOhpivdmW1kkB-wG-WxCBrZgs9vcbc-8o',
+    appId: '1:306017765426:ios:41fae94039488e139e542b',
+    messagingSenderId: '306017765426',
+    projectId: 'binome-9fd27',
+    storageBucket: 'binome-9fd27.firebasestorage.app',
+    iosBundleId: 'com.binome.app',
   );
 }

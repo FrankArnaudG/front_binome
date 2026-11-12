@@ -7,6 +7,12 @@ class ApiConfig {
   static const String googleWebClientId =
       '1061033674265-c4mt2ca975t4bo26kd2isab2958djm3t.apps.googleusercontent.com';
 
+  /// Client ID iOS Google OAuth (déclaré aussi dans ios/Runner/Info.plist
+  /// sous GIDClientID/CFBundleURLSchemes — nécessaire pour que google_sign_in
+  /// fonctionne sur iOS, contrairement à Android qui passe par Play Services).
+  static const String googleIosClientId =
+      '1061033674265-osh8m1ghs0tpq1654tdn3j2ea462loim.apps.googleusercontent.com';
+
   /// API de production (HTTPS, certificat Let's Encrypt).
   static const String productionApiUrl = 'https://api.binomecouple.com/api';
 

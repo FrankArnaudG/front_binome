@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TokenStorage {
   TokenStorage._();
@@ -12,6 +13,23 @@ class TokenStorage {
 
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+  static const _installMarkerKey = 'secure_storage_install_marker';
+
+  /// Le Keychain iOS (contrairement à EncryptedSharedPreferences sur
+  /// Android) survit à une désinstallation — sans ce garde-fou, réinstaller
+  /// l'app sur iOS reconnecterait silencieusement l'ancien compte au lieu de
+  /// repartir sur l'écran de connexion, comme sur Android. `prefs` (vidé par
+  /// l'OS à la désinstallation, sur les deux plateformes) sert de témoin :
+  /// son absence signale soit une toute première installation, soit une
+  /// réinstallation — dans les deux cas, tout résidu du Keychain doit être
+  /// purgé. À appeler une seule fois, tout au début de `main()`, avant toute
+  /// lecture de token.
+  Future<void> clearIfReinstalled() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_installMarkerKey) == true) return;
+    await clear();
+    await prefs.setBool(_installMarkerKey, true);
+  }
 
   Future<void> saveToken(String token) =>
       _storage.write(key: _tokenKey, value: token);
