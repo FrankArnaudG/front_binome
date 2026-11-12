@@ -15,10 +15,12 @@ import '../../models/heartbeat_image.dart';
 import '../../models/send.dart';
 import '../../models/send_reaction.dart';
 import '../../models/slide.dart';
+import '../../theme/chat_theme_controller.dart';
 import '../../theme/handwritten_fonts.dart';
 import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
+import 'chat_theme_screen.dart';
 import '../../widgets/composer_actions.dart';
 import '../../widgets/send_status_tick.dart';
 import '../box/couple_profile_screen.dart';
@@ -64,15 +66,16 @@ class SlideDetailScreen extends StatefulWidget {
 class _SlideDetailScreenState extends State<SlideDetailScreen> {
   late Send _send;
   bool _togglingFavorite = false;
-  bool _reacting = false;
-  bool _reactionPickerOpen = false;
-  // Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
-  // en dessous comme actuellement" (même correctif que
-  // _GameCardThreadScreenState) — le panneau flotte désormais au-dessus de
-  // la carte via une Overlay ancrée sur le cercle de réaction, au lieu
-  // d'être déployé en ligne (ça poussait le reste du fil vers le bas).
-  final GlobalKey _reactionAnchorKey = GlobalKey();
+  // Voir demande utilisateur : "ne peux-tu pas utiliser les mêmes
+  // composants" (que les discussions de jeu, voir
+  // GameBoxHistoryScreen._reactionAnchorKeyFor/_toggleReactionPanel) —
+  // généralisé par send.id (carte racine ET chaque réponse du fil), jamais
+  // un seul set de champs pour la racine uniquement comme avant.
+  final Map<String, GlobalKey> _reactionAnchorKeys = {};
+  GlobalKey _reactionAnchorKeyFor(String sendId) => _reactionAnchorKeys.putIfAbsent(sendId, () => GlobalKey());
   OverlayEntry? _reactionOverlayEntry;
+  String? _reactionPickerOpenForSendId;
+  String? _reactingSendId;
   bool _sendingHeartbeatReply = false;
   bool _composerActionsOpen = false;
   final _messageComposeController = TextEditingController();
@@ -122,6 +125,12 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // Voir demande utilisateur : "en fonction de certains thèmes, l'entête
+    // n'est pas totalement visible" — un setState global sur changement de
+    // thème est le plus sûr ici : l'en-tête (icônes/texte) et la barre de
+    // statut système sont lus directement depuis ChatThemeController.current
+    // dans build(), pas enveloppés individuellement dans un AnimatedBuilder.
+    ChatThemeController.instance.addListener(_onChatThemeChanged);
     _send = widget.send;
     if (_send.isPack && _send.pack != null) {
       // Slides déjà connues (cache mémoire) : affichées dès la première image,
@@ -389,12 +398,17 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     });
   }
 
+  void _onChatThemeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     // Voir _toggleReactionPanel : l'Overlay du panneau de réactions est
     // indépendante de l'arbre de cet écran, jamais nettoyée toute seule.
     _reactionOverlayEntry?.remove();
     _pollTimer?.cancel();
+    ChatThemeController.instance.removeListener(_onChatThemeChanged);
     RealtimeClient.instance.unsubscribeFromBox(
       _send.boxId,
       onEvent: _onRealtimeEvent,
@@ -433,25 +447,48 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     }
   }
 
-  Future<void> _addReaction(String emoji) async {
-    if (_reacting) return;
+  /// MA réaction, posée optimiste tout de suite (voir
+  /// GameBoxHistoryScreen._addReaction, même principe) — [send] est soit la
+  /// carte racine (_send), soit une réponse du fil (_replies).
+  Future<void> _addReaction(Send send, String emoji) async {
+    if (_reactingSendId != null) return;
+    final previousReactions = send.reactions;
+    final optimistic = SendReaction(
+      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      sendId: send.id,
+      userId: widget.user.id,
+      emoji: emoji,
+      createdAt: DateTime.now(),
+    );
     _reactionOverlayEntry?.remove();
     _reactionOverlayEntry = null;
     setState(() {
-      _reacting = true;
-      _reactionPickerOpen = false;
+      _reactingSendId = send.id;
+      _reactionPickerOpenForSendId = null;
+      _updateReactionSend(send.copyWith(
+        reactions: [...previousReactions.where((r) => r.userId != widget.user.id), optimistic],
+      ));
     });
     try {
-      final updated = await ContentService.instance.reactToSend(_send.id, emoji);
+      final updated = await ContentService.instance.reactToSend(send.id, emoji);
       if (mounted) {
-        setState(() => _send = updated.copyWith(
+        setState(() => _updateReactionSend(updated.copyWith(
               reactions: SendReaction.dedupeByUser(updated.reactions),
-            ));
+            )));
       }
     } catch (_) {
-      // best effort
+      if (!mounted) return;
+      setState(() => _updateReactionSend(send.copyWith(reactions: previousReactions)));
     } finally {
-      if (mounted) setState(() => _reacting = false);
+      if (mounted) setState(() => _reactingSendId = null);
+    }
+  }
+
+  void _updateReactionSend(Send updated) {
+    if (updated.id == _send.id) {
+      _send = updated;
+    } else {
+      _replies = _replies.map((r) => r.id == updated.id ? updated : r).toList();
     }
   }
 
@@ -768,7 +805,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
           // La réaction (ou le "+" tant qu'il n'y en a pas encore) est
           // accrochée au bord de LA carte concernée, pas détachée plus bas
           // — elle porte sur ce pack précis.
-          cornerOverlay: _reactionOverlay(theme),
+          cornerOverlay: _reactionOverlay(theme, _send),
           // Même agrandissement en modale que les réponses-poème du fil —
           // pas de raison que celle-ci, la carte principale, n'en profite
           // pas aussi.
@@ -795,52 +832,57 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     );
   }
 
-  /// Une seule réaction par envoi, réservée au/à la destinataire — tant
-  /// qu'aucune n'est posée, le "+" invite à en choisir une (visible
-  /// seulement pour le/la destinataire) ; une fois posée, elle prend sa
-  /// place (visible des deux côtés, mais seul·e le/la destinataire peut la
-  /// changer en la retapant).
-  Widget? _reactionOverlay(ThemePalette theme) {
-    final canReact = !widget.isMine;
-    final reaction = _send.reactions.isNotEmpty ? _send.reactions.first : null;
+  /// MA réaction sur [send] ET celle de mon binôme (voir
+  /// GameBoxHistoryScreen._reactionOverlay, même principe généralisé à
+  /// N'IMPORTE QUEL envoi du fil — racine ou réponse — et aux deux côtés,
+  /// plus réservé au/à la destinataire comme avant).
+  Widget? _reactionOverlay(ThemePalette theme, Send send) {
+    SendReaction? mine;
+    SendReaction? partner;
+    for (final r in send.reactions) {
+      if (r.userId == widget.user.id) {
+        mine = r;
+      } else {
+        partner = r;
+      }
+    }
 
     // La barre se referme dès le tap (voir _addReaction), mais le badge ne
     // remplace le cercle qu'une fois la réponse serveur arrivée — sans ce
     // loader, ce délai se lisait comme "le tap n'a rien fait".
-    if (_reacting) {
+    if (_reactingSendId == send.id) {
       return const _ReactionLoadingCircle();
     }
 
-    final Widget? trigger;
-    if (reaction == null) {
-      trigger = canReact ? _ReactionTriggerCircle(onTap: _toggleReactionPanel) : null;
+    void onTap() => _toggleReactionPanel(send);
+    final Widget trigger;
+    if (mine == null && partner == null) {
+      trigger = _ReactionTriggerCircle(onTap: onTap);
+    } else if (mine != null && partner != null) {
+      trigger = _DualReactionBadge(mineEmoji: mine.emoji, partnerEmoji: partner.emoji, onTap: onTap);
     } else {
-      trigger = _SingleReactionBadge(
-        emoji: reaction.emoji,
-        onTap: canReact ? _toggleReactionPanel : null,
-      );
+      trigger = _SingleReactionBadge(emoji: (mine ?? partner)!.emoji, onTap: onTap);
     }
-    if (trigger == null) return null;
-    return KeyedSubtree(key: _reactionAnchorKey, child: trigger);
+    return KeyedSubtree(key: _reactionAnchorKeyFor(send.id), child: trigger);
   }
 
   /// Voir demande utilisateur : "je veux qu'il apparaisse au-dessus et non
   /// en dessous comme actuellement" puis "c'est coupé" (CompositedTransformFollower
   /// centré sur le petit cercle débordait de l'écran et chevauchait la
-  /// carte) — même correctif que _GameCardThreadScreenState.
-  /// _toggleReactionPanel : position calculée à partir du RenderBox du
-  /// cercle, bornée aux limites de l'écran.
-  void _toggleReactionPanel() {
-    if (_reactionPickerOpen) {
+  /// carte) — même correctif que GameBoxHistoryScreen._toggleReactionPanel,
+  /// désormais généralisé par send.id plutôt que la seule carte racine.
+  void _toggleReactionPanel(Send send) {
+    if (_reactionPickerOpenForSendId == send.id) {
       _closeReactionPanel();
       return;
     }
-    final anchorBox = _reactionAnchorKey.currentContext?.findRenderObject() as RenderBox?;
+    _closeReactionPanel();
+    final anchorBox = _reactionAnchorKeyFor(send.id).currentContext?.findRenderObject() as RenderBox?;
     if (anchorBox == null || !anchorBox.hasSize) return;
     final anchorTopLeft = anchorBox.localToGlobal(Offset.zero);
     final anchorSize = anchorBox.size;
     final screenSize = MediaQuery.of(context).size;
-    const panelWidth = 240.0;
+    const panelWidth = 260.0;
     const sideMargin = 12.0;
     final left = (anchorTopLeft.dx + anchorSize.width / 2 - panelWidth / 2).clamp(
       sideMargin,
@@ -862,13 +904,27 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
             child: Material(
               color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: theme.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 14, offset: Offset(0, 6))],
                 ),
-                child: _ReactionBar(enabled: !_reacting, onPick: _addReaction, theme: theme),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (send.reactions.isNotEmpty) ...[
+                      _ReactionSummaryStrip(theme: theme, reactions: send.reactions, myUserId: widget.user.id),
+                      const SizedBox(height: 8),
+                    ],
+                    _ReactionBar(
+                      enabled: _reactingSendId == null,
+                      onPick: (emoji) => _addReaction(send, emoji),
+                      theme: theme,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -876,17 +932,17 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       ),
     );
     _reactionOverlayEntry = entry;
-    setState(() => _reactionPickerOpen = true);
+    setState(() => _reactionPickerOpenForSendId = send.id);
     Overlay.of(context).insert(entry);
   }
 
   void _closeReactionPanel() {
     _reactionOverlayEntry?.remove();
     _reactionOverlayEntry = null;
-    if (_reactionPickerOpen && mounted) {
-      setState(() => _reactionPickerOpen = false);
+    if (_reactionPickerOpenForSendId != null && mounted) {
+      setState(() => _reactionPickerOpenForSendId = null);
     } else {
-      _reactionPickerOpen = false;
+      _reactionPickerOpenForSendId = null;
     }
   }
 
@@ -929,7 +985,12 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
 
   /// "En ligne" (canal presence temps réel) ou "Vu il y a X" sous les
   /// avatars — même information que l'en-tête des discussions de jeu.
-  Widget _presenceLine(ThemePalette theme) {
+  /// [mutedFg] : couleur de repli quand hors ligne (voir demande
+  /// utilisateur : "en fonction de certains thèmes, l'entête n'est pas
+  /// totalement visible") — theme.textOnBackgroundMuted par défaut, mais
+  /// peu lisible sur un thème de discussion sombre (voir headerFg côté
+  /// build()), d'où ce paramètre plutôt qu'une couleur fixe.
+  Widget _presenceLine(ThemePalette theme, Color mutedFg) {
     final online = _partnerPresent;
     final label = online
         ? LocaleScope.of(context).t('presence_online')
@@ -942,7 +1003,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.nunito(
           fontSize: 11.5,
-          color: online ? Colors.greenAccent.shade700 : theme.textOnBackgroundMuted,
+          color: online ? Colors.greenAccent.shade700 : mutedFg,
           fontWeight: online ? FontWeight.w700 : FontWeight.normal,
         ),
       ),
@@ -1228,6 +1289,12 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
     final theme = ThemeScope.paletteOf(context);
     final isMine = widget.isMine;
     final t = LocaleScope.of(context).t;
+    // Voir demande utilisateur : "en fonction de certains thèmes, l'entête
+    // n'est pas totalement visible" — un fond de discussion sombre a besoin
+    // d'icônes/texte clairs dans l'en-tête, indépendamment du thème général
+    // (clair ou sombre) de l'app.
+    final chatTheme = ChatThemeController.instance.current;
+    final headerFg = chatTheme.isDark ? Colors.white : theme.textOnBackground;
 
     // Voir demande utilisateur : même correctif que GameCardThreadScreen —
     // ne recoller la vue au dernier message à l'ouverture du clavier que
@@ -1245,7 +1312,36 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
       // fond uni : rouvrir un envoi doit ressembler à retrouver une "photo"
       // de l'émotion passée, pas une simple page de texte.
       body: ThemedBackground(
-        child: SafeArea(
+        // Voir demande utilisateur : "Thème de la discussion" (voir
+        // ChatThemeScreen) — ce fond vient se poser PAR-DESSUS celui du
+        // thème général de l'app (juste au-dessus), sans toucher
+        // ThemedBackground lui-même (partagé par tout le reste de l'app).
+        // AnimatedBuilder : réagit tout de suite si on revient de
+        // ChatThemeScreen après avoir changé de thème.
+        //
+        // AnnotatedRegion : la barre de statut système (horloge, wifi,
+        // batterie) doit elle aussi passer en icônes claires sur un thème de
+        // discussion sombre (voir demande utilisateur : "l'entête n'est pas
+        // totalement visible") — remplace celle de ThemedBackground pour cet
+        // écran précis, basée sur le thème de discussion plutôt que le
+        // thème général de l'app.
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: chatTheme.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+          child: AnimatedBuilder(
+          animation: ChatThemeController.instance,
+          builder: (context, child) {
+            final chatTheme = ChatThemeController.instance.current;
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: chatTheme.backgroundColor,
+                image: chatTheme.backgroundAsset != null
+                    ? DecorationImage(image: AssetImage(chatTheme.backgroundAsset!), fit: BoxFit.cover)
+                    : null,
+              ),
+              child: child,
+            );
+          },
+          child: SafeArea(
           // Ferme la barre de réactions au tap sur un espace vide — un tap
           // sur le petit cercle ou un bouton précis gagne l'arène de geste
           // en premier (recognizer le plus interne) donc ce onTap-ci ne se
@@ -1255,7 +1351,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              if (_reactionPickerOpen) setState(() => _reactionPickerOpen = false);
+              if (_reactionPickerOpenForSendId != null) _closeReactionPanel();
             },
             child: Column(
             children: [
@@ -1267,7 +1363,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                       icon: Icon(
                         Icons.arrow_back_ios_new_rounded,
                         size: 20,
-                        color: theme.textOnBackground,
+                        color: headerFg,
                       ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -1296,7 +1392,7 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                               partnerPresent: _partnerPresent,
                             ),
                           ),
-                          _presenceLine(theme),
+                          _presenceLine(theme, headerFg),
                         ],
                       ),
                     ),
@@ -1321,14 +1417,22 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                             ),
                       onPressed: _toggleFavorite,
                     ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.more_vert_rounded,
-                        color: theme.textOnBackground,
-                      ),
-                      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(t('common_coming_soon'))),
-                      ),
+                    // Voir demande utilisateur : "tu proposes quel autre
+                    // item dans le menu" — seul "Thème de la discussion" est
+                    // câblé pour l'instant (voir ChatThemeScreen), les
+                    // autres idées validées (sélection, recherche,
+                    // suppression du fil, poèmes/battements du fil) restent
+                    // à construire séparément.
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert_rounded, color: headerFg),
+                      onSelected: (value) {
+                        if (value == 'chat_theme') {
+                          Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatThemeScreen()));
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'chat_theme', child: Text('Thème de la discussion')),
+                      ],
                     ),
                   ],
                 ),
@@ -1381,19 +1485,34 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
                         // _ThreadReplyBubble, qui s'aligne lui-même).
                         return Padding(
                           padding: const EdgeInsets.only(top: 10),
-                          child: _ThreadReplyBubble(
-                            reply: reply,
-                            isMine: reply.senderId == widget.user.id,
-                            fallbackText: _mainText(reply),
-                            time: _formattedDate(reply.createdAt),
-                            theme: theme,
-                            tickOverride: pending == null
-                                ? null
-                                : (pending.failed ? SendTick.failed : SendTick.sending),
-                            onRetry: pending != null && pending.failed
-                                ? () => _sendPendingReply(pending)
-                                : null,
-                            onTap: pending != null ? () {} : () => _openReply(reply),
+                          // Voir demande utilisateur : "la couleur de bulle
+                          // doit se mettre à jour en live" — _ThreadReplyBubble
+                          // lit ChatThemeController.instance.current directement
+                          // dans son build(), donc il lui faut un déclencheur de
+                          // rebuild dédié : le ListView englobant ne se
+                          // reconstruit pas tout seul au changement de thème.
+                          child: AnimatedBuilder(
+                            animation: ChatThemeController.instance,
+                            builder: (context, _) => _ThreadReplyBubble(
+                              reply: reply,
+                              isMine: reply.senderId == widget.user.id,
+                              fallbackText: _mainText(reply),
+                              time: _formattedDate(reply.createdAt),
+                              theme: theme,
+                              tickOverride: pending == null
+                                  ? null
+                                  : (pending.failed ? SendTick.failed : SendTick.sending),
+                              onRetry: pending != null && pending.failed
+                                  ? () => _sendPendingReply(pending)
+                                  : null,
+                              onTap: pending != null ? () {} : () => _openReply(reply),
+                              // Voir demande utilisateur : "ne peux-tu pas
+                              // utiliser les mêmes composants" — chaque
+                              // réponse confirmée peut recevoir sa réaction,
+                              // jamais un envoi encore en vol (pas d'id
+                              // serveur stable tant qu'il n'est pas confirmé).
+                              reactionOverlay: pending == null ? _reactionOverlay(theme, reply) : null,
+                            ),
                           ),
                         );
                       },
@@ -1528,6 +1647,8 @@ class _SlideDetailScreenState extends State<SlideDetailScreen> {
             ],
             ),
           ),
+        ),
+        ),
         ),
       ),
     );
@@ -1788,6 +1909,113 @@ class _SingleReactionBadge extends StatelessWidget {
   }
 }
 
+/// Les DEUX réactions posées sur l'envoi (moi + mon binôme) — copie
+/// conforme de GameBoxHistoryScreen._DualReactionBadge (voir demande
+/// utilisateur : "ne peux-tu pas utiliser les mêmes composants").
+class _DualReactionBadge extends StatelessWidget {
+  final String mineEmoji;
+  final String partnerEmoji;
+  final VoidCallback onTap;
+
+  const _DualReactionBadge({required this.mineEmoji, required this.partnerEmoji, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 54,
+          height: 44,
+          child: Center(
+            child: SizedBox(
+              width: 42,
+              height: 32,
+              child: Stack(
+                children: [
+                  _reactionDot(partnerEmoji),
+                  Positioned(left: 12, child: _reactionDot(mineEmoji)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _reactionDot(String emoji) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 6, offset: Offset(0, 2))],
+      ),
+      child: Text(emoji, style: const TextStyle(fontSize: 14)),
+    );
+  }
+}
+
+/// La "bande" qui liste qui a réagi avec quoi — copie conforme de
+/// GameBoxHistoryScreen._ReactionSummaryStrip.
+class _ReactionSummaryStrip extends StatelessWidget {
+  final ThemePalette theme;
+  final List<SendReaction> reactions;
+  final String myUserId;
+
+  const _ReactionSummaryStrip({required this.theme, required this.reactions, required this.myUserId});
+
+  @override
+  Widget build(BuildContext context) {
+    final ordered = [...reactions]..sort((a, b) => a.userId == myUserId ? -1 : (b.userId == myUserId ? 1 : 0));
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.84),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final reaction in ordered)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(reaction.emoji, style: const TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        reaction.userId == myUserId
+                            ? LocaleScope.of(context).t('common_you')
+                            : (reaction.user?.prenom ?? LocaleScope.of(context).t('common_partner_fallback')),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(fontSize: 12.5, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Barre de réactions rapides à ajouter — un set fixe d'émojis (pas de
 /// saisie libre) pour rester fidèle à l'identité "boîte à souvenirs" de
 /// l'app plutôt qu'un chat classique. Se déploie au tap du petit cercle sur
@@ -1883,6 +2111,13 @@ class _ThreadReplyBubble extends StatelessWidget {
   final SendTick? tickOverride;
   final VoidCallback? onRetry;
 
+  // Voir demande utilisateur : "ne peux-tu pas utiliser les mêmes
+  // composants" (que les discussions de jeu) — chaque réponse du fil peut
+  // désormais recevoir sa propre réaction, pas seulement la carte racine
+  // (voir _SlideDetailScreenState._reactionOverlay, généralisé par send.id
+  // comme dans GameBoxHistoryScreen).
+  final Widget? reactionOverlay;
+
   const _ThreadReplyBubble({
     required this.reply,
     required this.isMine,
@@ -1892,6 +2127,7 @@ class _ThreadReplyBubble extends StatelessWidget {
     required this.onTap,
     this.tickOverride,
     this.onRetry,
+    this.reactionOverlay,
   });
 
   @override
@@ -1901,27 +2137,44 @@ class _ThreadReplyBubble extends StatelessWidget {
     final previewHeartbeatImage =
         reply.isHeartbeat && reply.heartbeatImages.isNotEmpty ? reply.heartbeatImages.first : null;
 
+    final card = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: previewSlide != null
+            ? _packPreview(previewSlide)
+            : previewHeartbeatImage != null
+                ? _heartbeatPreview(previewHeartbeatImage)
+                // Sans image (message du catalogue sans photo), toujours
+                // la carte du battement de cœur — jamais la bulle de
+                // texte plate partagée avec les réponses-émoji.
+                : reply.isHeartbeat
+                    ? (HeartbeatCard.usesFamilyImage(reply.heartbeatFamily, reply.heartbeatImages)
+                        ? _heartbeatFamilyPreview()
+                        : _heartbeatTextCard())
+                    : _textBubble(),
+      ),
+    );
+
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: previewSlide != null
-              ? _packPreview(previewSlide)
-              : previewHeartbeatImage != null
-                  ? _heartbeatPreview(previewHeartbeatImage)
-                  // Sans image (message du catalogue sans photo), toujours
-                  // la carte du battement de cœur — jamais la bulle de
-                  // texte plate partagée avec les réponses-émoji.
-                  : reply.isHeartbeat
-                      ? (HeartbeatCard.usesFamilyImage(reply.heartbeatFamily, reply.heartbeatImages)
-                          ? _heartbeatFamilyPreview()
-                          : _heartbeatTextCard())
-                      : _textBubble(),
-        ),
-      ),
+      child: reactionOverlay == null
+          ? card
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                card,
+                // Même chevauchement que _ChatBubble.cornerOverlay (carte
+                // racine) — accroché au coin bas de CETTE réponse précise.
+                Positioned(
+                  bottom: -14,
+                  right: isMine ? 0 : null,
+                  left: isMine ? null : 0,
+                  child: reactionOverlay!,
+                ),
+              ],
+            ),
     );
   }
 
@@ -1948,7 +2201,7 @@ class _ThreadReplyBubble extends StatelessWidget {
   // titre du pack — sinon on ne reconnaît pas le poème qu'on a choisi.
   Widget _packPreview(Slide slide) {
     return Container(
-      width: 130,
+      width: 200,
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: isMine
@@ -1968,7 +2221,10 @@ class _ThreadReplyBubble extends StatelessWidget {
               category: reply.pack?.category,
               senderGender: reply.sender?.gender,
               borderRadius: 12,
-              scale: 0.5,
+              // Voir demande utilisateur : "harmoniser" avec la taille des
+              // discussions de jeu — même largeur de bulle (200px) et même
+              // scale (0.6, voir GameBoxHistoryScreen._GameCardMessageBubble).
+              scale: 0.6,
             ),
           ),
           const SizedBox(height: 4),
@@ -1986,7 +2242,7 @@ class _ThreadReplyBubble extends StatelessWidget {
   // point focal que sur la carte plein écran (voir HeartbeatImage.alignment).
   Widget _heartbeatPreview(HeartbeatImage image) {
     return Container(
-      width: 130,
+      width: 200,
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: isMine
@@ -2039,7 +2295,10 @@ class _ThreadReplyBubble extends StatelessWidget {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: SizedBox(
-                        width: 106,
+                        // Voir demande utilisateur : "harmoniser" — largeur
+                        // ajustée à la bulle désormais 200px (ratio inchangé
+                        // par rapport aux 130px d'avant).
+                        width: 163,
                         child: Text(
                           fallbackText,
                           textAlign: TextAlign.center,
@@ -2072,7 +2331,7 @@ class _ThreadReplyBubble extends StatelessWidget {
   // l'app) : même vignette que _packPreview, avec la vraie carte réduite.
   Widget _heartbeatFamilyPreview() {
     return Container(
-      width: 130,
+      width: 200,
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: isMine
@@ -2092,7 +2351,9 @@ class _ThreadReplyBubble extends StatelessWidget {
               theme: theme,
               family: reply.heartbeatFamily,
               senderGender: reply.sender?.gender,
-              scale: 0.4,
+              // Voir demande utilisateur : "harmoniser" — ajusté au même
+              // ratio que _packPreview pour la nouvelle largeur de 200px.
+              scale: 0.6,
             ),
           ),
           const SizedBox(height: 4),
@@ -2111,7 +2372,7 @@ class _ThreadReplyBubble extends StatelessWidget {
   // texte plate partagée avec les réponses-émoji.
   Widget _heartbeatTextCard() {
     return Container(
-      width: 130,
+      width: 200,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
         color: theme.surface,
@@ -2146,8 +2407,11 @@ class _ThreadReplyBubble extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
+          // Voir demande utilisateur : "Thème de la discussion" — couleur de
+          // la bulle "mine" pilotée par ChatThemeController plutôt que
+          // theme.primary fixe (voir ChatThemeScreen).
           color: isMine
-              ? theme.primary.withValues(alpha: 0.88)
+              ? ChatThemeController.instance.current.bubbleColor.withValues(alpha: 0.88)
               : Colors.white.withValues(alpha: 0.14),
           border: isMine
               ? null

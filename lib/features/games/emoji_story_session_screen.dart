@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
+import '../../core/last_seen_label.dart';
 import '../../core/realtime_client.dart';
 import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
@@ -17,11 +17,11 @@ import '../../theme/theme_palette.dart';
 import '../../theme/theme_scope.dart';
 import '../../theme/themed_background.dart';
 import '../../widgets/emoji_compose_bar.dart';
-import '../../widgets/send_status_tick.dart';
-import '../../widgets/waiting_dots.dart';
 import '../box/box_scope.dart';
 import '../box/box_service.dart';
+import '../box/couple_profile_screen.dart';
 import '../content/content_service.dart';
+import '../home/widgets/couple_avatars_badge.dart';
 import 'game_service.dart';
 import 'widgets/emoji_story_match_scoreboard.dart';
 
@@ -82,6 +82,42 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
   bool _loadingMore = false;
   final _scrollController = ScrollController();
 
+  // Voir demande utilisateur : "je veux cette entête déjà dans carnet de
+  // bord" — même en-tête que SlideDetailScreen (CoupleAvatarsBadge + ligne
+  // de présence), même canal presence que le Dashboard/les autres fils.
+  bool _partnerPresent = false;
+
+  AppUser? get _partner => BoxScope.of(context).currentBox?.partnerOf(widget.user.id);
+
+  void _onPresenceChange(Set<String> memberIds) {
+    if (!mounted) return;
+    final partnerId = _partner?.id;
+    final present = partnerId != null && memberIds.contains(partnerId);
+    if (present != _partnerPresent) setState(() => _partnerPresent = present);
+  }
+
+  // Voir demande utilisateur : "position la bulle en haut, les prochains en
+  // bas et ainsi de suite comme dans WhatsApp" — liste NON inversée
+  // (ancienne en haut, récente en bas, voir _buildList), donc plus de
+  // collage automatique au bas comme le faisait `reverse: true` : ces
+  // helpers s'en chargent explicitement aux bons moments.
+  bool get _isNearBottom =>
+      !_scrollController.hasClients ||
+      _scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 120;
+
+  void _scrollToBottomSoon({bool animate = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animate) {
+        _scrollController.animateTo(target, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      } else {
+        _scrollController.jumpTo(target);
+      }
+    });
+  }
+
   // Copie locale mutable de widget.sessionId : reste nulle tant qu'aucune
   // story n'a encore été envoyée dans ce fil vide, puis se fixe à l'id
   // retourné par le tout premier envoi (voir _sendStory) — les envois
@@ -114,25 +150,6 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
   String? _editingSendId;
   TextEditingController? _editController;
 
-  // Un champ classique (deviner/révéler/corriger une devinette, voir
-  // _StoryBubble.onGuessFieldFocusChanged) a le focus dans au moins une
-  // bulle — sert à cacher la barre de composition normale pendant ce
-  // temps : suivi explicite par focus plutôt que MediaQuery.viewInsets
-  // (peu fiable ici, Scaffold retire déjà l'inset clavier pour le corps
-  // avant qu'on ait pu le lire dans certains cas constatés en réel).
-  final Set<String> _focusedGuessFieldIds = {};
-  bool get _keyboardOpen => _focusedGuessFieldIds.isNotEmpty;
-
-  void _setGuessFieldFocus(String sendId, bool focused) {
-    setState(() {
-      if (focused) {
-        _focusedGuessFieldIds.add(sendId);
-      } else {
-        _focusedGuessFieldIds.remove(sendId);
-      }
-    });
-  }
-
   bool _savingEdit = false;
 
   @override
@@ -162,9 +179,10 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     _scrollController.addListener(() {
       if (!_scrollController.hasClients) return;
       final position = _scrollController.position;
-      if (_hasMore &&
-          !_loadingMore &&
-          position.pixels >= position.maxScrollExtent - 200) {
+      // Voir demande utilisateur : liste non inversée désormais (ancienne en
+      // haut) — scroller VERS LE HAUT (pixels proche de 0) charge les
+      // messages plus anciens, pas l'inverse comme avec `reverse: true`.
+      if (_hasMore && !_loadingMore && position.pixels <= 200) {
         _loadMore();
       }
     });
@@ -188,6 +206,7 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
       RealtimeClient.instance.unsubscribeFromBox(
         _subscribedBoxId!,
         onEvent: _onRealtimeEvent,
+        onPresenceChange: _onPresenceChange,
       );
     }
     super.dispose();
@@ -213,6 +232,10 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
           _loading = false;
         });
         _markIncomingAsSeen();
+        // Voir demande utilisateur : liste non inversée désormais (voir
+        // _buildList) — le dernier message n'est plus automatiquement visible
+        // à l'écran comme avec `reverse: true`, il faut y scroller soi-même.
+        _scrollToBottomSoon();
       }
     } catch (_) {
       // Ignoré — le fetch réseau ci-dessous fait foi et remplacera ce
@@ -236,6 +259,7 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
         _loading = false;
       });
       _markIncomingAsSeen();
+      _scrollToBottomSoon();
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -247,6 +271,12 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     if (sessionId == null || !_hasMore || _loadingMore || _sends.isEmpty)
       return;
     setState(() => _loadingMore = true);
+    // Voir demande utilisateur : liste non inversée (ancienne en haut) — les
+    // messages plus anciens s'insèrent maintenant AU-DESSUS du contenu déjà
+    // visible, ce qui décalerait tout vers le bas sans ce correctif (saut
+    // visuel classique). On mesure la hauteur ajoutée après coup et on
+    // décale le scroll d'autant, pour que ce qui était visible le reste.
+    final extentBefore = _scrollController.hasClients ? _scrollController.position.maxScrollExtent : 0.0;
     try {
       final page = await GameService.instance.fetchEmojiStoryHistory(
         widget.game.id,
@@ -259,6 +289,11 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
         _hasMore = page.hasMore;
       });
       _markIncomingAsSeen();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final added = _scrollController.position.maxScrollExtent - extentBefore;
+        if (added > 0) _scrollController.jumpTo(_scrollController.position.pixels + added);
+      });
     } catch (_) {
       // best effort — l'utilisateur pourra réessayer en re-scrollant.
     } finally {
@@ -337,6 +372,7 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
       await RealtimeClient.instance.subscribeToBox(
         coupleBoxId,
         onEvent: _onRealtimeEvent,
+        onPresenceChange: _onPresenceChange,
       );
     } catch (_) {
       // Best effort — l'écran reste utilisable, juste sans mise à jour
@@ -358,7 +394,14 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
         return;
       if (!mounted) return;
       if (_sends.any((s) => s.id == send.id)) return;
+      // Voir demande utilisateur : liste non inversée — ne force le scroll
+      // vers le nouveau message QUE si on était déjà en bas (sinon, décidé
+      // AVANT d'insérer le nouveau message, sans quoi on serait "déjà en
+      // bas" de la liste allongée et on scrollerait même en train de lire
+      // l'historique plus haut).
+      final wasNearBottom = _isNearBottom;
       setState(() => _sends = [send, ..._sends]);
+      if (wasNearBottom) _scrollToBottomSoon(animate: true);
       // L'écran est ouvert : la nouvelle story reçue est immédiatement "vue",
       // pas juste "envoyée" — même principe que GameBoxHistoryScreen.
       if (send.recipientId == widget.user.id) _markSeen(send);
@@ -463,6 +506,11 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
         _textMode = false;
       });
       _textFocusNode.unfocus();
+      // Voir demande utilisateur : liste non inversée — je veux toujours voir
+      // le message que je viens d'envoyer, contrairement à une réception où
+      // on ne force le scroll que si on était déjà en bas (voir
+      // _onRealtimeEvent).
+      _scrollToBottomSoon(animate: true);
       if (isFirstStoryOfSession) _loadStats();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -472,32 +520,6 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     } finally {
       if (mounted) setState(() => _sendingStory = false);
     }
-  }
-
-  Future<void> _handleGuess(Send send, String guess) async {
-    final updated = await GameService.instance.guessEmojiStory(
-      send.emojiStory!.id,
-      guess,
-    );
-    if (!mounted) return;
-    _replaceSend(updated);
-  }
-
-  Future<void> _handleVerdict(
-    Send send, {
-    required bool correct,
-    bool? retry,
-    String? reveal,
-  }) async {
-    final updated = await GameService.instance.submitEmojiStoryVerdict(
-      send.emojiStory!.id,
-      correct: correct,
-      retry: retry,
-      reveal: reveal,
-    );
-    if (!mounted) return;
-    _replaceSend(updated);
-    if (correct || retry == false) _loadStats();
   }
 
   Future<void> _handleEdit(Send send, String emojis) async {
@@ -513,18 +535,6 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
     final updated = await GameService.instance.deleteEmojiStory(
       send.emojiStory!.id,
     );
-    if (!mounted) return;
-    _replaceSend(updated);
-  }
-
-  Future<void> _handleEditGuess(String guessId, String guess) async {
-    final updated = await GameService.instance.editEmojiGuess(guessId, guess);
-    if (!mounted) return;
-    _replaceSend(updated);
-  }
-
-  Future<void> _handleDeleteGuess(String guessId) async {
-    final updated = await GameService.instance.deleteEmojiGuess(guessId);
     if (!mounted) return;
     _replaceSend(updated);
   }
@@ -704,79 +714,77 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
       },
       child: Scaffold(
         backgroundColor: theme.background,
-        appBar: _selectionMode
-            ? _buildSelectionAppBar(theme)
-            : AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                systemOverlayStyle: theme.statusBarOverlayStyle,
-                foregroundColor: theme.textOnBackground,
-                title: Text(
-                  widget.game.nameFor(LocaleScope.of(context).current.code),
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700,
-                    color: theme.textOnBackground,
-                  ),
-                ),
-                actions: [
-                  if (_matchStats != null && _matchStats!.totalResolved > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: Center(
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(20),
-                          onTap: () => showEmojiStoryMatchScoreboard(
-                            context,
-                            theme: theme,
-                            stats: _matchStats!,
-                            myUserId: widget.user.id,
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.surface,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: theme.primary.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  '🔮',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '${_matchStats!.totalFirstTry}/${_matchStats!.totalResolved}',
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: theme.textOnBackground,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 14,
-                                  color: theme.textOnBackgroundMuted,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+        appBar: _selectionMode ? _buildSelectionAppBar(theme) : null,
         body: ThemedBackground(
           child: SafeArea(
             child: Column(
               children: [
+                // Voir demande utilisateur : "je veux cette entête déjà dans
+                // carnet de bord" — copie conforme de SlideDetailScreen (back
+                // + CoupleAvatarsBadge + présence, centrés), remplace le
+                // simple titre texte + badge score d'avant (le score reste,
+                // juste déplacé à la place du cœur qui n'a pas de sens ici).
+                if (!_selectionMode)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: theme.textOnBackground),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => CoupleProfileScreen(user: widget.user)),
+                                ),
+                                child: CoupleAvatarsBadge(
+                                  user: widget.user,
+                                  partner: _partner,
+                                  partnerPresent: _partnerPresent,
+                                ),
+                              ),
+                              _presenceLine(theme),
+                            ],
+                          ),
+                        ),
+                        if (_matchStats != null && _matchStats!.totalResolved > 0)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () => showEmojiStoryMatchScoreboard(
+                              context,
+                              theme: theme,
+                              stats: _matchStats!,
+                              myUserId: widget.user.id,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: theme.surface,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: theme.primary.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text('🔮', style: TextStyle(fontSize: 12)),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    '${_matchStats!.totalFirstTry}/${_matchStats!.totalResolved}',
+                                    style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: theme.textOnBackground),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(Icons.chevron_right_rounded, size: 14, color: theme.textOnBackgroundMuted),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 Expanded(child: _buildList(theme, partnerName)),
                 // Édition en cours : le clavier émoji reprend sa place
                 // habituelle en bas (voir _editController), à la place de la
@@ -793,7 +801,7 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
                     controller: _editController!,
                     onClose: _cancelInlineEdit,
                   ),
-                ] else if (!_keyboardOpen) ...[
+                ] else ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                     child: EmojiComposeBar(
@@ -821,6 +829,27 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// "En ligne" (canal presence temps réel) ou "Vu il y a X" sous les
+  /// avatars — copie conforme de SlideDetailScreen._presenceLine (voir
+  /// demande utilisateur : "je veux cette entête déjà dans carnet de bord").
+  Widget _presenceLine(ThemePalette theme) {
+    final online = _partnerPresent;
+    final label = online ? LocaleScope.of(context).t('presence_online') : lastSeenLabel(context, _partner?.lastSeenAt);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.nunito(
+          fontSize: 11.5,
+          color: online ? Colors.greenAccent.shade700 : theme.textOnBackgroundMuted,
+          fontWeight: online ? FontWeight.w700 : FontWeight.normal,
         ),
       ),
     );
@@ -916,19 +945,25 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
       );
     }
 
+    // Voir demande utilisateur : "position la bulle en haut, les prochains
+    // en bas... comme dans WhatsApp" — _sends reste "plus récente d'abord"
+    // (voir sa doc, utilisée par _loadMore/beforeId), on inverse juste ici
+    // pour l'affichage (la plus ancienne en premier, en haut de la liste).
+    final ordered = _sends.reversed.toList();
+    final loaderOffset = _loadingMore ? 1 : 0;
+
     return ListView.builder(
-      reverse: true,
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: _sends.length + (_loadingMore ? 1 : 0),
+      itemCount: ordered.length + loaderOffset,
       itemBuilder: (context, index) {
-        if (index == _sends.length) {
+        if (_loadingMore && index == 0) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(child: CircularProgressIndicator()),
           );
         }
-        final send = _sends[index];
+        final send = ordered[index - loaderOffset];
         // Clé stable par story (voir son id, jamais l'index) : sans ça, une
         // nouvelle story insérée en tête décale les positions et Flutter
         // réutilise par erreur l'état local (devinette en cours de saisie,
@@ -938,23 +973,10 @@ class _EmojiStorySessionScreenState extends State<EmojiStorySessionScreen> {
           theme: theme,
           send: send,
           myUserId: widget.user.id,
-          onGuess: (guess) => _handleGuess(send, guess),
-          onVerdict: ({required correct, retry, reveal}) => _handleVerdict(
-            send,
-            correct: correct,
-            retry: retry,
-            reveal: reveal,
-          ),
-          onEditGuess: _handleEditGuess,
-          onDeleteGuess: _handleDeleteGuess,
-          onGuessFieldFocusChanged: (focused) =>
-              _setGuessFieldFocus(send.id, focused),
           selectionMode: _selectionMode,
           selected: _selectedIds.contains(send.id),
           onToggleSelect: () => _toggleSelect(send.id),
           editController: _editingSendId == send.id ? _editController : null,
-          isFirstMessage: !_hasMore && index == _sends.length - 1,
-          partnerName: partnerName,
         );
       },
     );
@@ -1037,22 +1059,6 @@ class _StoryBubble extends StatefulWidget {
   final ThemePalette theme;
   final Send send;
   final String myUserId;
-  final Future<void> Function(String guess) onGuess;
-  final Future<void> Function({
-    required bool correct,
-    bool? retry,
-    String? reveal,
-  })
-  onVerdict;
-  // Modifier/supprimer MA PROPRE devinette tant qu'elle attend un verdict
-  // (voir _buildPendingGuessBlock) — jamais celle du/de la partenaire.
-  final Future<void> Function(String guessId, String guess) onEditGuess;
-  final Future<void> Function(String guessId) onDeleteGuess;
-  // Un champ classique de CETTE bulle (deviner/révéler/corriger une
-  // devinette) a le focus ou vient de le perdre — remonté au parent pour
-  // cacher la barre de composition normale pendant ce temps (voir
-  // _EmojiStorySessionScreenState._keyboardOpen).
-  final ValueChanged<bool> onGuessFieldFocusChanged;
   // Sélection façon WhatsApp (voir _EmojiStorySessionScreenState) : appui
   // long entre en sélection, appui simple (tant qu'elle est active) bascule
   // la coche de CETTE bulle.
@@ -1064,30 +1070,16 @@ class _StoryBubble extends StatefulWidget {
   // le MÊME contrôleur que le clavier émoji affiché en bas de l'écran (voir
   // build()) : ce n'est jamais la bulle elle-même qui porte le clavier.
   final TextEditingController? editController;
-  // Vrai UNIQUEMENT pour le tout premier message de la discussion entière
-  // (le plus ancien, une fois tout l'historique chargé — voir
-  // _EmojiStorySessionScreenState._buildList) — affiche une invitation à
-  // jouer en citation au-dessus du contenu (voir demande utilisateur),
-  // jamais sur les messages suivants.
-  final bool isFirstMessage;
-  final String partnerName;
 
   const _StoryBubble({
     super.key,
     required this.theme,
     required this.send,
     required this.myUserId,
-    required this.onGuess,
-    required this.onVerdict,
-    required this.onEditGuess,
-    required this.onDeleteGuess,
-    required this.onGuessFieldFocusChanged,
     required this.selectionMode,
     required this.selected,
     required this.onToggleSelect,
     required this.editController,
-    required this.isFirstMessage,
-    required this.partnerName,
   });
 
   @override
@@ -1095,229 +1087,6 @@ class _StoryBubble extends StatefulWidget {
 }
 
 class _StoryBubbleState extends State<_StoryBubble> {
-  final _guessController = TextEditingController();
-  final _revealController = TextEditingController();
-  bool _guessing = false;
-  bool _closingWithReveal = false;
-  bool _submitting = false;
-  // Quel bouton précis de verdict est en cours d'envoi (voir
-  // _submitVerdict) — _submitting seul désactive bien les 3 boutons
-  // pendant l'envoi, mais ne dit pas LEQUEL afficher en chargement ;
-  // sans lui, taper "Retenter" faisait tourner le loader sur "Juste"
-  // (constaté en réel, voir demande utilisateur).
-  String? _verdictAction;
-
-  // Une des 3 phrases côté expéditeur·rice tirée une seule fois à la
-  // construction de CETTE bulle (jamais re-tirée au rebuild, sinon elle
-  // clignoterait) — voir demande utilisateur, même principe que les
-  // sous-titres du battement de cœur.
-  late final int _senderPhraseIndex = math.Random().nextInt(3) + 1;
-
-  // Modifier/supprimer MA propre devinette en attente de verdict (voir
-  // _buildPendingGuessBlock) — état purement local à cette bulle, pas de
-  // clavier spécial ici (devinette = clavier classique, voir _guessing) ni
-  // de coordination avec le parent, contrairement à l'édition de la story.
-  bool _guessMenuOpen = false;
-  bool _editingGuess = false;
-  bool _confirmingGuessDelete = false;
-  TextEditingController? _guessEditController;
-  bool _guessActionSubmitting = false;
-
-  // Tout champ classique de CETTE bulle (deviner/révéler/corriger une
-  // devinette) prévient le parent quand il prend/perd le focus, pour qu'il
-  // cache la barre de composition normale pendant ce temps (voir
-  // widget.onGuessFieldFocusChanged) — plus fiable qu'un simple
-  // MediaQuery.viewInsets, constaté en réel.
-  late final _guessFocusNode = FocusNode()..addListener(_notifyFocus);
-  late final _revealFocusNode = FocusNode()..addListener(_notifyFocus);
-  FocusNode? _guessEditFocusNode;
-
-  void _notifyFocus() {
-    final focused =
-        _guessFocusNode.hasFocus ||
-        _revealFocusNode.hasFocus ||
-        (_guessEditFocusNode?.hasFocus ?? false);
-    widget.onGuessFieldFocusChanged(focused);
-  }
-
-  // Utilisé quand ON SAIT que plus aucun champ ne doit rester actif (juste
-  // après un envoi réussi) : unfocus() explicite d'abord, PUIS notification
-  // directe à `false`, plutôt que de relire `.hasFocus` juste après le
-  // setState qui masque le champ (voir _submitGuess/_submitVerdict) — le
-  // détachement du FocusNode par le framework se fait sur la frame
-  // suivante, donc relire `.hasFocus` à cet instant précis pouvait encore
-  // renvoyer `true` et reconfirmer par erreur le champ comme "toujours
-  // focus", laissant la barre de composition normale masquée en
-  // permanence (voir widget.onGuessFieldFocusChanged).
-  void _clearGuessFocus() {
-    _guessFocusNode.unfocus();
-    _revealFocusNode.unfocus();
-    _guessEditFocusNode?.unfocus();
-    widget.onGuessFieldFocusChanged(false);
-  }
-
-  @override
-  void dispose() {
-    // Filet de sécurité (même raison que _submitGuess/_submitVerdict) : si
-    // cette bulle disparaît (défilement, recyclage de la liste) pendant
-    // qu'un de ses champs a encore le focus, le parent ne doit pas rester
-    // bloqué à croire un champ ouvert.
-    widget.onGuessFieldFocusChanged(false);
-    _guessController.dispose();
-    _revealController.dispose();
-    _guessEditController?.dispose();
-    _guessFocusNode.dispose();
-    _revealFocusNode.dispose();
-    _guessEditFocusNode?.dispose();
-    super.dispose();
-  }
-
-  void _toggleGuessMenu() {
-    setState(() {
-      _guessMenuOpen = !_guessMenuOpen;
-      _editingGuess = false;
-      _confirmingGuessDelete = false;
-    });
-  }
-
-  void _startEditGuess(String currentText) {
-    setState(() {
-      _editingGuess = true;
-      _guessMenuOpen = false;
-      _guessEditController = TextEditingController(text: currentText);
-      _guessEditFocusNode = FocusNode()..addListener(_notifyFocus);
-    });
-  }
-
-  void _cancelEditGuess() {
-    final old = _guessEditController;
-    final oldNode = _guessEditFocusNode;
-    setState(() {
-      _editingGuess = false;
-      _guessEditController = null;
-      _guessEditFocusNode = null;
-    });
-    old?.dispose();
-    oldNode?.dispose();
-    _notifyFocus();
-  }
-
-  Future<void> _saveEditGuess(String guessId) async {
-    final text = _guessEditController?.text.trim() ?? '';
-    if (text.isEmpty || _guessActionSubmitting) return;
-    setState(() => _guessActionSubmitting = true);
-    try {
-      await widget.onEditGuess(guessId, text);
-      if (!mounted) return;
-      final old = _guessEditController;
-      final oldNode = _guessEditFocusNode;
-      setState(() {
-        _editingGuess = false;
-        _guessEditController = null;
-        _guessEditFocusNode = null;
-      });
-      old?.dispose();
-      oldNode?.dispose();
-      _notifyFocus();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) setState(() => _guessActionSubmitting = false);
-    }
-  }
-
-  void _startConfirmDeleteGuess() {
-    setState(() {
-      _confirmingGuessDelete = true;
-      _guessMenuOpen = false;
-    });
-  }
-
-  void _cancelConfirmDeleteGuess() {
-    setState(() => _confirmingGuessDelete = false);
-  }
-
-  Future<void> _confirmDeleteGuess(String guessId) async {
-    if (_guessActionSubmitting) return;
-    setState(() => _guessActionSubmitting = true);
-    try {
-      await widget.onDeleteGuess(guessId);
-      // Le Send remplacé par le parent redonne needsGuess = true — cette
-      // bulle se reconstruit toute seule dans son état par défaut.
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _guessActionSubmitting = false;
-          _confirmingGuessDelete = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _submitGuess() async {
-    final text = _guessController.text.trim();
-    if (text.isEmpty || _submitting) return;
-    setState(() => _submitting = true);
-    try {
-      await widget.onGuess(text);
-      if (!mounted) return;
-      _guessController.clear();
-      setState(() => _guessing = false);
-      _clearGuessFocus();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<void> _submitVerdict({
-    required bool correct,
-    bool? retry,
-    String? reveal,
-  }) async {
-    if (_submitting) return;
-    final action = reveal != null
-        ? 'reveal'
-        : (retry == true ? 'retry' : 'correct');
-    setState(() {
-      _submitting = true;
-      _verdictAction = action;
-    });
-    try {
-      await widget.onVerdict(correct: correct, retry: retry, reveal: reveal);
-      if (!mounted) return;
-      setState(() {
-        _closingWithReveal = false;
-        _revealController.clear();
-      });
-      _clearGuessFocus();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _submitting = false;
-          _verdictAction = null;
-        });
-      }
-    }
-  }
-
   /// Coche de sélection façon WhatsApp — toujours à gauche de la bulle,
   /// quel que soit le côté d'alignement de celle-ci.
   Widget _buildCheckbox(ThemePalette theme) {
@@ -1601,59 +1370,30 @@ class _StoryBubbleState extends State<_StoryBubble> {
       }
     }
 
-    if (story.needsVerdict) {
-      blocks.add(
-        _buildPendingGuessBlock(
-          theme,
-          story,
-          guesserId,
-          guesserName,
-          mine,
-          onColor,
-          mutedColor,
-        ),
-      );
-    }
+    // Voir demande utilisateur : "conversation classique... sans demande de
+    // deviner, donner le verdict" — plus aucune nouvelle story n'invite à
+    // deviner (ni _buildPendingGuessBlock ni _buildStatusArea, qui ne
+    // couvraient QUE les prompts "à toi de deviner"/"verdict à donner").
+    // Les devinettes/verdicts DÉJÀ donnés avant ce changement restent
+    // affichés ci-dessus (voir `blocks`) — historique en lecture seule,
+    // jamais un nouveau message n'en recrée.
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.isFirstMessage)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _replyBlock(
-              bubbleMine: mine,
-              label: LocaleScope.of(context).t('emoji_story_invite_label'),
-              content: Text(
-                LocaleScope.of(context).t(
-                  mine
-                      ? 'emoji_story_invite_sender_$_senderPhraseIndex'
-                      : 'emoji_story_invite_recipient',
-                  {'name': widget.partnerName},
-                ),
-                style: TextStyle(color: onColor),
-              ),
-            ),
-          ),
         Text(
           story.emojis,
-          style: const TextStyle(fontSize: 26, height: 1.3),
-          textAlign: TextAlign.center,
+          // Voir demande utilisateur : du texte libre peut maintenant être
+          // envoyé (pas seulement des émojis, voir EmojiComposeBar) — sans
+          // `color: onColor`, du texte classique (contrairement aux glyphes
+          // émoji, qui ignorent TextStyle.color) pouvait devenir illisible
+          // sur le dégradé d'une bulle "mine".
+          style: TextStyle(fontSize: 20, height: 1.3, color: onColor),
+          textAlign: TextAlign.left,
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         ...blocks,
-        _buildStatusArea(
-          theme,
-          story,
-          guesserId,
-          composerId,
-          mine,
-          onColor,
-          mutedColor,
-          guesserName,
-          composerName,
-        ),
         const SizedBox(height: 6),
         Align(
           alignment: Alignment.centerRight,
@@ -1680,194 +1420,6 @@ class _StoryBubbleState extends State<_StoryBubble> {
         ),
       ],
     );
-  }
-
-  /// La devinette en attente de verdict — tapable UNIQUEMENT si c'est MA
-  /// propre devinette (voir widget.onEditGuess/onDeleteGuess), pour
-  /// afficher Modifier/Supprimer sans passer par un menu contextuel modal
-  /// (voir la note de _showOptions retirée plus haut — évite la même classe
-  /// de plantage) : tout se passe en place, dans la bulle.
-  Widget _buildPendingGuessBlock(
-    ThemePalette theme,
-    EmojiStorySend story,
-    String guesserId,
-    String guesserName,
-    bool mine,
-    Color onColor,
-    Color mutedColor,
-  ) {
-    final pending = story.latestGuess!;
-    final isMyGuess = guesserId == widget.myUserId;
-    final t = LocaleScope.of(context).t;
-
-    Widget body;
-    if (isMyGuess && _editingGuess) {
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _guessEditController,
-            focusNode: _guessEditFocusNode,
-            autofocus: true,
-            maxLines: 3,
-            style: TextStyle(fontSize: 13, color: onColor),
-            cursorColor: onColor,
-            decoration: InputDecoration(
-              isDense: true,
-              filled: true,
-              fillColor: onColor.withValues(alpha: 0.08),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 6,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('common_cancel'),
-                  color: mutedColor,
-                  filled: false,
-                  small: true,
-                  onTap: _guessActionSubmitting ? null : _cancelEditGuess,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('common_save'),
-                  color: theme.primary,
-                  filled: true,
-                  small: true,
-                  loading: _guessActionSubmitting,
-                  onTap: _guessActionSubmitting
-                      ? null
-                      : () => _saveEditGuess(pending.id),
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    } else if (isMyGuess && _confirmingGuessDelete) {
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.hourglass_empty_rounded, size: 14, color: mutedColor),
-              const SizedBox(width: 5),
-              Flexible(child: Text(pending.guess)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            t('emoji_story_delete_guess_confirm'),
-            style: TextStyle(fontSize: 11.5, color: mutedColor),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('common_cancel'),
-                  color: mutedColor,
-                  filled: false,
-                  small: true,
-                  onTap: _guessActionSubmitting
-                      ? null
-                      : _cancelConfirmDeleteGuess,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('common_confirm'),
-                  color: Colors.redAccent,
-                  filled: true,
-                  small: true,
-                  loading: _guessActionSubmitting,
-                  onTap: _guessActionSubmitting
-                      ? null
-                      : () => _confirmDeleteGuess(pending.id),
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    } else {
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.hourglass_empty_rounded, size: 14, color: mutedColor),
-              const SizedBox(width: 5),
-              Flexible(child: Text(pending.guess)),
-            ],
-          ),
-          if (isMyGuess && _guessMenuOpen) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _SmallActionButton(
-                    label: t('common_edit'),
-                    icon: Icons.edit_rounded,
-                    // theme.primary se fond dans le dégradé rose→violet
-                    // d'une bulle "mine" (voir _buildBubbleShell) — onColor
-                    // (blanc côté "mine") reste lisible dans les deux cas.
-                    color: mine ? onColor : theme.primary,
-                    filled: false,
-                    small: true,
-                    onTap: () => _startEditGuess(pending.guess),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _SmallActionButton(
-                    label: t('common_delete'),
-                    icon: Icons.delete_outline_rounded,
-                    color: Colors.redAccent,
-                    filled: false,
-                    small: true,
-                    onTap: _startConfirmDeleteGuess,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      );
-    }
-
-    final block = _replyBlock(
-      bubbleMine: mine,
-      label: LocaleScope.of(
-        context,
-      ).t('emoji_story_guess_label', {'name': guesserName}),
-      content: body,
-    );
-    // Appui long (pas un simple tap, façon WhatsApp) pour ouvrir le menu
-    // Modifier/Supprimer — désactivé pendant l'édition/la confirmation (les
-    // boutons internes gèrent déjà tout) et pour la devinette du/de la
-    // partenaire (rien à modifier ici).
-    if (!isMyGuess || _editingGuess || _confirmingGuessDelete) return block;
-    return GestureDetector(onLongPress: _toggleGuessMenu, child: block);
   }
 
   /// Le conteneur de la bulle (fond plein + coin pointu côté expéditeur·rice,
@@ -1914,278 +1466,36 @@ class _StoryBubbleState extends State<_StoryBubble> {
                   ? null
                   : Border.all(color: theme.primary.withValues(alpha: 0.15)),
             ),
-            child: child,
+            // Voir demande utilisateur : "la bulle est trop grande pour ce
+            // message" — le contenu se termine par un Align(centerRight)
+            // pour l'horodatage (voir _buildNormalContent), qui sans
+            // IntrinsicWidth force toute la colonne (et donc la bulle) à
+            // s'étirer jusqu'à maxWidth même pour un texte très court, un
+            // Align sans widthFactor "remplissant" par défaut toute la
+            // largeur disponible dès qu'il sert à déterminer la largeur
+            // préférée de son ancêtre Column.
+            child: IntrinsicWidth(child: child),
           ),
         ),
       ),
     );
   }
-
-  /// Ce qui reste à faire pour CETTE story, sous la citation de la
-  /// dernière devinette — verdict à rendre, invitation/formulaire à
-  /// deviner, résultat final, ou simple attente de l'autre.
-  Widget _buildStatusArea(
-    ThemePalette theme,
-    EmojiStorySend story,
-    String guesserId,
-    String composerId,
-    bool mine,
-    Color onColor,
-    Color mutedColor,
-    String guesserName,
-    String composerName,
-  ) {
-    final myTurnToVerdict = story.needsVerdict && mine;
-    final myTurnToGuess = story.needsGuess && guesserId == widget.myUserId;
-    final t = LocaleScope.of(context).t;
-
-    if (story.isResolved) {
-      // Le verdict (trouvé/raté) est déjà visible dans la citation de la
-      // devinette elle-même (voir emoji_story_guess_correct/_missed) —
-      // ce badge supplémentaire était redondant.
-      return const SizedBox.shrink();
-    }
-
-    if (myTurnToVerdict) {
-      if (_closingWithReveal) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _revealController,
-              focusNode: _revealFocusNode,
-              maxLines: 2,
-              autofocus: true,
-              style: GoogleFonts.nunito(fontSize: 13, color: onColor),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: mine
-                    ? onColor.withValues(alpha: 0.12)
-                    : theme.background,
-                hintText: t('emoji_story_reveal_hint'),
-                hintStyle: GoogleFonts.nunito(
-                  fontSize: 12.5,
-                  color: mutedColor,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _SmallActionButton(
-                    label: t('emoji_story_back_button'),
-                    color: mutedColor,
-                    filled: false,
-                    onTap: _submitting
-                        ? null
-                        : () => setState(() => _closingWithReveal = false),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _SmallActionButton(
-                    label: t('emoji_story_reveal_button'),
-                    color: theme.primary,
-                    filled: true,
-                    loading: _submitting && _verdictAction == 'reveal',
-                    onTap: _submitting
-                        ? null
-                        : () => _submitVerdict(
-                            correct: false,
-                            retry: false,
-                            reveal: _revealController.text.trim(),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('emoji_story_verdict_correct_button'),
-                  color: Colors.green,
-                  filled: true,
-                  loading: _submitting && _verdictAction == 'correct',
-                  onTap: _submitting
-                      ? null
-                      : () => _submitVerdict(correct: true),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _SmallActionButton(
-                  label: t('emoji_story_verdict_retry_button'),
-                  // theme.primary se fond dans le dégradé rose→violet d'une
-                  // bulle "mine" (voir _buildBubbleShell) — onColor (blanc
-                  // côté "mine") reste lisible dans les deux cas.
-                  color: mine ? onColor : theme.primary,
-                  filled: false,
-                  loading: _submitting && _verdictAction == 'retry',
-                  onTap: _submitting
-                      ? null
-                      : () => _submitVerdict(correct: false, retry: true),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          _SmallActionButton(
-            label: t('emoji_story_finish_reveal_button'),
-            color: mutedColor,
-            filled: false,
-            small: true,
-            onTap: _submitting
-                ? null
-                : () => setState(() => _closingWithReveal = true),
-          ),
-        ],
-      );
-    }
-
-    if (story.needsVerdict) {
-      // C'est à l'AUTRE de rendre son verdict — pas de statut lu/pas lu
-      // disponible pour cette devinette précise (contrairement au Send
-      // racine de la story, voir plus bas), juste l'indicateur d'attente.
-      // Colonne plutôt que Row : le texte peut être long (prénom compris)
-      // et doit pouvoir revenir à la ligne plutôt que d'être coupé — les
-      // points d'attente passent alors sur leur propre ligne en dessous.
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            t('emoji_story_status_waiting_verdict', {'name': composerName}),
-            style: GoogleFonts.nunito(
-              fontSize: 12.5,
-              fontStyle: FontStyle.italic,
-              color: mutedColor,
-            ),
-          ),
-          const SizedBox(height: 4),
-          WaitingDots(color: mutedColor),
-        ],
-      );
-    }
-
-    if (myTurnToGuess) {
-      if (!_guessing) {
-        return _SmallActionButton(
-          label: story.guesses.isNotEmpty
-              ? t('emoji_story_guess_again_button')
-              : t('emoji_story_guess_button'),
-          icon: Icons.psychology_alt_rounded,
-          color: theme.primary,
-          filled: true,
-          onTap: () => setState(() => _guessing = true),
-        );
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _guessController,
-            focusNode: _guessFocusNode,
-            autofocus: true,
-            maxLines: 3,
-            style: GoogleFonts.nunito(fontSize: 13, color: onColor),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: mine
-                  ? onColor.withValues(alpha: 0.12)
-                  : theme.background,
-              hintText: t('emoji_story_guess_hint'),
-              hintStyle: GoogleFonts.nunito(fontSize: 12.5, color: mutedColor),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _SmallActionButton(
-            label: t('emoji_story_send_guess_button'),
-            color: theme.primary,
-            filled: true,
-            loading: _submitting,
-            onTap: _submitting ? null : _submitGuess,
-          ),
-        ],
-      );
-    }
-
-    // needsGuess côté de qui a composé : c'est à l'AUTRE de deviner — le
-    // tick reflète si CETTE story (le Send racine) a déjà été vue par
-    // guesserName, comme dans les fils À nous deux/Vérité ou Défi.
-    final tick = sendTickFor(widget.send);
-    // Colonne plutôt que Row, même raison que ci-dessus : le texte (avec le
-    // prénom) revient à la ligne au lieu d'être coupé, points et coche sur
-    // leur propre ligne en dessous.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          widget.send.emojiStory?.guesses.isNotEmpty ?? false
-              ? t('emoji_story_waiting_guess_again', {'name': guesserName})
-              : t('emoji_story_status_waiting_guess', {'name': guesserName}),
-          style: GoogleFonts.nunito(
-            fontSize: 12.5,
-            fontStyle: FontStyle.italic,
-            color: mutedColor,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            WaitingDots(color: mutedColor),
-            const SizedBox(width: 6),
-            SendTickIcon(tick: tick, color: mutedColor),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
-/// Petit bouton compact réutilisé partout dans _StoryBubble (juste/retenter/
-/// terminer/deviner/envoyer) — pleine couleur ou juste contourné, avec un
-/// mini spinner intégré pendant l'envoi.
+/// Petit bouton compact réutilisé par la barre de sélection (Modifier/
+/// Supprimer, voir _buildSelectionAppBar) — pleine couleur ou juste
+/// contourné, avec un mini spinner intégré pendant l'envoi.
 class _SmallActionButton extends StatelessWidget {
   final String label;
-  final IconData? icon;
   final Color color;
   final bool filled;
-  final bool small;
   final bool loading;
   final VoidCallback? onTap;
 
   const _SmallActionButton({
     required this.label,
-    this.icon,
     required this.color,
     required this.filled,
-    this.small = false,
     this.loading = false,
     required this.onTap,
   });
@@ -2204,10 +1514,7 @@ class _SmallActionButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: small ? 6 : 9,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
               border: filled
@@ -2220,23 +1527,13 @@ class _SmallActionButton extends StatelessWidget {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: fg),
                   )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (icon != null) ...[
-                        Icon(icon, size: 14, color: fg),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        label,
-                        style: GoogleFonts.nunito(
-                          fontSize: small ? 11 : 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: fg,
-                        ),
-                      ),
-                    ],
+                : Text(
+                    label,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
                   ),
           ),
         ),
