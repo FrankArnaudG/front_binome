@@ -55,6 +55,23 @@ post_install do |installer|
     # d'Xcode récent — on force Swift 5 pour tous les pods.
     target.build_configurations.each do |config|
       config.build_settings['SWIFT_VERSION'] = '5.0'
+
+      # permission_handler_apple désactive TOUTES les permissions par défaut
+      # côté natif iOS (chaque appel Permission.xxx.request() renvoie
+      # directement "denied" sans jamais afficher le vrai dialogue système)
+      # tant que la macro correspondante n'est pas activée ici — constaté en
+      # test réel : aucune ligne Micro/Caméra n'apparaît même dans Réglages
+      # > Binome, car iOS ne crée cette entrée qu'après un premier vrai
+      # appel au framework natif. On n'active que ce que l'app utilise
+      # réellement sur iOS (voir Permission.microphone/camera/locationWhenInUse
+      # dans voice_call_service.dart, nearby_comms.dart, distance_screen.dart,
+      # live_location_service.dart — le reste, ex. Bluetooth/Nearby, est
+      # Android uniquement, voir NearbyPermissions).
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_CAMERA=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_LOCATION=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_LOCATION_WHENINUSE=1'
     end
   end
 end
