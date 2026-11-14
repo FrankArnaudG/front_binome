@@ -10,6 +10,7 @@ import '../../models/emoji_story_stats.dart';
 import '../../models/game.dart';
 import '../../models/game_box.dart';
 import '../../models/game_card_send.dart';
+import '../../models/game_trial_status.dart';
 import '../../models/memory_game_session.dart';
 import '../../models/memory_game_stats.dart';
 import '../../models/public_profile.dart';
@@ -57,6 +58,43 @@ class GameService {
     };
     _cachedEconomyRate = rate;
     return rate;
+  }
+
+  /// Essai gratuit du mode à distance pour MA Box (voir demande utilisateur :
+  /// afficher "vous avez Xh d'essai gratuitement" à côté de "À distance") —
+  /// jamais mis en cache, contrairement au taux ci-dessus : ce compteur
+  /// change à chaque partie jouée, un cliché obsolète afficherait un temps
+  /// restant faux.
+  Future<GameTrialStatus> fetchGameTrialStatus() async {
+    final data = await ApiClient.instance.get('/game-trial') as Map<String, dynamic>;
+    return GameTrialStatus.fromJson(data);
+  }
+
+  /// "1h32", "45min"... voir demande utilisateur : "je dois voir mon temps
+  /// diminuer" — même format que _formatMinutes des écrans de choix du mode,
+  /// mais à partir de secondes (le compteur serveur est en secondes) et
+  /// toujours arrondi au-dessus pour ne jamais afficher "0min" alors qu'il
+  /// reste encore quelques secondes jouables.
+  static String formatTrialRemaining(int totalSeconds) {
+    final totalMinutes = (totalSeconds / 60).ceil();
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    if (hours <= 0) return '${minutes}min';
+    if (minutes == 0) return '${hours}h';
+    return '${hours}h${minutes.toString().padLeft(2, '0')}';
+  }
+
+  /// Texte à afficher à côté de "À distance" (voir demande utilisateur,
+  /// exemple donné : "vous avez 2h d'essai gratuitement") — `null` si cette
+  /// Box n'a jamais eu d'essai (aucun texte à ajouter, comportement
+  /// inchangé). Une fois épuisé, remplace l'annonce du temps restant par un
+  /// message dédié plutôt que de continuer à afficher "0min" (voir demande
+  /// utilisateur : "afficher un texte à la place des heures épuisées").
+  static String? trialAnnouncementText(GameTrialStatus? status) {
+    if (status == null || !status.hasTrial) return null;
+    if (status.depleted) return 'Essai gratuit épuisé';
+    if (status.secondsRemaining <= 0) return null;
+    return "Vous avez ${formatTrialRemaining(status.secondsRemaining)} d'essai gratuit";
   }
 
   /// Dernière liste connue de boîtes pour ce jeu (voir LocalCache), sans

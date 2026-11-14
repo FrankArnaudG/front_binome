@@ -8,6 +8,7 @@ import 'package:showcaseview/showcaseview.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
+import '../../../models/game_trial_status.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
@@ -41,6 +42,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
   bool get _nearbySupported => !kIsWeb && Platform.isAndroid;
 
   Map<String, int>? _economyRate;
+  GameTrialStatus? _trialStatus;
 
   // Guide pas-à-pas (voir demande utilisateur : "quelqu'un qui ne connaît
   // pas le jeu... le guider à partir du mode qu'il choisira") — une bulle
@@ -54,6 +56,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
   void initState() {
     super.initState();
     _loadEconomyRate();
+    _loadTrialStatus();
     _maybeStartGuideAutomatically();
   }
 
@@ -78,6 +81,17 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
     try {
       final rate = await GameService.instance.fetchGameEconomyRate();
       if (mounted) setState(() => _economyRate = rate);
+    } catch (_) {
+      // Best-effort — l'écran reste utilisable sans ce détail.
+    }
+  }
+
+  /// Voir demande utilisateur : "à côté de 'à distance' (vous avez 2h
+  /// d'essai gratuitement)" — best-effort, même principe que _loadEconomyRate.
+  Future<void> _loadTrialStatus() async {
+    try {
+      final status = await GameService.instance.fetchGameTrialStatus();
+      if (mounted) setState(() => _trialStatus = status);
     } catch (_) {
       // Best-effort — l'écran reste utilisable sans ce détail.
     }
@@ -161,7 +175,7 @@ class _MemoryGameModeScreenState extends State<MemoryGameModeScreen> {
                   theme: theme,
                   icon: Icons.wifi_rounded,
                   title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                  subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                  subtitle: GameService.trialAnnouncementText(_trialStatus) ?? LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                   infoText: _remoteInfoText,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(

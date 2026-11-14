@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_router.dart';
+import '../../l10n/locale_scope.dart';
 import '../../models/app_user.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_drawer.dart';
@@ -88,6 +89,46 @@ class _BoxChoiceScreenState extends State<BoxChoiceScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 12),
+              // Voir demande utilisateur : le message "ton binôme a
+              // quitté la Box" doit survivre même si l'app a été fermée
+              // avant qu'on le voie (voir BoxService.loadPersistedPartnerLeft,
+              // appelé par SplashScreen) — pas de bouton ici, cet écran EST
+              // déjà celui pour recréer/rejoindre.
+              ListenableBuilder(
+                listenable: BoxService.instance,
+                builder: (context, _) {
+                  final snapshot = BoxService.instance.partnerLeftSnapshot;
+                  if (snapshot == null) return const SizedBox.shrink();
+
+                  final t = LocaleScope.of(context).t;
+                  final partner = BoxService.instance.partnerWhoLeft;
+                  final message = t(partner?.gender == 'Femme' ? 'partner_left_banner_f' : 'partner_left_banner_m');
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.heart_broken_rounded, color: AppColors.primary, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              message,
+                              style: GoogleFonts.nunito(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
               const AssetOrFallback(
                 assetPath: 'assets/images/pairing_phones.png',
                 fallback: BoxHeroFallback(),

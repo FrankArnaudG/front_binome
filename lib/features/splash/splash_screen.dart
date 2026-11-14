@@ -36,6 +36,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _checkSession() async {
+    // Voir BoxService.loadPersistedPartnerLeft : recharge SANS appel réseau
+    // le message "ton binôme a quitté la Box" s'il n'a pas encore été vu
+    // (voir demande utilisateur : doit survivre à une fermeture complète
+    // de l'app) — avant toute décision de routage ci-dessous.
+    await BoxService.instance.loadPersistedPartnerLeft();
+
     // Démarrage instantané : session + Box connues en local et Box active →
     // on ouvre l'app tout de suite (pas d'attente de deux appels réseau
     // successifs), puis on revérifie tout en arrière-plan.

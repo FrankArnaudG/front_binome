@@ -10,6 +10,7 @@ import '../../../core/api_client.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
+import '../../../models/game_trial_status.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
@@ -113,6 +114,7 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
   bool get _nearbySupported => !kIsWeb && Platform.isAndroid;
 
   Map<String, int>? _economyRate;
+  GameTrialStatus? _trialStatus;
 
   // Guide pas-à-pas (même principe que MemoryGameModeScreen) — une bulle
   // par tuile, automatique la première fois, rejouable via le "?".
@@ -124,6 +126,7 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
   void initState() {
     super.initState();
     _loadEconomyRate();
+    _loadTrialStatus();
     _maybeStartGuideAutomatically();
   }
 
@@ -136,6 +139,15 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
   void _startGuide() {
     ShowcaseView.get().startShowCase([_remoteTileKey, _nearbyTileKey, _localTileKey]);
     GameGuideStorage.instance.markSeen(widget.user.id, _kTicTacToeGuideKey);
+  }
+
+  Future<void> _loadTrialStatus() async {
+    try {
+      final status = await GameService.instance.fetchGameTrialStatus();
+      if (mounted) setState(() => _trialStatus = status);
+    } catch (_) {
+      // Best-effort — l'écran reste utilisable sans ce détail.
+    }
   }
 
   Future<void> _loadEconomyRate() async {
@@ -228,7 +240,7 @@ class _TicTacToeModeScreenState extends State<TicTacToeModeScreen> {
                         theme: theme,
                         icon: Icons.wifi_rounded,
                         title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                        subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                        subtitle: GameService.trialAnnouncementText(_trialStatus) ?? LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                         infoText: _remoteInfoText,
                         onTap: () => _start(TicTacToeMode.remote),
                       ),

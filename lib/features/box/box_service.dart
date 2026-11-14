@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/api_client.dart';
+import '../../core/device_identifier.dart';
 import '../../core/local_cache.dart';
 import '../../core/realtime_client.dart';
+import '../../models/app_user.dart';
 import '../../models/box.dart';
 import '../../models/box_stats.dart';
 
@@ -23,18 +25,79 @@ class BoxService extends ChangeNotifier {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
   static const _cacheKey = 'box_cache';
+  // Copie du JSON Box juste avant une dissolution détectée EN DIRECT (voir
+  // _apply) — permet au message "ton binôme a quitté" de survivre à une
+  // fermeture complète de l'app (voir demande utilisateur), alors que
+  // `_cacheKey` lui est déjà effacé à ce moment-là (plus de Box active).
+  static const _partnerLeftCacheKey = 'partner_left_box_cache';
 
   Box? _currentBox;
   Box? get currentBox => _currentBox;
 
+  /// Identifiant du compte connecté — retenu une seule fois (voir
+  /// [rememberUserId], appelé par AppRouter.routeAfterAuth) pour pouvoir
+  /// déterminer, dans [partnerWhoLeft], LEQUEL de creator/partner est "mon
+  /// binôme" plutôt que moi. BoxService ne reçoit jamais l'AppUser complet
+  /// par ailleurs.
+  String? _myUserId;
+  void rememberUserId(String userId) => _myUserId = userId;
+
+  /// Box telle qu'elle était juste AVANT que le/la binôme ne la quitte (voir
+  /// demande utilisateur : bannière "ton binôme a quitté la Box") —
+  /// nécessaire pour retrouver son prénom/genre, puisque `currentBox`
+  /// devient `null`/`dissolved` une fois la dissolution effective côté
+  /// serveur. `null` tant qu'aucune dissolution externe n'a eu lieu, ou dès
+  /// qu'une nouvelle Box valide a été créée/rejointe (voir [_apply]).
+  Box? _partnerLeftSnapshot;
+  Box? get partnerLeftSnapshot => _partnerLeftSnapshot;
+
+  /// Le/la binôme qui vient de quitter, `null` si rien à signaler ou si
+  /// [rememberUserId] n'a pas encore été appelé.
+  AppUser? get partnerWhoLeft => _myUserId != null ? _partnerLeftSnapshot?.partnerOf(_myUserId!) : null;
+
+  /// Recharge, sans appel réseau, le dernier "ton binôme a quitté" connu —
+  /// à appeler au démarrage (voir SplashScreen), AVANT que
+  /// AppRouter.routeAfterAuth ne décide de rediriger vers BoxChoiceScreen,
+  /// pour que le message survive à une fermeture complète de l'app entre
+  /// le départ du binôme et la prochaine ouverture (voir demande
+  /// utilisateur). No-op si rien n'a jamais été persisté.
+  Future<void> loadPersistedPartnerLeft() async {
+    final cached = await _storage.read(key: _partnerLeftCacheKey);
+    if (cached == null) return;
+    try {
+      _partnerLeftSnapshot = Box.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+    } catch (_) {
+      // Cache corrompu : pas grave, le message sera simplement absent.
+    }
+  }
+
   /// Applique une réponse serveur (Box ou `null`) : met à jour l'état, le
   /// cache local, et notifie les écouteurs. Utilisé par toutes les
   /// mutations pour ne jamais dupliquer la logique de cache.
-  Future<Box?> _apply(Map<String, dynamic>? json) async {
+  ///
+  /// [selfInitiated] : vrai UNIQUEMENT depuis [leaveBox] — un départ décidé
+  /// par SOI-MÊME redirige immédiatement vers BoxChoiceScreen (voir
+  /// SettingsScreen._leaveBox), la bannière "ton binôme a quitté" n'a donc
+  /// pas lieu d'être déclenchée dans ce cas précis.
+  Future<Box?> _apply(Map<String, dynamic>? json, {bool selfInitiated = false}) async {
     final box = json != null ? Box.fromJson(json) : null;
+
+    if (!selfInitiated && _currentBox?.isActive == true && _currentBox?.partnerId != null && (box == null || box.isDissolved)) {
+      _partnerLeftSnapshot = _currentBox;
+      // Capturé AVANT l'effacement de `_cacheKey` plus bas : c'est encore
+      // le JSON de la Box active d'avant la dissolution à cet instant.
+      final previousJson = await _storage.read(key: _cacheKey);
+      if (previousJson != null) {
+        await _storage.write(key: _partnerLeftCacheKey, value: previousJson);
+      }
+    } else if (box != null && !box.isDissolved) {
+      _partnerLeftSnapshot = null;
+      await _storage.delete(key: _partnerLeftCacheKey);
+    }
+
     _currentBox = box;
     notifyListeners();
-    _subscribeRealtimeLocation();
+    _subscribeRealtimeBoxEvents();
 
     if (json != null) {
       await _storage.write(key: _cacheKey, value: jsonEncode(json));
@@ -45,37 +108,47 @@ class BoxService extends ChangeNotifier {
     return box;
   }
 
-  String? _locationSubBoxId;
+  String? _boxEventsSubBoxId;
 
   /// Écoute globale (voir demande utilisateur : la position devait déjà
   /// être à jour même si on n'est pas sur l'écran "Notre distance" au
-  /// moment où le binôme la partage) — même principe que DoodleNotifier :
-  /// une seule souscription vivant tant que l'app tourne, jamais limitée à
-  /// la durée de vie d'un écran en particulier.
-  void _subscribeRealtimeLocation() {
+  /// moment où le binôme la partage — et, depuis, le départ du binôme doit
+  /// aussi se refléter tout de suite, "sans attendre que j'actualise la
+  /// page") — même principe que DoodleNotifier : une seule souscription
+  /// vivant tant que l'app tourne, jamais limitée à la durée de vie d'un
+  /// écran en particulier.
+  void _subscribeRealtimeBoxEvents() {
     final boxId = _currentBox?.id;
-    if (boxId == _locationSubBoxId) return;
-    if (_locationSubBoxId != null) {
-      RealtimeClient.instance.unsubscribeFromBox(_locationSubBoxId!, onEvent: _onRealtimeLocationEvent);
+    if (boxId == _boxEventsSubBoxId) return;
+    if (_boxEventsSubBoxId != null) {
+      RealtimeClient.instance.unsubscribeFromBox(_boxEventsSubBoxId!, onEvent: _onRealtimeBoxEvent);
     }
-    _locationSubBoxId = boxId;
+    _boxEventsSubBoxId = boxId;
     if (boxId != null) {
-      RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeLocationEvent);
+      RealtimeClient.instance.subscribeToBox(boxId, onEvent: _onRealtimeBoxEvent);
     }
   }
 
-  void _onRealtimeLocationEvent(RealtimeEvent event) {
-    if (event.event != 'BoxLocationShared') return;
+  void _onRealtimeBoxEvent(RealtimeEvent event) {
+    if (event.event != 'BoxLocationShared' && event.event != 'BoxDissolved') return;
     fetchCurrent();
   }
 
   Future<Box> createBox() async {
-    final data = await ApiClient.instance.post('/boxes') as Map<String, dynamic>;
+    final deviceId = await DeviceIdentifier.get();
+    final data = await ApiClient.instance.post(
+      '/boxes',
+      body: {if (deviceId != null) 'device_id': deviceId},
+    ) as Map<String, dynamic>;
     return (await _apply(data))!;
   }
 
   Future<Box> joinBox(String code) async {
-    final data = await ApiClient.instance.post('/boxes/join', body: {'code': code}) as Map<String, dynamic>;
+    final deviceId = await DeviceIdentifier.get();
+    final data = await ApiClient.instance.post(
+      '/boxes/join',
+      body: {'code': code, if (deviceId != null) 'device_id': deviceId},
+    ) as Map<String, dynamic>;
     return (await _apply(data))!;
   }
 
@@ -115,7 +188,7 @@ class BoxService extends ChangeNotifier {
 
   Future<void> leaveBox() async {
     await ApiClient.instance.post('/boxes/leave');
-    await _apply(null);
+    await _apply(null, selfInitiated: true);
   }
 
   Future<Box> updateSettings({

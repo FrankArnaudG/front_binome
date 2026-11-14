@@ -10,6 +10,7 @@ import '../../../core/api_client.dart';
 import '../../../l10n/locale_scope.dart';
 import '../../../models/app_user.dart';
 import '../../../models/game.dart';
+import '../../../models/game_trial_status.dart';
 import '../../../theme/theme_palette.dart';
 import '../../../theme/theme_scope.dart';
 import '../../../theme/themed_background.dart';
@@ -119,6 +120,7 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
   bool get _nearbySupported => !kIsWeb && Platform.isAndroid;
 
   Map<String, int>? _economyRate;
+  GameTrialStatus? _trialStatus;
 
   // Guide pas-à-pas (même principe que MemoryGameModeScreen, voir demande
   // utilisateur : "prends le même soin pour les autres jeux") — une bulle
@@ -131,6 +133,7 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
   void initState() {
     super.initState();
     _loadEconomyRate();
+    _loadTrialStatus();
     _maybeStartGuideAutomatically();
   }
 
@@ -149,6 +152,15 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
     try {
       final rate = await GameService.instance.fetchGameEconomyRate();
       if (mounted) setState(() => _economyRate = rate);
+    } catch (_) {
+      // Best-effort — l'écran reste utilisable sans ce détail.
+    }
+  }
+
+  Future<void> _loadTrialStatus() async {
+    try {
+      final status = await GameService.instance.fetchGameTrialStatus();
+      if (mounted) setState(() => _trialStatus = status);
     } catch (_) {
       // Best-effort — l'écran reste utilisable sans ce détail.
     }
@@ -234,7 +246,7 @@ class _WarCardModeScreenState extends State<WarCardModeScreen> {
                         theme: theme,
                         icon: Icons.wifi_rounded,
                         title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                        subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                        subtitle: GameService.trialAnnouncementText(_trialStatus) ?? LocaleScope.t(context, 'memory_mode_remote_subtitle'),
                         infoText: _remoteInfoText,
                         onTap: () => _goToDifficulty(WarCardMode.remote),
                       ),

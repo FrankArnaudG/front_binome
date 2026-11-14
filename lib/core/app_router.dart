@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/profile_completion_screen.dart';
 import '../features/box/box_choice_screen.dart';
+import '../features/box/box_service.dart';
 import '../features/box/box_waiting_screen.dart';
 import '../features/home/main_tab_screen.dart';
 import '../features/home/tab_navigation_controller.dart';
@@ -44,6 +45,11 @@ class AppRouter {
   /// Décide où envoyer l'utilisateur juste après authentification (Google)
   /// ou restauration de session, en fonction de l'état de sa Box.
   static void routeAfterAuth(BuildContext context, AppUser user, Box? box) {
+    // Voir BoxService.partnerWhoLeft (bannière "ton binôme a quitté la
+    // Box") — a besoin de savoir qui est "moi" pour distinguer le binôme
+    // de soi-même dans la Box mémorisée juste avant dissolution.
+    BoxService.instance.rememberUserId(user.id);
+
     // Étape bloquante avant tout le reste (y compris avant de savoir si une
     // Box existe) : ni Google ni l'inscription classique ne collectent
     // genre/pays, et un compte Google peut arriver avec un nom fantaisiste
@@ -79,7 +85,20 @@ class AppRouter {
     unawaited(LiveLocationService.instance.init());
 
     if (box == null || box.isDissolved) {
-      toBoxChoice(context, user, replace: true);
+      // Voir demande utilisateur : si c'est le BINÔME qui vient de quitter
+      // (voir BoxService.partnerLeftSnapshot, rechargé même après une
+      // fermeture complète de l'app — voir loadPersistedPartnerLeft), on
+      // ne doit JAMAIS envoyer directement vers BoxChoiceScreen : il faut
+      // d'abord voir la bannière sur le Dashboard, continuer à naviguer
+      // normalement, et ne passer par l'écran de création QUE via son
+      // bouton "Recréer une Box" (voir PartnerLeftBanner). BoxChoiceScreen
+      // reste la destination pour tous les AUTRES cas (jamais eu de Box,
+      // ou propre départ volontaire, voir SettingsScreen._leaveBox).
+      if (BoxService.instance.partnerLeftSnapshot != null) {
+        toHome(context, user, replace: true);
+      } else {
+        toBoxChoice(context, user, replace: true);
+      }
     } else if (box.isWaiting) {
       toBoxWaiting(context, user, box, replace: true);
     } else {

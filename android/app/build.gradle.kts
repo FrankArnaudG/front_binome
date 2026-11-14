@@ -26,7 +26,12 @@ android {
     // exige d'être compilé contre le SDK 36 ; rétrocompatible, ne change pas
     // minSdk/targetSdk.
     compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    // Forcé à la version la plus haute exigée par les plugins (plusieurs
+    // réclament 28.2.13676358 : audio_session, camera_android_camerax,
+    // firebase_*, flutter_webrtc, etc. — voir avertissement Flutter au
+    // build). Rétrocompatible : une NDK plus récente compile aussi le code
+    // natif visant une version antérieure.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -34,8 +39,10 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     defaultConfig {
@@ -47,7 +54,7 @@ android {
         // connecté, capture micro brute PCM16) exige Android 6.0 minimum ;
         // part de marché Android 5.0/5.1 aujourd'hui négligeable (décision
         // utilisateur validée).
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

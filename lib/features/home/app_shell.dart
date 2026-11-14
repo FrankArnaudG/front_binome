@@ -15,6 +15,7 @@ import '../../l10n/locale_scope.dart';
 import '../../widgets/nav_bars/classic_nav_bar.dart';
 import '../../widgets/nav_bars/nav_item.dart';
 import '../auth/auth_service.dart';
+import '../box/box_service.dart';
 import '../content/unread_timeline_service.dart';
 import '../games/game_card_inbox_service.dart';
 import '../shop/subscription_status_notifier.dart';
@@ -24,6 +25,7 @@ import 'widgets/doodle_overlay.dart';
 import 'widgets/game_invite_overlay.dart';
 import 'widgets/maintenance_banner.dart';
 import 'widgets/maintenance_block_screen.dart';
+import 'widgets/partner_left_banner.dart';
 import 'widgets/suspension_block_screen.dart';
 
 /// Coquille globale qui superpose la barre de navigation classique à
@@ -143,7 +145,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // demande utilisateur : écran de blocage pour les comptes non
     // autorisés, bande d'info pour les comptes autorisés.
     return AnimatedBuilder(
-      animation: Listenable.merge([MaintenanceService.instance, SuspensionService.instance]),
+      animation: Listenable.merge([
+        MaintenanceService.instance,
+        SuspensionService.instance,
+        BoxService.instance,
+        AppRouter.showGlobalNavBar,
+      ]),
       builder: (context, _) {
         // Vérifié EN PREMIER : une sanction pour abus de débit (voir
         // demande utilisateur) est propre à CE compte, elle doit
@@ -157,6 +164,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return Column(
           children: [
             if (MaintenanceService.instance.showBanner) const MaintenanceBanner(),
+            // Seulement dans les onglets principaux (voir
+            // AppRouter.showGlobalNavBar) : une fois redirigé vers
+            // BoxChoiceScreen via son bouton, la bannière n'a plus lieu
+            // d'être puisqu'on est déjà en train de recréer une Box.
+            if (AppRouter.showGlobalNavBar.value && BoxService.instance.partnerLeftSnapshot != null)
+              const PartnerLeftBanner(),
             Expanded(child: _buildShell(context)),
           ],
         );
