@@ -281,12 +281,20 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     }
     final service = _service;
     if (service == null) return;
-    if (service.permissionDenied) {
-      await _showMicPermissionSheet();
-      return;
-    }
+    // Voir demande utilisateur : "j'ai activé le microphone pendant la
+    // partie, pourquoi je n'ai toujours pas accès au micro" — tant que
+    // `enable()` n'est jamais rappelé, `permissionDenied` reste figé à son
+    // ancienne valeur même après une autorisation accordée entre-temps
+    // dans les réglages du téléphone. On retente TOUJOURS `enable()` ici
+    // (il revérifie l'autorisation RÉELLE à chaque appel, voir
+    // Permission.microphone.request()) avant de conclure à un refus.
     if (_status == VoiceCallStatus.idle || _status == VoiceCallStatus.failed) {
       await service.enable();
+      if (service.permissionDenied) await _showMicPermissionSheet();
+      return;
+    }
+    if (service.permissionDenied) {
+      await _showMicPermissionSheet();
       return;
     }
     final muted = !_muted;
