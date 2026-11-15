@@ -1210,7 +1210,9 @@ class _DatePickerField extends StatelessWidget {
 /// retombe sur les URLs réseau du serveur (themeAssetUrls).
 const Map<String, Map<String, String>> _bundledCoverPresets = {
   'heritage_royal': {
-    'frame': 'assets/invitations/heritage_royal/frame.webp',
+    // Voir demande utilisateur : "on doit avoir que trois images et non 4...
+    // on doit supprimer cette couverture rouge" — 'frame' (bordeaux)
+    // supprimé, 'frame_alt' (ivoire) est l'unique couverture par défaut.
     'frame_alt': 'assets/invitations/heritage_royal/frame_alt.webp',
     // 5 couvertures supplémentaires (voir demande utilisateur) — même
     // thème/anneau doré/fond de sections qu'Héritage Royal, seule l'image
@@ -1364,7 +1366,7 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
           _CoverBackgroundPicker(
             theme: theme,
             invitation: widget.invitation,
-            selectedBackground: _localSettings['background'] as String? ?? 'frame',
+            selectedBackground: _localSettings['background'] as String? ?? 'frame_alt',
             onPatch: _patchSettings,
             saving: _saving,
           )
@@ -1442,7 +1444,7 @@ class _CoverBackgroundPicker extends StatelessWidget {
         itemBuilder: (context, index) {
           final entry = presets[index];
           final key = entry.key;
-          final isSelected = key == selected || (key == 'frame' && selected.isEmpty);
+          final isSelected = key == selected || (key == 'frame_alt' && selected.isEmpty);
           final isBundled = bundled != null;
           return InkWell(
             borderRadius: BorderRadius.circular(14),
