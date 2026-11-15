@@ -1197,10 +1197,27 @@ const Map<String, Map<String, String>> _bundledCoverPresets = {
   },
 };
 
-/// Choix de la couverture dans une liste PRÉDÉFINIE d'ornements du modèle
-/// (voir InvitationTemplate.themeAssetUrls) — jamais un upload libre depuis
-/// la galerie (voir demande utilisateur explicite et répétée). Enregistre
-/// directement au tap, comme un réglage plutôt qu'un champ de texte.
+/// 4 styles de couverture (voir demande utilisateur : "Autoriser les
+/// couples à importer leurs propres images... tous les couples ne voudront
+/// pas utiliser les fonds proposés") — revient sur l'ancienne restriction
+/// "jamais un upload libre". Le fond décoratif prédéfini (ornements du
+/// modèle) reste le style par défaut, les 3 autres passent par
+/// [_GalleryGrid] (bloc `cover`, upload libre, voir
+/// InvitationMediaController::store).
+class _CoverStyle {
+  final String key;
+  final String label;
+  final String description;
+  const _CoverStyle(this.key, this.label, this.description);
+}
+
+const List<_CoverStyle> _coverStyles = [
+  _CoverStyle('template', 'Couverture du modèle', 'Le fond décoratif fourni par Binôme.'),
+  _CoverStyle('photo_text', 'Photo des mariés', 'Photo personnelle avec texte superposé.'),
+  _CoverStyle('photo_framed', 'Photo avec cadre', "Photo du couple intégrée aux ornements du modèle."),
+  _CoverStyle('custom', 'Image personnalisée', 'Importe ton propre carton déjà conçu.'),
+];
+
 class _CoverPresetPicker extends StatefulWidget {
   final dynamic theme;
   final Invitation invitation;
@@ -1215,12 +1232,17 @@ class _CoverPresetPicker extends StatefulWidget {
 class _CoverPresetPickerState extends State<_CoverPresetPicker> {
   bool _saving = false;
 
-  Future<void> _select(String key) async {
+  /// Fusionne `patch` dans `cover_settings` existant AVANT d'envoyer — voir
+  /// InvitationController::update, qui REMPLACE tout l'objet JSON plutôt
+  /// que de le fusionner côté serveur : envoyer seulement la clé modifiée
+  /// effacerait silencieusement les autres (ex. perdre `background` en
+  /// changeant juste `style`).
+  Future<void> _patchSettings(Map<String, dynamic> patch) async {
     if (_saving) return;
     setState(() => _saving = true);
     try {
       await InvitationService.instance.updateInvitation(widget.invitation.id, {
-        'cover_settings': {'background': key},
+        'cover_settings': {...widget.invitation.coverSettings, ...patch},
       });
       widget.onChanged();
     } on ApiException catch (e) {
@@ -1233,73 +1255,58 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final templateKey = widget.invitation.template?.key;
-    final bundled = templateKey != null ? _bundledCoverPresets[templateKey] : null;
-
-    // Clé -> source d'image : un asset embarqué si connu (voir
-    // _bundledCoverPresets), sinon l'URL réseau du serveur (modèle futur
-    // pas encore embarqué dans l'app).
-    final Map<String, String> presetSources;
-    if (bundled != null) {
-      presetSources = bundled;
-    } else {
-      final urls = widget.invitation.template?.themeAssetUrls ?? const {};
-      presetSources = {
-        for (final entry in urls.entries)
-          if (entry.key.startsWith('ornament_frame')) entry.key.replaceFirst('ornament_', ''): entry.value,
-      };
-    }
-    final presets = presetSources.entries.toList();
-    final selected = widget.invitation.coverSettings['background'] as String? ?? 'frame';
-
-    if (presets.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    final style = widget.invitation.coverSettings['style'] as String? ?? 'template';
+    final coverPhotos = widget.invitation.media.where((m) => m.blockKey == 'cover').toList();
+    // Masqué par défaut pour 'custom' si jamais réglé explicitement (voir
+    // cover.blade.php, même valeur par défaut côté rendu).
+    final hideOverlayText = widget.invitation.coverSettings['hide_overlay_text'] as bool? ?? true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Couverture', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
-        const SizedBox(height: 4),
-        Text(
-          'Choisis parmi les ornements du modèle — pas de photo personnelle pour ce bloc.',
-          style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
-        ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 150,
+          height: 92,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: presets.length,
+            itemCount: _coverStyles.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
-              final entry = presets[index];
-              final key = entry.key;
-              final isSelected = key == selected || (key == 'frame' && selected.isEmpty);
-              final isBundled = bundled != null;
+              final option = _coverStyles[index];
+              final isSelected = option.key == style;
               return InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: _saving ? null : () => _select(key),
+                onTap: _saving ? null : () => _patchSettings({'style': option.key}),
                 child: Container(
-                  width: 110,
-                  padding: const EdgeInsets.all(8),
+                  width: 170,
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: theme.surface,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: isSelected ? theme.primary : Colors.transparent, width: 2),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: isBundled
-                              ? Image.asset(entry.value, fit: BoxFit.contain)
-                              : CachedNetworkImage(imageUrl: entry.value, fit: BoxFit.contain),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              option.label,
+                              style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 12.5, color: theme.textOnBackground),
+                            ),
+                          ),
+                          if (isSelected) Icon(Icons.check_circle_rounded, size: 15, color: theme.primary),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      if (isSelected) Icon(Icons.check_circle_rounded, size: 16, color: theme.primary),
+                      const SizedBox(height: 4),
+                      Text(
+                        option.description,
+                        maxLines: 3,
+                        style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted, height: 1.25),
+                      ),
                     ],
                   ),
                 ),
@@ -1307,7 +1314,107 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
             },
           ),
         ),
+        const SizedBox(height: 14),
+        if (style == 'template')
+          _CoverBackgroundPicker(theme: theme, invitation: widget.invitation, onPatch: _patchSettings, saving: _saving)
+        else ...[
+          Text(
+            style == 'custom' ? 'Ton carton déjà conçu' : 'Photo du couple',
+            style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+          ),
+          const SizedBox(height: 8),
+          _GalleryGrid(theme: theme, invitationId: widget.invitation.id, blockKey: 'cover', items: coverPhotos, onChanged: widget.onChanged),
+        ],
+        if (style == 'custom') ...[
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            value: !hideOverlayText,
+            onChanged: _saving ? null : (show) => _patchSettings({'hide_overlay_text': !show}),
+            activeThumbColor: theme.primary,
+            title: Text('Afficher les prénoms sur l\'image', style: GoogleFonts.nunito(fontSize: 13, color: theme.textOnBackground)),
+            subtitle: Text(
+              "Masqué par défaut — à activer seulement si ton carton n'a pas déjà vos prénoms dessus.",
+              style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// Fond décoratif prédéfini (style 'template', voir InvitationTemplate.
+/// themeAssetUrls) — extrait de l'ancien [_CoverPresetPicker], inchangé.
+class _CoverBackgroundPicker extends StatelessWidget {
+  final dynamic theme;
+  final Invitation invitation;
+  final Future<void> Function(Map<String, dynamic>) onPatch;
+  final bool saving;
+
+  const _CoverBackgroundPicker({required this.theme, required this.invitation, required this.onPatch, required this.saving});
+
+  @override
+  Widget build(BuildContext context) {
+    final templateKey = invitation.template?.key;
+    final bundled = templateKey != null ? _bundledCoverPresets[templateKey] : null;
+
+    final Map<String, String> presetSources;
+    if (bundled != null) {
+      presetSources = bundled;
+    } else {
+      final urls = invitation.template?.themeAssetUrls ?? const {};
+      presetSources = {
+        for (final entry in urls.entries)
+          if (entry.key.startsWith('ornament_frame')) entry.key.replaceFirst('ornament_', ''): entry.value,
+      };
+    }
+    final presets = presetSources.entries.toList();
+    final selected = invitation.coverSettings['background'] as String? ?? 'frame';
+
+    if (presets.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 150,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: presets.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final entry = presets[index];
+          final key = entry.key;
+          final isSelected = key == selected || (key == 'frame' && selected.isEmpty);
+          final isBundled = bundled != null;
+          return InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: saving ? null : () => onPatch({'background': key}),
+            child: Container(
+              width: 110,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: isSelected ? theme.primary : Colors.transparent, width: 2),
+              ),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: isBundled
+                          ? Image.asset(entry.value, fit: BoxFit.contain)
+                          : CachedNetworkImage(imageUrl: entry.value, fit: BoxFit.contain),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (isSelected) Icon(Icons.check_circle_rounded, size: 16, color: theme.primary),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
