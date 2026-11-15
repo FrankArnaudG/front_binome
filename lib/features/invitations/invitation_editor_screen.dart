@@ -42,6 +42,13 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
   // vérifier si le webhook a déjà confirmé la publication.
   DateTime? _publishPaymentArmedAt;
   bool _checkingPublishPayment = false;
+  // Voir demande utilisateur : "si je sélectionne une image et je
+  // prévisualise c'est uniquement l'image par défaut qui reste affichée" —
+  // dernier PATCH de cover_settings lancé par _CoverPresetPicker (mise à
+  // jour optimiste, en tâche de fond) ; _save()/_preview() l'attendent pour
+  // ne jamais générer un enregistrement/une prévisualisation avant qu'il
+  // ait atteint la base de données.
+  Future<void>? _pendingCoverPatch;
 
   final _partnerOneCtrl = TextEditingController();
   final _partnerTwoCtrl = TextEditingController();
@@ -191,6 +198,12 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
 
   Future<void> _save() async {
     if (_saving) return;
+    // _CoverPresetPicker affiche déjà sa propre erreur si ce PATCH échoue
+    // (voir onPatchStarted) — ici on attend juste qu'il se termine, succès
+    // ou échec, avant de poursuivre.
+    try {
+      await _pendingCoverPatch;
+    } catch (_) {}
     setState(() => _saving = true);
     try {
       final lines = _familiesLinesCtrl.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
@@ -244,6 +257,16 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
   }
 
   Future<void> _preview() async {
+    // Voir demande utilisateur : "si je sélectionne une image et je
+    // prévisualise c'est uniquement l'image par défaut qui reste affichée"
+    // — le tap sur une vignette de couverture lance son PATCH en tâche de
+    // fond (voir _CoverPresetPicker._patchSettings, mise à jour optimiste)
+    // sans que l'écran attende la réponse ; sans ce await, la demande de
+    // prévisualisation pouvait partir AVANT que ce PATCH n'ait atteint la
+    // base de données, donc avant que le nouveau fond y soit enregistré.
+    try {
+      await _pendingCoverPatch;
+    } catch (_) {}
     await _save();
     if (!mounted) return;
     try {
@@ -512,6 +535,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
               gratitudeTitleCtrl: _gratitudeTitleCtrl,
               gratitudeMessageCtrl: _gratitudeMessageCtrl,
               onMediaChanged: _load,
+              onCoverPatchStarted: (future) => _pendingCoverPatch = future,
             ),
             _FamiliesTab(
               theme: theme,
@@ -624,6 +648,7 @@ class _InfosTab extends StatelessWidget {
   final TextEditingController gratitudeTitleCtrl;
   final TextEditingController gratitudeMessageCtrl;
   final VoidCallback onMediaChanged;
+  final void Function(Future<void>) onCoverPatchStarted;
 
   const _InfosTab({
     required this.theme,
@@ -639,6 +664,7 @@ class _InfosTab extends StatelessWidget {
     required this.gratitudeTitleCtrl,
     required this.gratitudeMessageCtrl,
     required this.onMediaChanged,
+    required this.onCoverPatchStarted,
   });
 
   @override
@@ -646,7 +672,7 @@ class _InfosTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _CoverPresetPicker(theme: theme, invitation: invitation, onChanged: onMediaChanged),
+        _CoverPresetPicker(theme: theme, invitation: invitation, onChanged: onMediaChanged, onPatchStarted: onCoverPatchStarted),
         const SizedBox(height: 16),
         _SectionField(label: 'Prénom 1', controller: partnerOneCtrl, theme: theme),
         _SectionField(label: 'Prénom 2', controller: partnerTwoCtrl, theme: theme),
@@ -1222,8 +1248,9 @@ class _CoverPresetPicker extends StatefulWidget {
   final dynamic theme;
   final Invitation invitation;
   final VoidCallback onChanged;
+  final void Function(Future<void>) onPatchStarted;
 
-  const _CoverPresetPicker({required this.theme, required this.invitation, required this.onChanged});
+  const _CoverPresetPicker({required this.theme, required this.invitation, required this.onChanged, required this.onPatchStarted});
 
   @override
   State<_CoverPresetPicker> createState() => _CoverPresetPickerState();
@@ -1231,22 +1258,40 @@ class _CoverPresetPicker extends StatefulWidget {
 
 class _CoverPresetPickerState extends State<_CoverPresetPicker> {
   bool _saving = false;
+  // Affiché/édité localement sans attendre le serveur (voir demande
+  // utilisateur : "pourquoi d'un modèle de couverture à l'autre il y a
+  // besoin d'un chargement ?") — avant, chaque tap appelait onChanged()
+  // (= _load) qui rechargeait toute l'invitation et affichait le spinner
+  // plein écran, alors que changer de style ne modifie ni les photos ni
+  // le reste des champs. Mis à jour tout de suite (optimiste), la requête
+  // part en tâche de fond ; en cas d'échec on revient à l'ancienne valeur.
+  late Map<String, dynamic> _localSettings = widget.invitation.coverSettings;
 
-  /// Fusionne `patch` dans `cover_settings` existant AVANT d'envoyer — voir
-  /// InvitationController::update, qui REMPLACE tout l'objet JSON plutôt
-  /// que de le fusionner côté serveur : envoyer seulement la clé modifiée
-  /// effacerait silencieusement les autres (ex. perdre `background` en
-  /// changeant juste `style`).
   Future<void> _patchSettings(Map<String, dynamic> patch) async {
     if (_saving) return;
-    setState(() => _saving = true);
+    final previous = _localSettings;
+    final next = {..._localSettings, ...patch};
+    setState(() {
+      _localSettings = next;
+      _saving = true;
+    });
+    // Fusionne `patch` dans `cover_settings` existant AVANT d'envoyer — voir
+    // InvitationController::update, qui REMPLACE tout l'objet JSON plutôt
+    // que de le fusionner côté serveur : envoyer seulement la clé modifiée
+    // effacerait silencieusement les autres (ex. perdre `background` en
+    // changeant juste `style`).
+    final future = InvitationService.instance.updateInvitation(widget.invitation.id, {'cover_settings': next});
+    // Voir demande utilisateur : le bouton "Prévisualiser" doit attendre CE
+    // PATCH avant de demander l'aperçu, sinon il peut partir avant que le
+    // nouveau fond/style ait atteint la base de données.
+    widget.onPatchStarted(future);
     try {
-      await InvitationService.instance.updateInvitation(widget.invitation.id, {
-        'cover_settings': {...widget.invitation.coverSettings, ...patch},
-      });
-      widget.onChanged();
+      await future;
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) {
+        setState(() => _localSettings = previous);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1255,11 +1300,11 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final style = widget.invitation.coverSettings['style'] as String? ?? 'template';
+    final style = _localSettings['style'] as String? ?? 'template';
     final coverPhotos = widget.invitation.media.where((m) => m.blockKey == 'cover').toList();
     // Masqué par défaut pour 'custom' si jamais réglé explicitement (voir
     // cover.blade.php, même valeur par défaut côté rendu).
-    final hideOverlayText = widget.invitation.coverSettings['hide_overlay_text'] as bool? ?? true;
+    final hideOverlayText = _localSettings['hide_overlay_text'] as bool? ?? true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1316,7 +1361,13 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
         ),
         const SizedBox(height: 14),
         if (style == 'template')
-          _CoverBackgroundPicker(theme: theme, invitation: widget.invitation, onPatch: _patchSettings, saving: _saving)
+          _CoverBackgroundPicker(
+            theme: theme,
+            invitation: widget.invitation,
+            selectedBackground: _localSettings['background'] as String? ?? 'frame',
+            onPatch: _patchSettings,
+            saving: _saving,
+          )
         else ...[
           Text(
             style == 'custom' ? 'Ton carton déjà conçu' : 'Photo du couple',
@@ -1350,10 +1401,17 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
 class _CoverBackgroundPicker extends StatelessWidget {
   final dynamic theme;
   final Invitation invitation;
+  final String selectedBackground;
   final Future<void> Function(Map<String, dynamic>) onPatch;
   final bool saving;
 
-  const _CoverBackgroundPicker({required this.theme, required this.invitation, required this.onPatch, required this.saving});
+  const _CoverBackgroundPicker({
+    required this.theme,
+    required this.invitation,
+    required this.selectedBackground,
+    required this.onPatch,
+    required this.saving,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1371,7 +1429,7 @@ class _CoverBackgroundPicker extends StatelessWidget {
       };
     }
     final presets = presetSources.entries.toList();
-    final selected = invitation.coverSettings['background'] as String? ?? 'frame';
+    final selected = selectedBackground;
 
     if (presets.isEmpty) return const SizedBox.shrink();
 

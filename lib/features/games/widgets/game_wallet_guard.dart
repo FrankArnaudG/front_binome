@@ -125,6 +125,12 @@ class _GameWalletGuardState extends State<GameWalletGuard> {
         SnackBar(
           content: const Text('Solde de tokens épuisé — la partie est en pause.'),
           duration: const Duration(seconds: 6),
+          // Voir demande utilisateur : "ajouter une croix à cette bande si
+          // on clique elle disparaît" — cette bande pouvant rester visible
+          // en changeant d'onglet pendant ses 6 secondes (elle est portée
+          // par le Scaffold global d'AppShell, pas celui de l'écran de jeu),
+          // une fermeture explicite est plus utile qu'un simple swipe.
+          showCloseIcon: true,
           action: SnackBarAction(
             label: 'Recharger',
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopScreen())),
