@@ -32,8 +32,16 @@ class _PartnerLeftBannerState extends State<PartnerLeftBanner> {
     setState(() => _recreating = true);
     try {
       final user = await AuthService.instance.cachedUserIfLoggedIn();
-      if (user == null || !mounted) return;
-      AppRouter.toBoxChoice(context, user, replace: true);
+      // PartnerLeftBanner est monté DANS AppShell, au même niveau que
+      // ClassicNavBar — donc AU-DESSUS du Navigator fourni par
+      // MaterialApp.builder (voir AppRouter.navigatorKey : "nécessaire
+      // pour naviguer... depuis un contexte situé au-dessus du Navigator,
+      // où Navigator.of(context) ne trouve rien"). `context` ici échouerait
+      // silencieusement ; on utilise le même contournement que
+      // ClassicNavBar/_handlePushPermission.
+      final navContext = AppRouter.navigatorKey.currentContext;
+      if (user == null || navContext == null || !navContext.mounted) return;
+      AppRouter.toBoxChoice(navContext, user, replace: true);
     } finally {
       if (mounted) setState(() => _recreating = false);
     }

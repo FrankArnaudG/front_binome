@@ -146,7 +146,7 @@ const Map<String, Map<String, String>> kTranslations = {
         'Tu devras te reconnecter pour retrouver ton binôme.',
     'leave_partner_confirm_title': 'Se déconnecter du/de la partenaire ?',
     'leave_partner_confirm_content':
-        'Cette action met fin définitivement à ton lien de couple. Tes pièces (les tiennes et celles de ton/ta partenaire) seront remises à zéro, et tout abonnement en cours sera annulé immédiatement pour vous deux, même s\'il restait du temps payé. Tu pourras créer ou rejoindre une nouvelle Box ensuite.',
+        'Cette action met fin définitivement à ton lien de couple. Les tokens de la Box (les tiens et ceux de ton/ta partenaire) seront remis à zéro, et tout abonnement en cours sera annulé immédiatement pour vous deux, même s\'il restait du temps payé. Tu pourras créer ou rejoindre une nouvelle Box ensuite.',
     'delete_account_confirm_title': 'Supprimer mon compte ?',
     'delete_account_confirm_content':
         'Cette action est irréversible : ton profil, ta Box et ton historique seront définitivement supprimés.',
