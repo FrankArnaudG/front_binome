@@ -89,6 +89,13 @@ class VoiceCallService {
   final _cameraInviteController = StreamController<CameraInvite>.broadcast();
   Stream<CameraInvite> get cameraInviteStream => _cameraInviteController.stream;
 
+  // Voir demande utilisateur : "si je n'ai pas autorisé mon micro, il faut
+  // que mon binôme soit informé par un petit bandeau" — `true` quand NOTRE
+  // refus d'autorisation vient d'être signalé au binôme, effacé dès qu'un
+  // `voice_ready` normal arrive (micro désormais autorisé et connecté).
+  final _micDeniedController = StreamController<bool>.broadcast();
+  Stream<bool> get micDeniedStream => _micDeniedController.stream;
+
   // Vidéo — voir doc de classe : OPTIONNELLE, jamais activée par défaut
   // (voir demande utilisateur : garder l'appel voix léger comme base, la
   // caméra reste un choix conscient de chaque côté). Contrairement au
@@ -157,6 +164,7 @@ class VoiceCallService {
     if (!permission.isGranted) {
       permissionDenied = true;
       _setStatus(VoiceCallStatus.failed);
+      unawaited(_signal('mic_denied', const {'denied': true}));
       return;
     }
     permissionDenied = false;
@@ -285,6 +293,9 @@ class VoiceCallService {
     final payload = rawPayload is Map ? rawPayload.cast<String, dynamic>() : <String, dynamic>{};
     switch (type) {
       case 'voice_ready':
+        // Le binôme vient de se (re)connecter normalement : tout refus de
+        // micro qu'il avait pu signaler n'a plus lieu d'être affiché.
+        _micDeniedController.add(false);
         final wasReady = _partnerReady;
         final isReply = payload['reply'] == true;
         _partnerReady = true;
@@ -309,6 +320,8 @@ class VoiceCallService {
           name: (payload['name'] as String?) ?? '',
           cancel: payload['cancel'] == true,
         ));
+      case 'mic_denied':
+        _micDeniedController.add(payload['denied'] == true);
       case 'offer':
         unawaited(_onOffer(payload));
       case 'answer':

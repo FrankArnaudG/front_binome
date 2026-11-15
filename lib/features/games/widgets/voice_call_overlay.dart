@@ -82,6 +82,11 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   StreamSubscription<VoiceCallStatus>? _subscription;
   StreamSubscription<bool>? _remoteVideoSubscription;
   StreamSubscription<CameraInvite>? _inviteSubscription;
+  StreamSubscription<bool>? _micDeniedSubscription;
+  // Voir demande utilisateur : "si je n'ai pas autorisé mon micro, il faut
+  // que mon binôme soit informé par un petit bandeau" — vrai tant que le
+  // binôme n'a pas réussi à reconnecter son micro depuis.
+  bool _partnerMicDenied = false;
   VoiceCallStatus _status = VoiceCallStatus.idle;
   // Coupé par défaut (voir VoiceCallService, doc de classe : "un simple
   // clic pour qu'il passe au vert") — reflète l'état initial du service.
@@ -93,6 +98,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
   // d'invitation en cours) — affiché en bulle "i" à côté du bouton caméra.
   String? _cameraInviteFrom;
   bool _inviteExpanded = false;
+  bool _micDeniedExpanded = true;
   // Petite info sur l'état de la voix pendant que le bouton tourne (attente
   // du binôme / connexion / reconnexion) : dépliée ~4 s à chaque changement,
   // puis repliée en "i" (un tap la rouvre).
@@ -159,6 +165,10 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
         _inviteExpanded = !invite.cancel && !_cameraOn;
       });
     });
+    _micDeniedSubscription = service.micDeniedStream.listen((denied) {
+      if (!mounted) return;
+      setState(() => _partnerMicDenied = denied);
+    });
   }
 
   @override
@@ -186,6 +196,7 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
     _subscription?.cancel();
     _remoteVideoSubscription?.cancel();
     _inviteSubscription?.cancel();
+    _micDeniedSubscription?.cancel();
     _changesSubscription?.cancel();
     _noteTimer?.cancel();
     unawaited(_service?.dispose());
@@ -374,7 +385,14 @@ class _VoiceCallOverlayState extends State<VoiceCallOverlay> {
                   ),
                 ],
               ),
-              if (_statusNote() case final note?) ...[
+              if (_partnerMicDenied) ...[
+                const SizedBox(width: 8),
+                _infoBubble(
+                  "Ton binôme a fermé la communication de son micro",
+                  expanded: _micDeniedExpanded,
+                  onTap: () => setState(() => _micDeniedExpanded = !_micDeniedExpanded),
+                ),
+              ] else if (_statusNote() case final note?) ...[
                 const SizedBox(width: 8),
                 _infoBubble(note, expanded: _noteExpanded, onTap: () => _noteExpanded ? setState(() => _noteExpanded = false) : _flashNote()),
               ],
