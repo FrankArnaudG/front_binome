@@ -94,7 +94,14 @@ class GameService {
     if (status == null || !status.hasTrial) return null;
     if (status.depleted) return 'Essai gratuit épuisé';
     if (status.secondsRemaining <= 0) return null;
-    return "Vous avez ${formatTrialRemaining(status.secondsRemaining)} d'essai gratuit";
+    final formatted = formatTrialRemaining(status.secondsRemaining);
+    // Voir demande utilisateur : "si le temps imparti est complet on dit
+    // vous avez X... mais si on a commencé à consommer on dit il vous
+    // reste X" — intact (jamais joué) vs déjà entamé.
+    if (status.secondsRemaining >= status.grantedSeconds) {
+      return "Vous avez $formatted d'essai gratuit";
+    }
+    return "Il vous reste $formatted d'essai gratuit";
   }
 
   /// Dernière liste connue de boîtes pour ce jeu (voir LocalCache), sans
