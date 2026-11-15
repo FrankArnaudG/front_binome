@@ -242,7 +242,8 @@ class _BattleshipModeScreenState extends State<BattleshipModeScreen> {
                         theme: theme,
                         icon: Icons.wifi_rounded,
                         title: LocaleScope.t(context, 'memory_mode_remote_title'),
-                        subtitle: GameService.trialAnnouncementText(_trialStatus) ?? LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                        subtitle: LocaleScope.t(context, 'memory_mode_remote_subtitle'),
+                        trialBubbleText: GameService.trialAnnouncementText(_trialStatus),
                         infoText: _remoteInfoText,
                         onTap: () => _goToDifficulty(BattleshipMode.remote),
                       ),
@@ -302,6 +303,11 @@ class _ModeTile extends StatelessWidget {
   final String subtitle;
   final bool locked;
   final String? infoText;
+  // Voir demande utilisateur : le texte d'essai gratuit ("Vous avez 2h
+  // d'essai gratuit"/"Essai gratuit épuisé") s'affiche désormais en bulle
+  // flottante au-dessus de la tuile, SANS jamais remplacer le sous-titre
+  // normal (contrairement à l'ancienne version).
+  final String? trialBubbleText;
   final VoidCallback? onTap;
 
   const _ModeTile({
@@ -311,12 +317,14 @@ class _ModeTile extends StatelessWidget {
     required this.subtitle,
     this.locked = false,
     this.infoText,
+    this.trialBubbleText,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Stack(
+      clipBehavior: Clip.none,
       children: [
         Opacity(
           opacity: locked ? 0.5 : 1,
@@ -365,6 +373,23 @@ class _ModeTile extends StatelessWidget {
           ),
         ),
         if (infoText != null) GameModeInfoIcon(theme: theme, title: 'Mode $title', text: infoText!),
+        if (trialBubbleText != null)
+          Positioned(
+            top: -10,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: theme.primary,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Text(
+                trialBubbleText!,
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
       ],
     );
   }

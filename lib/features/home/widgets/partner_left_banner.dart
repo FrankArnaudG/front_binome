@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/app_router.dart';
 import '../../../l10n/locale_scope.dart';
+import '../../../theme/theme_scope.dart';
 import '../../auth/auth_service.dart';
 import '../../box/box_service.dart';
 
@@ -56,11 +57,12 @@ class _PartnerLeftBannerState extends State<PartnerLeftBanner> {
         if (snapshot == null) return const SizedBox.shrink();
 
         final t = LocaleScope.of(context).t;
+        final theme = ThemeScope.paletteOf(context);
         final partner = BoxService.instance.partnerWhoLeft;
         final message = t(partner?.gender == 'Femme' ? 'partner_left_banner_f' : 'partner_left_banner_m');
 
         return Material(
-          color: const Color(0xFFE53958),
+          color: theme.primary,
           child: SafeArea(
             bottom: false,
             child: Padding(
@@ -86,7 +88,7 @@ class _PartnerLeftBannerState extends State<PartnerLeftBanner> {
                           onPressed: _recreateBox,
                           style: TextButton.styleFrom(
                             backgroundColor: Colors.white,
-                            foregroundColor: const Color(0xFFE53958),
+                            foregroundColor: theme.primary,
                             minimumSize: const Size(0, 30),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                           ),

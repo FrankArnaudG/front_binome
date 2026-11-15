@@ -821,7 +821,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': 'Comment veux-tu jouer ?',
     'memory_mode_subtitle': 'Choisis un mode avant de lancer la partie.',
     'memory_mode_remote_title': 'À distance',
-    'memory_mode_remote_subtitle': 'Chacun sur son téléphone, où que tu sois.',
+    'memory_mode_remote_subtitle': 'Peu importe la distance qui vous sépare.',
     'memory_mode_local_title': 'Présentiel, un seul téléphone',
     'memory_mode_local_subtitle':
         'Vous vous passez le même appareil, à tour de rôle.',
@@ -1698,7 +1698,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': 'How do you want to play?',
     'memory_mode_subtitle': 'Choose a mode before starting the game.',
     'memory_mode_remote_title': 'Remote',
-    'memory_mode_remote_subtitle': 'Each on your own phone, wherever you are.',
+    'memory_mode_remote_subtitle': 'No matter the distance between you.',
     'memory_mode_local_title': 'In person, one phone',
     'memory_mode_local_subtitle':
         'You pass the same device back and forth, taking turns.',
@@ -2598,7 +2598,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Wählt einen Modus, bevor ihr das Spiel startet.',
     'memory_mode_remote_title': 'Aus der Ferne',
     'memory_mode_remote_subtitle':
-        'Jeder auf seinem eigenen Handy, egal wo ihr seid.',
+        'Egal, wie weit ihr voneinander entfernt seid.',
     'memory_mode_local_title': 'Vor Ort, ein Handy',
     'memory_mode_local_subtitle': 'Ihr reicht euch abwechselnd dasselbe Gerät.',
     'memory_difficulty_title': 'Welcher Schwierigkeitsgrad?',
@@ -3497,7 +3497,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Elegid un modo antes de empezar la partida.',
     'memory_mode_remote_title': 'A distancia',
     'memory_mode_remote_subtitle':
-        'Cada uno en su teléfono, estéis donde estéis.',
+        'Sin importar la distancia que os separe.',
     'memory_mode_local_title': 'En persona, un solo teléfono',
     'memory_mode_local_subtitle': 'Os pasáis el mismo dispositivo, por turnos.',
     'memory_difficulty_title': '¿Qué dificultad?',
@@ -4304,7 +4304,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': '你们想怎么玩？',
     'memory_mode_subtitle': '开始游戏前选择一种模式。',
     'memory_mode_remote_title': '远程',
-    'memory_mode_remote_subtitle': '各自用手机，无论身处何地。',
+    'memory_mode_remote_subtitle': '无论你们相隔多远。',
     'memory_mode_local_title': '面对面，共用一部手机',
     'memory_mode_local_subtitle': '两人轮流传递同一台设备。',
     'memory_difficulty_title': '选择难度',
@@ -5134,7 +5134,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': 'كيف تريدان اللعب؟',
     'memory_mode_subtitle': 'اختارا وضعًا قبل بدء اللعبة.',
     'memory_mode_remote_title': 'عن بُعد',
-    'memory_mode_remote_subtitle': 'كل منكما على هاتفه، أينما كنتما.',
+    'memory_mode_remote_subtitle': 'بغض النظر عن المسافة التي تفصل بينكما.',
     'memory_mode_local_title': 'وجهًا لوجه، هاتف واحد',
     'memory_mode_local_subtitle': 'تتبادلان نفس الجهاز، كل بدوره.',
     'memory_difficulty_title': 'ما مستوى الصعوبة؟',
@@ -6013,7 +6013,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Pilih mode sebelum memulai permainan.',
     'memory_mode_remote_title': 'Jarak jauh',
     'memory_mode_remote_subtitle':
-        'Masing-masing di ponsel sendiri, di mana pun kalian berada.',
+        'Berapa pun jarak yang memisahkan kalian.',
     'memory_mode_local_title': 'Tatap muka, satu ponsel',
     'memory_mode_local_subtitle':
         'Kalian bergantian menggunakan perangkat yang sama.',
@@ -6909,7 +6909,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Выберите режим перед началом игры.',
     'memory_mode_remote_title': 'Удалённо',
     'memory_mode_remote_subtitle':
-        'Каждый на своём телефоне, где бы вы ни были.',
+        'Неважно, какое расстояние вас разделяет.',
     'memory_mode_local_title': 'Рядом, один телефон',
     'memory_mode_local_subtitle':
         'Вы передаёте друг другу одно устройство по очереди.',
@@ -7803,7 +7803,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Escolham um modo antes de começar a partida.',
     'memory_mode_remote_title': 'À distância',
     'memory_mode_remote_subtitle':
-        'Cada um no seu telemóvel, onde quer que estejam.',
+        'Não importa a distância que vos separa.',
     'memory_mode_local_title': 'Presencial, um só telemóvel',
     'memory_mode_local_subtitle': 'Passam o mesmo aparelho, à vez.',
     'memory_difficulty_title': 'Que dificuldade?',
@@ -8690,7 +8690,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_subtitle': 'Oyuna başlamadan önce bir mod seçin.',
     'memory_mode_remote_title': 'Uzaktan',
     'memory_mode_remote_subtitle':
-        'Nerede olursanız olun, herkes kendi telefonunda.',
+        'Aranızdaki mesafe ne olursa olsun.',
     'memory_mode_local_title': 'Yüz yüze, tek telefon',
     'memory_mode_local_subtitle': 'Aynı cihazı sırayla birbirinize verirsiniz.',
     'memory_difficulty_title': 'Hangi zorluk?',
@@ -9576,7 +9576,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': 'Як ви хочете грати?',
     'memory_mode_subtitle': 'Оберіть режим перед початком гри.',
     'memory_mode_remote_title': 'Дистанційно',
-    'memory_mode_remote_subtitle': 'Кожен на своєму телефоні, де б ви не були.',
+    'memory_mode_remote_subtitle': 'Байдуже, яка відстань вас розділяє.',
     'memory_mode_local_title': 'Поруч, один телефон',
     'memory_mode_local_subtitle': 'Ви передаєте один пристрій по черзі.',
     'memory_difficulty_title': 'Яка складність?',
@@ -10394,7 +10394,7 @@ const Map<String, Map<String, String>> kTranslations = {
     'memory_mode_title': 'どうやって遊びますか？',
     'memory_mode_subtitle': 'ゲームを始める前にモードを選んでください。',
     'memory_mode_remote_title': 'リモート',
-    'memory_mode_remote_subtitle': 'どこにいてもそれぞれのスマホで。',
+    'memory_mode_remote_subtitle': 'どれだけ離れていても関係ない。',
     'memory_mode_local_title': '対面、スマホ1台',
     'memory_mode_local_subtitle': '同じ端末を交代で使います。',
     'memory_difficulty_title': '難易度を選んでください',
