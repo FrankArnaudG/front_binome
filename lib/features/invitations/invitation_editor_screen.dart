@@ -60,6 +60,10 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
   final _familiesFormulaCtrl = TextEditingController();
   final _customEventTypeCtrl = TextEditingController();
   String? _eventType;
+  // Voir demande utilisateur : "l'image d'accueil, la première section qui
+  // apparaît après l'ouverture de la couverture... on peut avoir deux
+  // formats" — 'text' (historique) ou 'photo' (plein cadre).
+  String _familiesStyle = 'text';
   final _storyTitleCtrl = TextEditingController();
   final _storyTextCtrl = TextEditingController();
   final _quoteTitleCtrl = TextEditingController();
@@ -174,6 +178,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
     _familiesLinesCtrl.text = linesRaw is List ? linesRaw.join('\n') : '';
     _familiesFormulaCtrl.text = invitation.families['formula'] as String? ?? '';
     _eventType = invitation.families['event_type'] as String?;
+    _familiesStyle = invitation.families['style'] as String? ?? 'text';
     _customEventTypeCtrl.text = invitation.families['custom_event_type'] as String? ?? '';
 
     _storyTitleCtrl.text = invitation.story['title'] as String? ?? '';
@@ -238,6 +243,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
           'formula': _familiesFormulaCtrl.text.trim(),
           'event_type': _eventType,
           'custom_event_type': _customEventTypeCtrl.text.trim(),
+          'style': _familiesStyle,
         },
         'story': {
           'title': _storyTitleCtrl.text.trim(),
@@ -556,6 +562,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
             ),
             _FamiliesTab(
               theme: theme,
+              invitation: invitation,
               linesCtrl: _familiesLinesCtrl,
               formulaCtrl: _familiesFormulaCtrl,
               customEventTypeCtrl: _customEventTypeCtrl,
@@ -564,6 +571,9 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
                 _eventType = type;
                 _familiesFormulaCtrl.text = phrase;
               }),
+              familiesStyle: _familiesStyle,
+              onFamiliesStyleChanged: (style) => setState(() => _familiesStyle = style),
+              onMediaChanged: _reloadQuiet,
             ),
             _StoryTab(
               theme: theme,
@@ -818,19 +828,27 @@ const Map<String, String> _eventTypeLabels = {
 
 class _FamiliesTab extends StatelessWidget {
   final dynamic theme;
+  final Invitation invitation;
   final TextEditingController linesCtrl;
   final TextEditingController formulaCtrl;
   final TextEditingController customEventTypeCtrl;
   final String? eventType;
   final void Function(String type, String phrase) onEventTypeChanged;
+  final String familiesStyle;
+  final ValueChanged<String> onFamiliesStyleChanged;
+  final VoidCallback onMediaChanged;
 
   const _FamiliesTab({
     required this.theme,
+    required this.invitation,
     required this.linesCtrl,
     required this.formulaCtrl,
     required this.customEventTypeCtrl,
     required this.eventType,
     required this.onEventTypeChanged,
+    required this.familiesStyle,
+    required this.onFamiliesStyleChanged,
+    required this.onMediaChanged,
   });
 
   /// Reconstruit la formule à partir du nom de type saisi — jamais éditée
@@ -844,9 +862,56 @@ class _FamiliesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCustomType = eventType == 'autre';
+    final familiesPhotos = invitation.media.where((m) => m.blockKey == 'families_photo').toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Voir demande utilisateur : "l'image d'accueil, la première
+        // section qui apparaît après l'ouverture de la couverture... on
+        // peut avoir deux formats" — 'text' (déjà en place) ou 'photo'
+        // (plein cadre, prénoms + date superposés, "Faites défiler").
+        Text('Section d\'accueil', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
+        const SizedBox(height: 4),
+        Text(
+          "La première section visible juste après l'ouverture de la couverture.",
+          style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _FamiliesStyleTile(
+                theme: theme,
+                label: 'Texte',
+                description: 'Les lignes ci-dessous, sur fond uni.',
+                selected: familiesStyle == 'text',
+                onTap: () => onFamiliesStyleChanged('text'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _FamiliesStyleTile(
+                theme: theme,
+                label: 'Photo',
+                description: 'Photo plein cadre, prénoms et date superposés.',
+                selected: familiesStyle == 'photo',
+                onTap: () => onFamiliesStyleChanged('photo'),
+              ),
+            ),
+          ],
+        ),
+        if (familiesStyle == 'photo') ...[
+          const SizedBox(height: 12),
+          _GalleryGrid(
+            theme: theme,
+            invitationId: invitation.id,
+            blockKey: 'families_photo',
+            items: familiesPhotos,
+            onChanged: onMediaChanged,
+            maxItems: 1,
+          ),
+        ],
+        const SizedBox(height: 20),
         Text(
           'Une ligne par famille (ex. "Les familles Ouedraogo et Traoré").',
           style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
@@ -915,6 +980,56 @@ class _FamiliesTab extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Vignette de choix "Texte"/"Photo" pour la section d'accueil (voir
+/// _FamiliesTab) — même principe que les styles de couverture mais sans
+/// aperçu image (juste un libellé + une description).
+class _FamiliesStyleTile extends StatelessWidget {
+  final dynamic theme;
+  final String label;
+  final String description;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FamiliesStyleTile({
+    required this.theme,
+    required this.label,
+    required this.description,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? theme.primary : Colors.transparent, width: 2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(label, style: GoogleFonts.nunito(fontWeight: FontWeight.w700, fontSize: 13, color: theme.textOnBackground)),
+                ),
+                if (selected) Icon(Icons.check_circle_rounded, size: 15, color: theme.primary),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(description, style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted, height: 1.25)),
+          ],
+        ),
+      ),
     );
   }
 }
