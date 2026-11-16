@@ -863,6 +863,52 @@ class _FamiliesTab extends StatelessWidget {
     required this.onMediaChanged,
   });
 
+  /// Voir demande utilisateur : "en cliquant l'image apparaît là où il est
+  /// actuellement et on ferme via une croix" — fenêtre plein écran avec le
+  /// point de pivot, au-dessus de la photo à sa taille actuelle.
+  void _openFocalPointDialog(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Fais glisser le point pour éviter de couper les visages',
+                    style: GoogleFonts.nunito(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => Navigator.of(ctx).pop(),
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _FamiliesFocalPointPicker(
+              theme: theme,
+              imageUrl: imageUrl,
+              position: familiesPhotoPosition,
+              onChanged: onFamiliesPhotoPositionChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Reconstruit la formule à partir du nom de type saisi — jamais éditée
   /// directement (voir demande utilisateur : "la formule est standard à
   /// tous et non modifiable"), seul ce nom l'est.
@@ -914,6 +960,11 @@ class _FamiliesTab extends StatelessWidget {
         ),
         if (familiesStyle == 'photo') ...[
           const SizedBox(height: 12),
+          // Voir demande utilisateur : "mettre un crayon sur l'aperçu
+          // d'image, à côté de changer et en cliquant l'image apparaît là
+          // où il est actuellement et on ferme via une croix" — le réglage
+          // du point de pivot n'est plus affiché en permanence, il s'ouvre
+          // depuis le crayon sur la vignette.
           _GalleryGrid(
             theme: theme,
             invitationId: invitation.id,
@@ -921,21 +972,8 @@ class _FamiliesTab extends StatelessWidget {
             items: familiesPhotos,
             onChanged: onMediaChanged,
             maxItems: 1,
+            onEditFocalPoint: familiesPhotos.isEmpty ? null : () => _openFocalPointDialog(context, familiesPhotos.first.url),
           ),
-          if (familiesPhotos.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Point de pivot — fais glisser le point sur la photo pour éviter de couper les visages',
-              style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
-            ),
-            const SizedBox(height: 8),
-            _FamiliesFocalPointPicker(
-              theme: theme,
-              imageUrl: familiesPhotos.first.url,
-              position: familiesPhotoPosition,
-              onChanged: onFamiliesPhotoPositionChanged,
-            ),
-          ],
         ],
         const SizedBox(height: 20),
         Text(
@@ -1110,10 +1148,20 @@ class _FamiliesFocalPointPickerState extends State<_FamiliesFocalPointPicker> {
     }
   }
 
-  void _updateFromLocalPosition(Offset local, Size size) {
-    final fx = (local.dx / size.width).clamp(0.0, 1.0);
-    final fy = (local.dy / size.height).clamp(0.0, 1.0);
-    setState(() => _fraction = Offset(fx, fy));
+  // Voir demande utilisateur : "pourquoi l'image ne s'adapte pas
+  // automatiquement ici pour que l'on voit" — on fait glisser la PHOTO
+  // elle-même sous un repère fixe au centre (comme un outil de recadrage
+  // classique), via `alignment` sur l'image : le cadrage change donc
+  // réellement sous les yeux pendant le geste, pas seulement un point
+  // dessiné par-dessus une photo qui ne bouge jamais.
+  void _onPanUpdate(DragUpdateDetails d, Size size) {
+    setState(() {
+      final dx = d.delta.dx / size.width;
+      final dy = d.delta.dy / size.height;
+      final x = (_fraction.dx - dx).clamp(0.0, 1.0);
+      final y = (_fraction.dy - dy).clamp(0.0, 1.0);
+      _fraction = Offset(x, y);
+    });
   }
 
   void _commit() {
@@ -1134,19 +1182,20 @@ class _FamiliesFocalPointPickerState extends State<_FamiliesFocalPointPicker> {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanUpdate: (d) => _updateFromLocalPosition(d.localPosition, size),
+              onPanUpdate: (d) => _onPanUpdate(d, size),
               onPanEnd: (_) => _commit(),
-              onTapUp: (d) {
-                _updateFromLocalPosition(d.localPosition, size);
-                _commit();
-              },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CachedNetworkImage(imageUrl: widget.imageUrl, fit: BoxFit.cover),
-                  Positioned(
-                    left: _fraction.dx * size.width - 15,
-                    top: _fraction.dy * size.height - 15,
+                  CachedNetworkImage(
+                    imageUrl: widget.imageUrl,
+                    fit: BoxFit.cover,
+                    alignment: Alignment(_fraction.dx * 2 - 1, _fraction.dy * 2 - 1),
+                  ),
+                  // Repère fixe au centre : représente le point qui restera
+                  // visible une fois recadré sur n'importe quel écran (voir
+                  // families.blade.php, object-position).
+                  Center(
                     child: Container(
                       width: 30,
                       height: 30,
@@ -1771,6 +1820,10 @@ class _GalleryGrid extends StatefulWidget {
   final List<InvitationMedia> items;
   final VoidCallback onChanged;
   final int? maxItems;
+  // Voir demande utilisateur : "mettre un crayon sur l'aperçu d'image, à
+  // côté de changer" — bouton optionnel affiché uniquement quand fourni
+  // (families_photo), pour ouvrir le réglage du point de pivot.
+  final VoidCallback? onEditFocalPoint;
 
   const _GalleryGrid({
     required this.theme,
@@ -1779,6 +1832,7 @@ class _GalleryGrid extends StatefulWidget {
     required this.items,
     required this.onChanged,
     this.maxItems,
+    this.onEditFocalPoint,
   });
 
   @override
@@ -2039,6 +2093,19 @@ class _GalleryGridState extends State<_GalleryGrid> {
                 ),
               ),
             ),
+            if (widget.onEditFocalPoint != null && !deleting)
+              Positioned(
+                top: 2,
+                left: 2,
+                child: InkWell(
+                  onTap: widget.onEditFocalPoint,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.edit_rounded, size: 12, color: Colors.white),
+                  ),
+                ),
+              ),
           ],
         );
       },
