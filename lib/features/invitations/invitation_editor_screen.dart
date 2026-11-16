@@ -64,6 +64,10 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
   // apparaît après l'ouverture de la couverture... on peut avoir deux
   // formats" — 'text' (historique) ou 'photo' (plein cadre).
   String _familiesStyle = 'text';
+  // Voir demande utilisateur : "repositionner l'image en choisissant le
+  // point de pivot pour éviter la coupure des gens" — point de focus
+  // vertical pour le recadrage (object-fit:cover) de la photo d'accueil.
+  String _familiesPhotoPosition = 'center';
   final _storyTitleCtrl = TextEditingController();
   final _storyTextCtrl = TextEditingController();
   final _quoteTitleCtrl = TextEditingController();
@@ -179,6 +183,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
     _familiesFormulaCtrl.text = invitation.families['formula'] as String? ?? '';
     _eventType = invitation.families['event_type'] as String?;
     _familiesStyle = invitation.families['style'] as String? ?? 'text';
+    _familiesPhotoPosition = invitation.families['photo_position'] as String? ?? 'center';
     _customEventTypeCtrl.text = invitation.families['custom_event_type'] as String? ?? '';
 
     _storyTitleCtrl.text = invitation.story['title'] as String? ?? '';
@@ -244,6 +249,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
           'event_type': _eventType,
           'custom_event_type': _customEventTypeCtrl.text.trim(),
           'style': _familiesStyle,
+          'photo_position': _familiesPhotoPosition,
         },
         'story': {
           'title': _storyTitleCtrl.text.trim(),
@@ -573,6 +579,8 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
               }),
               familiesStyle: _familiesStyle,
               onFamiliesStyleChanged: (style) => setState(() => _familiesStyle = style),
+              familiesPhotoPosition: _familiesPhotoPosition,
+              onFamiliesPhotoPositionChanged: (position) => setState(() => _familiesPhotoPosition = position),
               onMediaChanged: _reloadQuiet,
             ),
             _StoryTab(
@@ -836,6 +844,8 @@ class _FamiliesTab extends StatelessWidget {
   final void Function(String type, String phrase) onEventTypeChanged;
   final String familiesStyle;
   final ValueChanged<String> onFamiliesStyleChanged;
+  final String familiesPhotoPosition;
+  final ValueChanged<String> onFamiliesPhotoPositionChanged;
   final VoidCallback onMediaChanged;
 
   const _FamiliesTab({
@@ -848,6 +858,8 @@ class _FamiliesTab extends StatelessWidget {
     required this.onEventTypeChanged,
     required this.familiesStyle,
     required this.onFamiliesStyleChanged,
+    required this.familiesPhotoPosition,
+    required this.onFamiliesPhotoPositionChanged,
     required this.onMediaChanged,
   });
 
@@ -910,6 +922,44 @@ class _FamiliesTab extends StatelessWidget {
             onChanged: onMediaChanged,
             maxItems: 1,
           ),
+          if (familiesPhotos.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Point de pivot (pour éviter de couper les visages)',
+              style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (final entry in const {'top': 'Haut', 'center': 'Centre', 'bottom': 'Bas'}.entries) ...[
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => onFamiliesPhotoPositionChanged(entry.key),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: theme.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: familiesPhotoPosition == entry.key ? theme.primary : Colors.transparent, width: 2),
+                        ),
+                        child: Text(
+                          entry.value,
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: familiesPhotoPosition == entry.key ? theme.primary : theme.textOnBackground,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (entry.key != 'bottom') const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ],
         ],
         const SizedBox(height: 20),
         Text(
