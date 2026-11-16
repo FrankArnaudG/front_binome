@@ -146,6 +146,23 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
     }
   }
 
+  /// Même rafraîchissement que [_load], sans le spinner plein écran — voir
+  /// demande utilisateur : "quand je choisis une image la page se recharge"
+  /// (après l'envoi d'une photo de couverture, le média vient de changer sur
+  /// le serveur, donc il faut bien relire l'invitation, mais sans faire
+  /// disparaître tout l'écran pendant l'appel).
+  Future<void> _reloadQuiet() async {
+    try {
+      final invitation = await InvitationService.instance.fetchInvitation(widget.invitationId);
+      if (!mounted) return;
+      _applyToControllers(invitation);
+      setState(() => _invitation = invitation);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec du rafraîchissement : $e')));
+    }
+  }
+
   void _applyToControllers(Invitation invitation) {
     _partnerOneCtrl.text = invitation.partnerOneName ?? '';
     _partnerTwoCtrl.text = invitation.partnerTwoName ?? '';
@@ -534,7 +551,7 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
               onPickRsvpDeadline: (d) => setState(() => _rsvpDeadline = d),
               gratitudeTitleCtrl: _gratitudeTitleCtrl,
               gratitudeMessageCtrl: _gratitudeMessageCtrl,
-              onMediaChanged: _load,
+              onMediaChanged: _reloadQuiet,
               onCoverPatchStarted: (future) => _pendingCoverPatch = future,
             ),
             _FamiliesTab(
@@ -1376,7 +1393,20 @@ class _CoverPresetPickerState extends State<_CoverPresetPicker> {
             style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
           ),
           const SizedBox(height: 8),
-          _GalleryGrid(theme: theme, invitationId: widget.invitation.id, blockKey: 'cover', items: coverPhotos, onChanged: widget.onChanged),
+          // Voir demande utilisateur : "une autre case n'a plus le droit
+          // d'apparaître" — un seul fichier à la fois pour ce bloc (voir
+          // InvitationMediaController::store), donc maxItems:1 cache la
+          // vignette "+" dès qu'une photo existe déjà ; taper sur la photo
+          // elle-même permet de la remplacer directement (voir
+          // _GalleryGridState, singleReplace).
+          _GalleryGrid(
+            theme: theme,
+            invitationId: widget.invitation.id,
+            blockKey: 'cover',
+            items: coverPhotos,
+            onChanged: widget.onChanged,
+            maxItems: 1,
+          ),
         ],
         if (style == 'custom') ...[
           const SizedBox(height: 10),
@@ -1521,9 +1551,13 @@ class _GalleryGridState extends State<_GalleryGrid> {
   final List<_PendingUpload> _pending = [];
   final Set<String> _deletingIds = {};
 
-  Future<void> _add() async {
+  Future<void> _add({bool replacing = false}) async {
     final max = widget.maxItems;
-    if (max != null && widget.items.length + _pending.length >= max) return;
+    // `replacing` : tap direct sur la photo existante d'un bloc à fichier
+    // unique (voir plus bas, singleReplace) — le serveur remplace l'ancien
+    // fichier à l'envoi (voir InvitationMediaController::store), donc le
+    // plafond ne doit pas bloquer ce cas précis.
+    if (!replacing && max != null && widget.items.length + _pending.length >= max) return;
     // pickImage() peut lever (PlatformException, picker système absent...)
     // — DOIT être dans le try, sinon le bouton "Ajouter" ne fait plus rien
     // de visible en cas d'erreur.
@@ -1699,11 +1733,39 @@ class _GalleryGridState extends State<_GalleryGrid> {
         }
         final item = widget.items[index];
         final deleting = _deletingIds.contains(item.id);
+        // Voir demande utilisateur : "la seconde case... doit être mise à
+        // changer l'image" — pour un bloc à fichier unique (maxItems:1,
+        // cover/story), taper directement sur la photo la remplace (plus
+        // besoin de la supprimer avant d'en ajouter une autre).
+        final singleReplace = widget.maxItems == 1;
         return Stack(
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: AspectRatio(aspectRatio: 1, child: CachedNetworkImage(imageUrl: item.url, fit: BoxFit.cover)),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: InkWell(
+                  onTap: deleting || !singleReplace ? null : () => _add(replacing: true),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(imageUrl: item.url, fit: BoxFit.cover),
+                      if (singleReplace && !deleting)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            color: Colors.black45,
+                            alignment: Alignment.center,
+                            child: const Text('Changer', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
             if (deleting)
               Positioned.fill(
