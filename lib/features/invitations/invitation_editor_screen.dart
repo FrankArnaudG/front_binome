@@ -925,39 +925,15 @@ class _FamiliesTab extends StatelessWidget {
           if (familiesPhotos.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
-              'Point de pivot (pour éviter de couper les visages)',
+              'Point de pivot — fais glisser le point sur la photo pour éviter de couper les visages',
               style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                for (final entry in const {'top': 'Haut', 'center': 'Centre', 'bottom': 'Bas'}.entries) ...[
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => onFamiliesPhotoPositionChanged(entry.key),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: theme.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: familiesPhotoPosition == entry.key ? theme.primary : Colors.transparent, width: 2),
-                        ),
-                        child: Text(
-                          entry.value,
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: familiesPhotoPosition == entry.key ? theme.primary : theme.textOnBackground,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (entry.key != 'bottom') const SizedBox(width: 8),
-                ],
-              ],
+            _FamiliesFocalPointPicker(
+              theme: theme,
+              imageUrl: familiesPhotos.first.url,
+              position: familiesPhotoPosition,
+              onChanged: onFamiliesPhotoPositionChanged,
             ),
           ],
         ],
@@ -1078,6 +1054,116 @@ class _FamiliesStyleTile extends StatelessWidget {
             const SizedBox(height: 4),
             Text(description, style: GoogleFonts.nunito(fontSize: 11, color: theme.textOnBackgroundMuted, height: 1.25)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Voir demande utilisateur : "afficher l'image avec le point de pivot sur
+/// l'image et qu'on peut faire bouger" — au lieu de 3 boutons fixes
+/// (haut/centre/bas), on affiche la photo et on glisse un point dessus ;
+/// stocké en "X Y" (pourcentages 0-100), repris tel quel par
+/// object-position côté rendu (families.blade.php) — même principe que le
+/// recadrage à la souris d'un éditeur photo classique.
+class _FamiliesFocalPointPicker extends StatefulWidget {
+  final dynamic theme;
+  final String imageUrl;
+  final String position;
+  final ValueChanged<String> onChanged;
+
+  const _FamiliesFocalPointPicker({
+    required this.theme,
+    required this.imageUrl,
+    required this.position,
+    required this.onChanged,
+  });
+
+  @override
+  State<_FamiliesFocalPointPicker> createState() => _FamiliesFocalPointPickerState();
+}
+
+class _FamiliesFocalPointPickerState extends State<_FamiliesFocalPointPicker> {
+  late Offset _fraction = _parse(widget.position);
+
+  Offset _parse(String raw) {
+    final parts = raw.trim().split(RegExp(r'\s+'));
+    if (parts.length == 2) {
+      final x = double.tryParse(parts[0]);
+      final y = double.tryParse(parts[1]);
+      if (x != null && y != null) {
+        return Offset(x.clamp(0, 100) / 100, y.clamp(0, 100) / 100);
+      }
+    }
+    return const Offset(0.5, 0.5);
+  }
+
+  @override
+  void didUpdateWidget(covariant _FamiliesFocalPointPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resynchronise si le parent reçoit une valeur différente de l'extérieur
+    // (ex. rechargement après upload d'une nouvelle photo) — jamais pendant
+    // un glissement en cours (voir onPanUpdate, qui ne touche que l'état
+    // local avant le relâchement).
+    if (oldWidget.position != widget.position) {
+      _fraction = _parse(widget.position);
+    }
+  }
+
+  void _updateFromLocalPosition(Offset local, Size size) {
+    final fx = (local.dx / size.width).clamp(0.0, 1.0);
+    final fy = (local.dy / size.height).clamp(0.0, 1.0);
+    setState(() => _fraction = Offset(fx, fy));
+  }
+
+  void _commit() {
+    final x = (_fraction.dx * 100).round();
+    final y = (_fraction.dy * 100).round();
+    widget.onChanged('$x $y');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: 9 / 16,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (d) => _updateFromLocalPosition(d.localPosition, size),
+              onPanEnd: (_) => _commit(),
+              onTapUp: (d) {
+                _updateFromLocalPosition(d.localPosition, size);
+                _commit();
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(imageUrl: widget.imageUrl, fit: BoxFit.cover),
+                  Positioned(
+                    left: _fraction.dx * size.width - 15,
+                    top: _fraction.dy * size.height - 15,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 6, spreadRadius: 1)],
+                      ),
+                      child: Center(
+                        child: Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: theme.primary)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
