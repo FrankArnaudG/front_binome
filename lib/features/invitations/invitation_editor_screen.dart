@@ -1287,19 +1287,11 @@ class _StoryTabState extends State<_StoryTab> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final storyPhotos = widget.invitation.media.where((m) => m.blockKey == 'story').toList();
     final messagesInCategory = _selectedCategory == null ? <RomanticMessage>[] : _messages.where((m) => m.category == _selectedCategory).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SectionField(label: 'Titre', controller: widget.titleCtrl, theme: theme),
-        _SectionField(label: 'Notre histoire', controller: widget.textCtrl, theme: theme, maxLines: 5),
-        const SizedBox(height: 8),
-        Text('Photos de notre histoire', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
-        const SizedBox(height: 10),
-        _GalleryGrid(theme: theme, invitationId: widget.invitation.id, blockKey: 'story', items: storyPhotos, onChanged: widget.onMediaChanged),
-        const SizedBox(height: 24),
         Text('Message romantique', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 4),
         Text(
