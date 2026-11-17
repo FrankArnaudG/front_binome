@@ -581,16 +581,16 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
               // Voir demande utilisateur : "si c'est photo alors préremplir
               // 'Ont la joie de vous inviter à célébrer leur mariage.' et si
               // c'est option texte garder le texte 'ont l'honneur de
-              // vous...'" — uniquement si le champ est encore vide ou égal à
-              // l'autre défaut, jamais si le couple a déjà personnalisé sa
-              // propre phrase (ex. un type d'événement choisi).
+              // vous...'" — remplace toujours le texte au changement de
+              // bascule (voir demande utilisateur suivante : "l'aperçu reste
+              // inchangé peu importe l'option" — une condition "seulement si
+              // vide/déjà par défaut" bloquait le remplacement dès que le
+              // couple avait choisi un type d'événement, ex. "mariage
+              // traditionnel").
               onFamiliesStyleChanged: (style) => setState(() {
                 const textDefault = "ont l'honneur de vous convier au mariage de";
                 const photoDefault = 'Ont la joie de vous inviter à célébrer leur mariage.';
-                final current = _familiesFormulaCtrl.text.trim();
-                if (current.isEmpty || current == textDefault || current == photoDefault) {
-                  _familiesFormulaCtrl.text = style == 'photo' ? photoDefault : textDefault;
-                }
+                _familiesFormulaCtrl.text = style == 'photo' ? photoDefault : textDefault;
                 _familiesStyle = style;
               }),
               familiesPhotoPosition: _familiesPhotoPosition,
