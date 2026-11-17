@@ -659,8 +659,9 @@ class _SectionField extends StatelessWidget {
   final int maxLines;
   final dynamic theme;
   final ValueChanged<String>? onChanged;
+  final bool enabled;
 
-  const _SectionField({required this.label, required this.controller, required this.theme, this.maxLines = 1, this.onChanged});
+  const _SectionField({required this.label, required this.controller, required this.theme, this.maxLines = 1, this.onChanged, this.enabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -669,6 +670,7 @@ class _SectionField extends StatelessWidget {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        enabled: enabled,
         onChanged: onChanged,
         style: GoogleFonts.nunito(color: theme.textOnBackground),
         decoration: InputDecoration(
@@ -693,7 +695,7 @@ class _InfosTab extends StatelessWidget {
   final DateTime? eventDate;
   final void Function(DateTime) onPickDate;
   final DateTime? rsvpDeadline;
-  final void Function(DateTime) onPickRsvpDeadline;
+  final void Function(DateTime?) onPickRsvpDeadline;
   final TextEditingController gratitudeTitleCtrl;
   final TextEditingController gratitudeMessageCtrl;
   final VoidCallback onMediaChanged;
@@ -727,8 +729,8 @@ class _InfosTab extends StatelessWidget {
         _SectionField(label: 'Prénom 2', controller: partnerTwoCtrl, theme: theme),
         _DatePickerField(label: 'Date du mariage', value: eventDate, theme: theme, onChanged: onPickDate),
         const SizedBox(height: 14),
-        _SectionField(label: 'Ville', controller: cityCtrl, theme: theme),
-        _SectionField(label: "Texte d'introduction", controller: introCtrl, theme: theme, maxLines: 2),
+        _SectionField(label: 'Ville', controller: cityCtrl, theme: theme, enabled: false),
+        _SectionField(label: "Texte d'introduction", controller: introCtrl, theme: theme, maxLines: 2, enabled: false),
         const SizedBox(height: 16),
         Text('Message de gratitude (avant le RSVP)', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 10),
@@ -739,7 +741,14 @@ class _InfosTab extends StatelessWidget {
         const SizedBox(height: 16),
         Text('Confirmation de présence (RSVP)', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 14, color: theme.textOnBackground)),
         const SizedBox(height: 10),
-        _DatePickerField(label: 'Date limite de réponse', value: rsvpDeadline, theme: theme, onChanged: onPickRsvpDeadline),
+        _DatePickerField(
+          label: 'Date limite de réponse',
+          value: rsvpDeadline,
+          theme: theme,
+          onChanged: onPickRsvpDeadline,
+          lastDate: eventDate,
+          onClear: () => onPickRsvpDeadline(null),
+        ),
       ],
     );
   }
@@ -1515,19 +1524,30 @@ class _DatePickerField extends StatelessWidget {
   final DateTime? value;
   final dynamic theme;
   final void Function(DateTime) onChanged;
+  // Voir demande utilisateur : "on ne peut pas choisir au-delà de la date de
+  // l'événement" (limite la "Date limite de réponse" RSVP) — optionnel,
+  // retombe sur +5 ans pour les autres usages de ce champ (ex. date de
+  // cérémonie) qui n'ont pas cette contrainte.
+  final DateTime? lastDate;
+  // Voir demande utilisateur : "si je veux je désactive" — une date déjà
+  // choisie doit pouvoir être effacée (retour à l'état désactivé par
+  // défaut), pas seulement remplacée par une autre date.
+  final VoidCallback? onClear;
 
-  const _DatePickerField({required this.label, required this.value, required this.theme, required this.onChanged});
+  const _DatePickerField({required this.label, required this.value, required this.theme, required this.onChanged, this.lastDate, this.onClear});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () async {
+        final effectiveLastDate = lastDate ?? DateTime.now().add(const Duration(days: 365 * 5));
+        final initial = value ?? DateTime.now().add(const Duration(days: 60));
         final picked = await showDatePicker(
           context: context,
-          initialDate: value ?? DateTime.now().add(const Duration(days: 60)),
+          initialDate: initial.isAfter(effectiveLastDate) ? effectiveLastDate : initial,
           firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+          lastDate: effectiveLastDate,
         );
         if (picked != null) onChanged(picked);
       },
@@ -1539,10 +1559,18 @@ class _DatePickerField extends StatelessWidget {
           children: [
             Icon(Icons.calendar_today_rounded, size: 18, color: theme.textOnBackgroundMuted),
             const SizedBox(width: 10),
-            Text(
-              value != null ? '${value!.day}/${value!.month}/${value!.year}' : label,
-              style: GoogleFonts.nunito(color: value != null ? theme.textOnBackground : theme.textOnBackgroundMuted),
+            Expanded(
+              child: Text(
+                value != null ? '${value!.day}/${value!.month}/${value!.year}' : label,
+                style: GoogleFonts.nunito(color: value != null ? theme.textOnBackground : theme.textOnBackgroundMuted),
+              ),
             ),
+            if (value != null && onClear != null)
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onClear,
+                child: Icon(Icons.close_rounded, size: 18, color: theme.textOnBackgroundMuted),
+              ),
           ],
         ),
       ),
