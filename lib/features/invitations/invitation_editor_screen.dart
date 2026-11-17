@@ -841,6 +841,16 @@ const Map<String, String> _eventTypePhrases = {
   'fiancailles': "ont l'honneur de vous convier aux fiançailles de",
   'autre': "ont l'honneur de vous convier à la cérémonie de",
 };
+// Voir demande utilisateur : "tu t'es trompé, fait le contraire" — le menu
+// "Type d'événement" réécrivait toujours la phrase au format "texte", même
+// en mode Photo (où les prénoms sont déjà affichés au-dessus, voir
+// families.blade.php) ; phrases équivalentes, autonomes, pour ce style.
+const Map<String, String> _eventTypePhrasesPhoto = {
+  'mariage': 'Ont la joie de vous inviter à célébrer leur mariage.',
+  'mariage_traditionnel': 'Ont la joie de vous inviter à célébrer leur mariage traditionnel.',
+  'fiancailles': 'Ont la joie de vous inviter à célébrer leurs fiançailles.',
+  'autre': 'Ont la joie de vous inviter à célébrer cet événement.',
+};
 const Map<String, String> _eventTypeLabels = {
   'mariage': 'Mariage',
   'mariage_traditionnel': 'Mariage traditionnel',
@@ -928,7 +938,11 @@ class _FamiliesTab extends StatelessWidget {
   /// tous et non modifiable"), seul ce nom l'est.
   void _applyCustomType(String typeName) {
     final trimmed = typeName.trim();
-    formulaCtrl.text = trimmed.isEmpty ? '' : "ont l'honneur de vous convier au $trimmed de";
+    if (trimmed.isEmpty) {
+      formulaCtrl.text = '';
+    } else {
+      formulaCtrl.text = familiesStyle == 'photo' ? 'Ont la joie de vous inviter à célébrer leur $trimmed.' : "ont l'honneur de vous convier au $trimmed de";
+    }
   }
 
   @override
@@ -1009,8 +1023,12 @@ class _FamiliesTab extends StatelessWidget {
             // calculée depuis le nom déjà saisi, jamais la formule
             // précédente (qui viendrait d'un autre type).
             final customName = customEventTypeCtrl.text.trim();
-            final autrePhrase = customName.isEmpty ? '' : "ont l'honneur de vous convier au $customName de";
-            onEventTypeChanged(type, type == 'autre' ? autrePhrase : (_eventTypePhrases[type] ?? ''));
+            final isPhoto = familiesStyle == 'photo';
+            final autrePhrase = customName.isEmpty
+                ? ''
+                : (isPhoto ? 'Ont la joie de vous inviter à célébrer leur $customName.' : "ont l'honneur de vous convier au $customName de");
+            final phrases = isPhoto ? _eventTypePhrasesPhoto : _eventTypePhrases;
+            onEventTypeChanged(type, type == 'autre' ? autrePhrase : (phrases[type] ?? ''));
           },
         ),
         if (isCustomType) ...[
