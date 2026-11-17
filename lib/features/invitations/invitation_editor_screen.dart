@@ -1049,41 +1049,6 @@ class _FamiliesTab extends StatelessWidget {
             onChanged: _applyCustomType,
           ),
         ],
-        const SizedBox(height: 16),
-        Text('Aperçu', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 13, color: theme.textOnBackgroundMuted)),
-        const SizedBox(height: 8),
-        AnimatedBuilder(
-          animation: Listenable.merge([linesCtrl, formulaCtrl]),
-          builder: (context, _) {
-            final lines = linesCtrl.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
-            final formula = formulaCtrl.text.trim();
-            if (lines.isEmpty && formula.isEmpty) return const SizedBox.shrink();
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(14)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  for (final line in lines)
-                    Text(
-                      line,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w600, color: theme.textOnBackground, letterSpacing: 0.5),
-                    ),
-                  if (formula.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      formula,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(fontSize: 13, fontStyle: FontStyle.italic, color: theme.textOnBackgroundMuted),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          },
-        ),
       ],
     );
   }
