@@ -68,8 +68,6 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
   // point de pivot pour éviter la coupure des gens" — point de focus
   // vertical pour le recadrage (object-fit:cover) de la photo d'accueil.
   String _familiesPhotoPosition = 'center';
-  final _storyTitleCtrl = TextEditingController();
-  final _storyTextCtrl = TextEditingController();
   final _quoteTitleCtrl = TextEditingController();
   final _storyQuoteCtrl = TextEditingController();
 
@@ -117,8 +115,6 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
     _familiesLinesCtrl.dispose();
     _familiesFormulaCtrl.dispose();
     _customEventTypeCtrl.dispose();
-    _storyTitleCtrl.dispose();
-    _storyTextCtrl.dispose();
     _quoteTitleCtrl.dispose();
     _storyQuoteCtrl.dispose();
     _dressTitleCtrl.dispose();
@@ -186,8 +182,6 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
     _familiesPhotoPosition = invitation.families['photo_position'] as String? ?? 'center';
     _customEventTypeCtrl.text = invitation.families['custom_event_type'] as String? ?? '';
 
-    _storyTitleCtrl.text = invitation.story['title'] as String? ?? '';
-    _storyTextCtrl.text = invitation.story['text'] as String? ?? '';
     _quoteTitleCtrl.text = invitation.story['quote_title'] as String? ?? '';
     _storyQuoteCtrl.text = invitation.story['quote'] as String? ?? '';
 
@@ -252,8 +246,6 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
           'photo_position': _familiesPhotoPosition,
         },
         'story': {
-          'title': _storyTitleCtrl.text.trim(),
-          'text': _storyTextCtrl.text.trim(),
           'quote_title': _quoteTitleCtrl.text.trim(),
           'quote': _storyQuoteCtrl.text.trim(),
         },
@@ -599,12 +591,8 @@ class _InvitationEditorScreenState extends State<InvitationEditorScreen> with Wi
             ),
             _StoryTab(
               theme: theme,
-              invitation: invitation,
-              titleCtrl: _storyTitleCtrl,
-              textCtrl: _storyTextCtrl,
               quoteTitleCtrl: _quoteTitleCtrl,
               quoteCtrl: _storyQuoteCtrl,
-              onMediaChanged: _load,
             ),
             _CeremoniesTab(theme: theme, invitation: invitation, onChanged: _load),
             _DressCodeTab(
@@ -1227,21 +1215,13 @@ class _FamiliesFocalPointPickerState extends State<_FamiliesFocalPointPicker> {
 
 class _StoryTab extends StatefulWidget {
   final dynamic theme;
-  final Invitation invitation;
-  final TextEditingController titleCtrl;
-  final TextEditingController textCtrl;
   final TextEditingController quoteTitleCtrl;
   final TextEditingController quoteCtrl;
-  final VoidCallback onMediaChanged;
 
   const _StoryTab({
     required this.theme,
-    required this.invitation,
-    required this.titleCtrl,
-    required this.textCtrl,
     required this.quoteTitleCtrl,
     required this.quoteCtrl,
-    required this.onMediaChanged,
   });
 
   @override
