@@ -2360,7 +2360,9 @@ class _CeremoniesTabState extends State<_CeremoniesTab> {
                             : Text(ceremony.icon!, style: const TextStyle(fontSize: 22)),
                     title: Text(ceremony.title, style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: theme.textOnBackground)),
                     subtitle: Text(
-                      [ceremony.date, ceremony.time, ceremony.address].where((e) => e != null && e.isNotEmpty).join(' · '),
+                      [_formatCeremonyDate(ceremony.date), _normalizeTime(ceremony.time), ceremony.address]
+                          .where((e) => e != null && e.isNotEmpty)
+                          .join(' · '),
                       style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted),
                     ),
                     trailing: IconButton(
@@ -2461,6 +2463,16 @@ String? _normalizeTime(String? raw) {
   final t = raw.trim();
   if (t.isEmpty) return '';
   return t.length >= 5 ? t.substring(0, 5) : t;
+}
+
+/// Voir demande utilisateur : "revoir l'affichage de la date" — la liste des
+/// cérémonies affichait l'ISO brut renvoyé par le backend (ex.
+/// "2026-12-05T00:00:00.000000Z"), jamais destiné à l'affichage direct.
+String? _formatCeremonyDate(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return raw;
+  return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
 }
 
 class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
