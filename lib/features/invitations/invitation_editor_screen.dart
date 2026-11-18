@@ -2469,7 +2469,7 @@ class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
             ),
             const SizedBox(height: 14),
             _SectionField(label: 'Heure (ex. 15:00)', controller: _timeCtrl, theme: theme),
-            _SectionField(label: 'Adresse', controller: _addressCtrl, theme: theme, maxLines: 2),
+            _SectionField(label: 'Localité (village, quartier)', controller: _addressCtrl, theme: theme, maxLines: 2),
             _SectionField(label: 'Instructions (optionnel)', controller: _instructionsCtrl, theme: theme, maxLines: 2),
             Text('Icône (optionnel)', style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted)),
             const SizedBox(height: 8),
