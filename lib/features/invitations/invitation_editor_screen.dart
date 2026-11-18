@@ -1515,6 +1515,53 @@ class _DatePickerField extends StatelessWidget {
   }
 }
 
+/// Voir demande utilisateur : "The time field must match the format H:i" —
+/// un sélecteur d'heure natif (plutôt qu'un champ texte libre type "14h30")
+/// garantit toujours le format "HH:mm" attendu par le backend.
+class _TimePickerField extends StatelessWidget {
+  final String label;
+  final TimeOfDay? value;
+  final dynamic theme;
+  final void Function(TimeOfDay) onChanged;
+  final VoidCallback? onClear;
+
+  const _TimePickerField({required this.label, required this.value, required this.theme, required this.onChanged, this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () async {
+        final picked = await showTimePicker(context: context, initialTime: value ?? const TimeOfDay(hour: 15, minute: 0));
+        if (picked != null) onChanged(picked);
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            Icon(Icons.access_time_rounded, size: 18, color: theme.textOnBackgroundMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                value != null ? '${value!.hour.toString().padLeft(2, '0')}:${value!.minute.toString().padLeft(2, '0')}' : label,
+                style: GoogleFonts.nunito(color: value != null ? theme.textOnBackground : theme.textOnBackgroundMuted),
+              ),
+            ),
+            if (value != null && onClear != null)
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onClear,
+                child: Icon(Icons.close_rounded, size: 18, color: theme.textOnBackgroundMuted),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Ornements embarqués dans l'app (voir pubspec.yaml `assets:` et
 /// assets/invitations/heritage_royal/) — mêmes clés ('frame'/'frame_alt')
 /// que côté serveur (voir InvitationTemplate::themeAssetUrls), stockées
@@ -2418,10 +2465,10 @@ String? _normalizeTime(String? raw) {
 
 class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
   late final _titleCtrl = TextEditingController(text: widget.existing?.title ?? '');
-  late final _timeCtrl = TextEditingController(text: _normalizeTime(widget.existing?.time));
   late final _addressCtrl = TextEditingController(text: widget.existing?.address ?? '');
   late final _instructionsCtrl = TextEditingController(text: widget.existing?.instructions ?? '');
   DateTime? _date;
+  TimeOfDay? _time;
   String? _selectedIcon;
   late String _iconCategory;
 
@@ -2430,6 +2477,17 @@ class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
     super.initState();
     final raw = widget.existing?.date;
     _date = raw != null ? DateTime.tryParse(raw) : null;
+    // Voir demande utilisateur : "The time field must match the format H:i" —
+    // la saisie libre (ex. "14h30") ne correspond pas au format attendu par
+    // le backend (InvitationCeremonyController, date_format:H:i). Un
+    // sélecteur d'heure garantit toujours le bon format.
+    final normalizedTime = _normalizeTime(widget.existing?.time);
+    if (normalizedTime != null && normalizedTime.isNotEmpty) {
+      final parts = normalizedTime.split(':');
+      final h = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
+      final m = parts.length > 1 ? int.tryParse(parts[1]) : null;
+      if (h != null && m != null) _time = TimeOfDay(hour: h, minute: m);
+    }
     _selectedIcon = widget.existing?.icon;
     _iconCategory = (_selectedIcon != null && _selectedIcon!.contains('/')) ? _selectedIcon!.split('/').first : 'universelles';
   }
@@ -2441,7 +2499,7 @@ class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
     Navigator.of(context).pop({
       'title': _titleCtrl.text.trim(),
       'date': _date != null ? _isoDate(_date!) : null,
-      'time': _normalizeTime(_timeCtrl.text.trim()),
+      'time': _time != null ? '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}' : null,
       'address': _addressCtrl.text.trim(),
       'instructions': _instructionsCtrl.text.trim(),
       'icon': _selectedIcon,
@@ -2468,7 +2526,14 @@ class _CeremonyFormSheetState extends State<_CeremonyFormSheet> {
               onChanged: (d) => setState(() => _date = d),
             ),
             const SizedBox(height: 14),
-            _SectionField(label: 'Heure (ex. 15:00)', controller: _timeCtrl, theme: theme),
+            _TimePickerField(
+              label: 'Heure',
+              value: _time,
+              theme: theme,
+              onChanged: (t) => setState(() => _time = t),
+              onClear: () => setState(() => _time = null),
+            ),
+            const SizedBox(height: 14),
             _SectionField(label: 'Localité (village, quartier)', controller: _addressCtrl, theme: theme, maxLines: 2),
             _SectionField(label: 'Instructions (optionnel)', controller: _instructionsCtrl, theme: theme, maxLines: 2),
             Text('Icône (optionnel)', style: GoogleFonts.nunito(fontSize: 12, color: theme.textOnBackgroundMuted)),
